@@ -1,28 +1,42 @@
-// @ts-nocheck
-// 从拆分出的模块 re-export
-export * from "./appDeviceDefinitionEInterface";
+/**
+ * 设备与元件定义草稿、自定义模板管理与类别库树维护主工厂模块。
+ * 同时作为统一门面重导出已拆分的 5 个子域工厂模块，保证外部调用方零破坏。
+ */
 
-// 内部使用已提取的符号
-import { STATE_ICON_DRAFT_FRAME, STATE_ICON_DRAWING_FRAME_WIDTH, STATE_ICON_DRAWING_FRAME_HEIGHT, deviceDefinitionComplianceKey, stateIconDrawingFrameHasPersistedContent, buildEFileExportOptionsFromLibrary, applyEDeviceDefinitionSectionsToLibraryState } from "./appDeviceDefinitionEInterface";
-
-import { buildEDeviceDefinitionFileFromInterfaceDefinitions, E_SECTION_COLUMNS, getTemplateParameterDefinitions, inferESection, isLineOnlyConnectionNode, parseEDeviceDefinitionFile, resolveEffectiveTemplateParameterDefinitions, switchingDeviceUsesClosedStatus, templateDerivedComponentLibraryInfo, MODEL_TYPE_META } from "../model";
-import { atLeastOneNumber, clampNumber } from "../canvasViewport";
+import type { ChangeEvent, CSSProperties, MouseEvent, PointerEvent } from "react";
+import { deviceDefinitionComplianceKey } from "./appDeviceDefinitionEInterface";
+import {
+  E_SECTION_COLUMNS,
+  getTemplateParameterDefinitions,
+  inferESection,
+  resolveEffectiveTemplateParameterDefinitions,
+  templateDerivedComponentLibraryInfo,
+  type DeviceParameterDefinition,
+  type DeviceStateDefinition,
+  type DeviceTemplate,
+  type DeviceTemplateDefinitionOverride,
+  type ModelNode,
+  type Point,
+} from "../model";
+import { clampNumber } from "../canvasViewport";
 import { normalizeImageFitMode } from "../imageFit";
 import { apiPath } from "../config";
 import { promptText } from "../globalDialogs";
-import { backendExportSchemePath } from "../backendExportPath";
-import { backendErrorMessage } from "./appCoreCanvasUtilities";
-// 别名导入：作用域里同名的 safeFilePart 会遮蔽模块级绑定，fallback 分支需要它
-import { safeFilePart as sharedSafeFilePart } from "./appInlineUtilityFunctions";
-import { decodeGbk } from "../encoding/gbk";
-import { E_DEVICE_TEMPLATE_ALLOWED_MODEL_TYPES } from "../eDeviceTemplateTypePolicy";
+import {
+  type CategoryLibrary,
+  type CustomDeviceDialogView,
+  type CustomDeviceDraft,
+  type CustomParamDraft,
+  type DeviceDefinitionDraftRow,
+  type DeviceLibraryDialogKind,
+  type ImageAsset,
+} from "./appCoreCanvasUtilities";
 import {
   createEditableStateIconElementsFromSvgSource as defaultCreateEditableStateIconElementsFromSvgSource,
   customParamId,
-  stateIconDrawingFrameRect,
   stateIconDrawingToPersistedImage as defaultStateIconDrawingToPersistedImage,
-  stateIconSvgVisibleViewBox,
-  svgSourceToDataUrl as defaultSvgSourceToDataUrl
+  svgSourceToDataUrl as defaultSvgSourceToDataUrl,
+  type DeviceDefinitionStateDraftRow,
 } from "../stateIconDrawing";
 import { buildMeasurementProfilePositionDefinitions, materializeNewMeasurementDefinitionFields } from "../measurements";
 import { measurementProfileItemsComplianceMessage } from "./appGraphMeasurementFactories";
@@ -33,28 +47,31 @@ import {
   defaultTerminalAssociationForClassTerminal,
   defaultTerminalTypeForCategoryLibrary,
   resolveComponentLibraryClassFamilyMetadata,
-  resolveComponentLibraryClassMetadata
+  resolveComponentLibraryClassMetadata,
 } from "../componentLibraryMetadata";
 import {
   deviceDefinitionSharedKeyForTemplate,
   deviceTemplatesShareParameterDefinitions,
   removeDeviceTemplateDefinitionOverrides,
-  normalizeSharedDeviceDefinitionOverrides
+  normalizeSharedDeviceDefinitionOverrides,
 } from "../customDeviceUtils";
 import {
   buildComponentLibraryDefaultParameterDefinitions,
   componentLibraryDefinitionOverrideKey,
-  resolveEditableComponentLibraryDefinition
+  resolveEditableComponentLibraryDefinition,
 } from "../componentLibraryDefinitions";
-import type { SavedExportFile, TextFileEncoding } from "../fileIO";
-import { buildDeviceTemplateCopyVisualSvg as defaultBuildDeviceTemplateCopyVisualSvg, schemePathQueryParam } from "./appPersistenceLibraryExport";
-import { moveKeyToEdge, reorderKeys, sortByKeyOrder, writeLibraryTreeOrder } from "../libraryTreeOrder";
-// 直接 import 图标而**不改 appStaticScope 的 lucide 清单** —— 往 appStaticScope 加新图标会改变
-// 该模块的求值顺序，把 appStaticScope ↔ customDeviceUtils ↔ App 的既有循环导入点亮
-// （表现为 DEFAULT_CUSTOM_DEVICE_TERMINAL_ANCHORS is not defined，App 渲染中断）。
-import { GripVertical } from "lucide-react";
+import type { SavedExportFile } from "../fileIO";
+import { buildDeviceTemplateCopyVisualSvg as defaultBuildDeviceTemplateCopyVisualSvg } from "./appPersistenceLibraryExport";
 
+import { clearGeneratedDefinitionVisualDraftImage, createDefinitionStateDraftRowsWithDefaultImages, createTemplateDefaultStateIconImage, isGeneratedTemplateDefaultStateIconImage } from "./appStateIconDrawingFactories";
+import { showStandaloneExportCompletion } from "./appExportImportFactories";
 
+export * from "./appDeviceDefinitionEInterface";
+export * from "./appStateIconDrawingFactories";
+export * from "./appEdgeRouteInteractionFactories";
+export * from "./appExportImportFactories";
+export * from "./appImageLibraryFactories";
+export * from "./appProjectTreeFactories";
 
 function derivedDefinitionBaseParameterNameSet(
   template: DeviceTemplate,
@@ -357,10 +374,6 @@ export const deviceParameterDefinitionsComplianceMessage = (rows: readonly Devic
   });
   return messages.join("\n");
 };
-const STATE_ICON_DRAWING_FRAME_GUIDE_RATIOS = [1 / 4, 1 / 3, 1 / 2, 2 / 3, 3 / 4];
-const STATE_ICON_DRAWING_SMART_ALIGNMENT_TOLERANCE = 3;
-const STATE_ICON_DRAWING_SMART_ALIGNMENT_GUIDE_PADDING = 8;
-export const STATE_ICON_DRAWING_MIN_FONT_SIZE = 8;
 
 export function customDeviceDraftDirtyToken(draft: CustomDeviceDraft, anchors: readonly Point[] = []) {
   const terminalCount = Math.max(0, Math.round(draft.terminalCount || 0));
@@ -431,7 +444,7 @@ export function createSetCustomDeviceDraftCleanBaseline(__appScope: Record<strin
     const nextAnchors = anchors ?? createDefaultCustomDeviceTerminalAnchors(draft.terminalCount, draft.terminalAnchors);
     const baselineDraft = {
       ...draft,
-      terminalAnchors: nextAnchors.slice(0, Math.max(0, Math.round(draft.terminalCount || 0))).map((anchor) => ({
+      terminalAnchors: nextAnchors.slice(0, Math.max(0, Math.round(draft.terminalCount || 0))).map((anchor: any) => ({
         x: anchor.x,
         y: anchor.y
       }))
@@ -533,4658 +546,6 @@ export function createRevertCustomDeviceDraftAll(__appScope: Record<string, any>
   };
 }
 
-const STATE_ICON_EDITABLE_STATIC_KIND_BY_TEMPLATE_KIND: Record<string, StateVisualShapeKind> = {
-  "static-text": "text",
-  "static-line": "line",
-  "static-straight-connector": "line",
-  "static-arrow-connector": "line",
-  "static-double-arrow-connector": "line",
-  "static-polyline": "polyline",
-  "static-elbow-connector": "polyline",
-  "static-circle": "circle",
-  "static-ellipse": "ellipse",
-  "static-rect": "rectangle",
-  "static-point": "point",
-  "static-ring": "point",
-  "static-hexagon": "hexagon",
-  "static-triangle": "triangle"
-};
-
-function stateIconBaseStaticTemplateKind(kind: string) {
-  return String(kind ?? "").replace(/-vertical$/, "");
-}
-
-export function stateIconStaticTemplateParam(template: any, key: string, fallback = "") {
-  return String(template?.params?.[key] ?? fallback ?? "").trim();
-}
-
-function stateIconStaticTemplateNumberParam(template: any, key: string, fallback: number) {
-  const parsed = Number.parseFloat(stateIconStaticTemplateParam(template, key));
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-function stateIconStaticTemplateStrokeStyle(template: any): "solid" | "dashed" | "dotted" {
-  const value = stateIconStaticTemplateParam(template, "strokeStyle", "solid");
-  return value === "dashed" || value === "dotted" ? value : "solid";
-}
-
-function stateIconLineCapFromStaticMarker(value: string | undefined | null) {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  if (normalized === "arrow") {
-    return "arrow";
-  }
-  if (normalized === "dot" || normalized === "circle") {
-    return "circle";
-  }
-  if (normalized === "triangle") {
-    return "triangle";
-  }
-  if (normalized === "square" || normalized === "rect" || normalized === "rectangle") {
-    return "square";
-  }
-  return "none";
-}
-
-export function createStateIconDrawingElementFromStaticTemplate(__appScope: Record<string, any>, template: any, row?: any) {
-  const {
-    createImportedStateIconElement,
-    createStateIconDrawingElement,
-    svgSourceFromDataUrl
-  } = __appScope;
-  const renderTemplateDefaultStateIconImage = typeof __appScope.createTemplateDefaultStateIconImage === "function"
-    ? __appScope.createTemplateDefaultStateIconImage
-    : createTemplateDefaultStateIconImage;
-  const baseKind = stateIconBaseStaticTemplateKind(template?.kind);
-  const editableKind = STATE_ICON_EDITABLE_STATIC_KIND_BY_TEMPLATE_KIND[baseKind];
-  const size = template?.size ?? {};
-  const templateWidth = atLeastOneNumber(size.width, 96);
-  const templateHeight = atLeastOneNumber(size.height, 64);
-  if (editableKind) {
-    const base = createStateIconDrawingElement(editableKind, row);
-    const text = stateIconStaticTemplateParam(template, "text", template?.label ?? base.text);
-    const fillColor = stateIconStaticTemplateParam(template, "fillColor", base.fillColor);
-    const strokeColor = stateIconStaticTemplateParam(template, "strokeColor", base.strokeColor);
-    const textColor = stateIconStaticTemplateParam(template, "textColor", base.textColor);
-    const element = {
-      ...base,
-      width: templateWidth,
-      height: templateHeight,
-      strokeWidth: Math.max(0, stateIconStaticTemplateNumberParam(template, "lineWidth", base.strokeWidth)),
-      strokeColor: strokeColor || base.strokeColor,
-      fillColor: fillColor || base.fillColor,
-      textColor: textColor || base.textColor,
-      text: text || template?.label || base.text,
-      strokeStyle: stateIconStaticTemplateStrokeStyle(template),
-      fontFamily: stateIconStaticTemplateParam(template, "fontFamily", base.fontFamily ?? "Arial, Microsoft YaHei"),
-      fontSize: Math.max(1, stateIconStaticTemplateNumberParam(template, "fontSize", base.fontSize ?? 16)),
-      fontWeight: stateIconStaticTemplateParam(template, "fontWeight", base.fontWeight ?? "400"),
-      fontStyle: stateIconStaticTemplateParam(template, "fontStyle", base.fontStyle ?? "normal"),
-      startCap: stateIconLineCapFromStaticMarker(stateIconStaticTemplateParam(template, "markerStart", base.startCap ?? "none")),
-      endCap: stateIconLineCapFromStaticMarker(stateIconStaticTemplateParam(template, "markerEnd", base.endCap ?? "none"))
-    };
-    if (baseKind === "static-ring") {
-      return {
-        ...element,
-        fillColor: "transparent",
-        strokeWidth: Math.max(1, element.strokeWidth)
-      };
-    }
-    return element;
-  }
-  const renderedImage = renderTemplateDefaultStateIconImage(__appScope, template, {
-    size: { width: templateWidth, height: templateHeight },
-    label: template?.label ?? ""
-  });
-  const svgSource = svgSourceFromDataUrl(renderedImage);
-  return {
-    ...createImportedStateIconElement(svgSource ? "imported-svg" : "image", svgSource || renderedImage, template?.label ?? template?.kind ?? "静态图元"),
-    width: templateWidth,
-    height: templateHeight,
-    text: template?.label ?? template?.kind ?? "静态图元"
-  };
-}
-
-function cloneStateIconDrawingElementSnapshot(element: any) {
-  return {
-    ...element,
-    ...(Array.isArray(element?.points)
-      ? { points: element.points.map((point: Point) => ({ ...point })) }
-      : {})
-  };
-}
-
-/**
- * 状态图标绘制弹窗的分组 token。
- *
- * 随机后缀的去向（追踪结论）：**只活在弹窗内存里，不进任何输出**，故保留 Math.random 不注入。
- * 它被写进 dialog elements 的 groupId，消费方只有弹窗内部的三类行为 ——
- * `expandStateIconDrawingElementIds` 的整组选中、`ungroupStateIconDrawingSelection` 的解组、
- * `cloneStateIconDrawingElements` 粘贴时的旧→新 groupId 重映射；
- * 渲染侧（appDeviceDefinitionRenderers）只用它做相等性判断与双击整组拖拽，
- * React key 用的是 element.id，groupId 从不进 DOM 属性或文本。
- *
- * 提交路径会把它丢掉：createApplyStateIconDrawingDialog 走 stateIconDrawingToImage 把 elements
- * 栅格化成 data URL，而 stateIconDrawing.tsx 全文没有一处 groupId（只读几何/样式），
- * 落盘的 stateIconDrawingInlineCanPersistDraft 也只比较那串图片。
- * ⇒ 不进节点 params、不进保存方案、不进 SVG/E 导出。
- */
-export function stateIconDrawingGroupId() {
-  return `state-icon-group-${Math.random().toString(36).slice(2, 9)}`;
-}
-
-export function expandStateIconDrawingElementIds(elements: readonly any[] = [], elementIds: readonly string[] = []) {
-  const selectedSet = new Set(elementIds.filter(Boolean));
-  if (selectedSet.size === 0) {
-    return [];
-  }
-  if (elements.length === 0) {
-    return Array.from(selectedSet);
-  }
-  const selectedGroupIds = new Set(
-    elements
-      .filter((element) => selectedSet.has(element.id) && String(element.groupId ?? "").trim())
-      .map((element) => String(element.groupId).trim())
-  );
-  return elements
-    .filter((element) => selectedSet.has(element.id) || selectedGroupIds.has(String(element.groupId ?? "").trim()))
-    .map((element) => element.id);
-}
-
-export function stateIconDrawingSelectedIds(dialog: any) {
-  const selectedIds = dialog?.selectedElementIds?.length > 0
-    ? dialog.selectedElementIds
-    : [dialog?.selectedElementId].filter(Boolean);
-  return expandStateIconDrawingElementIds(dialog?.elements ?? [], selectedIds);
-}
-
-export function toggleStateIconDrawingElementSelection(
-  elements: readonly any[],
-  currentIds: readonly string[],
-  elementId: string,
-  append: boolean
-) {
-  const currentSelection = expandStateIconDrawingElementIds(elements, currentIds);
-  const targetSelection = expandStateIconDrawingElementIds(elements, [elementId]);
-  if (!append) {
-    return targetSelection;
-  }
-  const currentSet = new Set(currentSelection);
-  const targetIsSelected = targetSelection.every((id) => currentSet.has(id));
-  if (targetIsSelected) {
-    const targetSet = new Set(targetSelection);
-    return currentSelection.filter((id) => !targetSet.has(id));
-  }
-  return Array.from(new Set([...currentSelection, ...targetSelection]));
-}
-
-export function groupStateIconDrawingSelection(current: any, historyRef: any, createGroupId = stateIconDrawingGroupId) {
-  if (!current) {
-    return current;
-  }
-  const selectedIds = stateIconDrawingSelectedIds(current);
-  if (selectedIds.length < 2) {
-    return current;
-  }
-  const selectedSet = new Set(selectedIds);
-  const groupId = createGroupId();
-  pushStateIconDrawingHistorySnapshot(historyRef, current.elements);
-  return {
-    ...current,
-    elements: current.elements.map((element) => selectedSet.has(element.id) ? { ...element, groupId } : element),
-    selectedElementId: selectedIds[selectedIds.length - 1] ?? "",
-    selectedElementIds: selectedIds
-  };
-}
-
-export function ungroupStateIconDrawingSelection(current: any, historyRef: any) {
-  if (!current) {
-    return current;
-  }
-  const selectedIds = stateIconDrawingSelectedIds(current);
-  const selectedSet = new Set(selectedIds);
-  if (!current.elements.some((element) => selectedSet.has(element.id) && String(element.groupId ?? "").trim())) {
-    return current;
-  }
-  pushStateIconDrawingHistorySnapshot(historyRef, current.elements);
-  return {
-    ...current,
-    elements: current.elements.map((element) => {
-      if (!selectedSet.has(element.id) || !element.groupId) {
-        return element;
-      }
-      const { groupId: _groupId, ...ungroupedElement } = element;
-      return ungroupedElement;
-    }),
-    selectedElementId: selectedIds[selectedIds.length - 1] ?? "",
-    selectedElementIds: selectedIds
-  };
-}
-
-export function pushStateIconDrawingHistorySnapshot(historyRef: any, elements: any[]) {
-  if (!historyRef) {
-    return;
-  }
-  const snapshot = elements.map(cloneStateIconDrawingElementSnapshot);
-  historyRef.current = [...(historyRef.current ?? []), snapshot].slice(-80);
-}
-
-export function cloneStateIconDrawingElements(
-  elements: any[],
-  createId: () => string,
-  offset = { x: 12, y: 12 },
-  createGroupId = stateIconDrawingGroupId
-) {
-  const pastedGroupIds = new Map<string, string>();
-  return elements.map((element) => {
-    const sourceGroupId = String(element.groupId ?? "").trim();
-    if (sourceGroupId && !pastedGroupIds.has(sourceGroupId)) {
-      pastedGroupIds.set(sourceGroupId, createGroupId());
-    }
-    return {
-      ...cloneStateIconDrawingElementSnapshot(element),
-      id: createId(),
-      x: element.x + offset.x,
-      y: element.y + offset.y,
-      ...(sourceGroupId ? { groupId: pastedGroupIds.get(sourceGroupId) } : {})
-    };
-  });
-}
-
-export function normalizeStateIconDrawingFontSize(value: unknown, fallback: unknown = STATE_ICON_DRAWING_MIN_FONT_SIZE) {
-  const fallbackNumber = Number(fallback);
-  const fallbackSize = Number.isFinite(fallbackNumber)
-    ? Math.max(STATE_ICON_DRAWING_MIN_FONT_SIZE, Math.floor(fallbackNumber))
-    : STATE_ICON_DRAWING_MIN_FONT_SIZE;
-  if (typeof value === "string" && value.trim() === "") {
-    return fallbackSize;
-  }
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) {
-    return fallbackSize;
-  }
-  return Math.max(STATE_ICON_DRAWING_MIN_FONT_SIZE, Math.floor(parsed));
-}
-
-export function formatStateIconDrawingNumber(value: unknown, fallback = 0) {
-  const parsed = Number(value);
-  const fallbackNumber = Number(fallback);
-  const safeFallback = Number.isFinite(fallbackNumber) ? fallbackNumber : 0;
-  return (Number.isFinite(parsed) ? parsed : safeFallback).toFixed(2);
-}
-
-export function normalizeStateIconDrawingStrokeWidth(value: unknown, fallback = 0) {
-  const parsed = Number(value);
-  const fallbackNumber = Number(fallback);
-  const safeFallback = Number.isFinite(fallbackNumber) ? fallbackNumber : 0;
-  if (!Number.isFinite(parsed)) {
-    return Math.max(0, Math.round(safeFallback));
-  }
-  return Math.max(0, Math.round(parsed));
-}
-
-export function cutStateIconDrawingSelection(current: any, clipboardRef: any, historyRef: any) {
-  if (!current) {
-    return current;
-  }
-  const selectedIds = stateIconDrawingSelectedIds(current);
-  if (selectedIds.length === 0) {
-    return current;
-  }
-  const selectedSet = new Set(selectedIds);
-  clipboardRef.current = current.elements.filter((element) => selectedSet.has(element.id)).map(cloneStateIconDrawingElementSnapshot);
-  pushStateIconDrawingHistorySnapshot(historyRef, current.elements);
-  return {
-    ...current,
-    elements: current.elements.filter((element) => !selectedSet.has(element.id)),
-    selectedElementId: "",
-    selectedElementIds: []
-  };
-}
-
-export function stateIconDrawingElementBounds(element: any) {
-  const width = atLeastOneNumber(element.width, 1);
-  const height = atLeastOneNumber(element.height, 1);
-  return {
-    left: element.x - width / 2,
-    right: element.x + width / 2,
-    top: element.y - height / 2,
-    bottom: element.y + height / 2,
-    centerX: element.x,
-    centerY: element.y,
-    width,
-    height
-  };
-}
-
-export function stateIconDrawingSelectionBounds(elements: any[]) {
-  if (elements.length === 0) {
-    return null;
-  }
-  const bounds = elements.map(stateIconDrawingElementBounds);
-  const left = Math.min(...bounds.map((item) => item.left));
-  const right = Math.max(...bounds.map((item) => item.right));
-  const top = Math.min(...bounds.map((item) => item.top));
-  const bottom = Math.max(...bounds.map((item) => item.bottom));
-  return {
-    left,
-    right,
-    top,
-    bottom,
-    centerX: (left + right) / 2,
-    centerY: (top + bottom) / 2
-  };
-}
-
-function stateIconDrawingMovementVisibleFrame(element: any, visibleFrames: any) {
-  const width = atLeastOneNumber(element.width, 1);
-  const height = atLeastOneNumber(element.height, 1);
-  let frame: any = null;
-  if (element?.kind === "image") {
-    const key = `${element.id}:${element.imageHref ?? ""}:${element.imageFit ?? "cover"}:${element.imageScale ?? 1}:${element.cropX ?? 0}:${element.cropY ?? 0}`;
-    frame = visibleFrames?.image?.[key] ?? null;
-  } else if (element?.kind === "imported-svg") {
-    const key = `${element.id}:${element.svgSource ?? ""}:${element.strokeWidth}:${element.strokeColor ?? ""}:${element.strokeStyle ?? ""}`;
-    frame = visibleFrames?.svg?.[key] ?? stateIconDrawingImportedSvgSelectionFrame(element);
-  }
-  // frame 与宽高同源（visibleFrames 缓存或 stateIconDrawingImportedSvgSelectionFrame），
-  // x / y 缺失或非数值时，下面的角点会算出 NaN，Math.min/max 出来的边界盒整条都是 NaN，
-  // 于是拖拽收敛成 NaN 位移。判定沿用本文件校验 viewBox 坐标四元组的同一写法
-  // （`[...].every(Number.isFinite)`，见 stateIconDrawingImportedSvgSelectionFrame）：
-  // 坐标只要求有限、不要求 > 0（合法的负坐标会被 `> 0` 误杀），失败时回退值与非法宽高完全一致。
-  if (
-    !frame ||
-    !(Number(frame.width) > 0) ||
-    !(Number(frame.height) > 0) ||
-    ![frame.x, frame.y].every(Number.isFinite)
-  ) {
-    return { x: -width / 2, y: -height / 2, width, height };
-  }
-  const basisWidth = atLeastOneNumber(frame.basisWidth, width);
-  const basisHeight = atLeastOneNumber(frame.basisHeight, height);
-  const scaleX = width / basisWidth;
-  const scaleY = height / basisHeight;
-  return {
-    x: Number(frame.x) * scaleX,
-    y: Number(frame.y) * scaleY,
-    width: Number(frame.width) * scaleX,
-    height: Number(frame.height) * scaleY
-  };
-}
-
-function stateIconDrawingMovementElementBounds(element: any, visibleFrames: any) {
-  const frame = stateIconDrawingMovementVisibleFrame(element, visibleFrames);
-  const rotation = (Number(element.rotation) || 0) * Math.PI / 180;
-  const cos = Math.cos(rotation);
-  const sin = Math.sin(rotation);
-  const corners = [
-    { x: frame.x, y: frame.y },
-    { x: frame.x + frame.width, y: frame.y },
-    { x: frame.x, y: frame.y + frame.height },
-    { x: frame.x + frame.width, y: frame.y + frame.height }
-  ].map((point) => ({
-    x: element.x + point.x * cos - point.y * sin,
-    y: element.y + point.x * sin + point.y * cos
-  }));
-  return {
-    left: Math.min(...corners.map((point) => point.x)),
-    right: Math.max(...corners.map((point) => point.x)),
-    top: Math.min(...corners.map((point) => point.y)),
-    bottom: Math.max(...corners.map((point) => point.y))
-  };
-}
-
-export function clampStateIconDrawingMovementDelta(elements: any[], delta: Point, frameRect: any, visibleFrames: any = {}) {
-  if (elements.length === 0) {
-    return { x: 0, y: 0 };
-  }
-  const elementBounds = elements.map((element) => stateIconDrawingMovementElementBounds(element, visibleFrames));
-  const selectionBounds = {
-    left: Math.min(...elementBounds.map((bounds) => bounds.left)),
-    right: Math.max(...elementBounds.map((bounds) => bounds.right)),
-    top: Math.min(...elementBounds.map((bounds) => bounds.top)),
-    bottom: Math.max(...elementBounds.map((bounds) => bounds.bottom))
-  };
-  const frameLeft = Number(frameRect?.x) || 0;
-  const frameTop = Number(frameRect?.y) || 0;
-  const frameRight = frameLeft + Math.max(0, Number(frameRect?.width) || 0);
-  const frameBottom = frameTop + Math.max(0, Number(frameRect?.height) || 0);
-  const clampAxis = (value: number, start: number, end: number, minimum: number, maximum: number) => {
-    const minimumDelta = minimum - start;
-    const maximumDelta = maximum - end;
-    return minimumDelta <= maximumDelta
-      ? clampNumber(value, minimumDelta, maximumDelta)
-      : 0;
-  };
-  return {
-    x: clampAxis(delta.x, selectionBounds.left, selectionBounds.right, frameLeft, frameRight),
-    y: clampAxis(delta.y, selectionBounds.top, selectionBounds.bottom, frameTop, frameBottom)
-  };
-}
-
-export function stateIconDrawingMovementFrameForDialog(__appScope: Record<string, any>, current: any) {
-  const definitionScope = current?.target?.scope === "definition";
-  const draft = definitionScope ? __appScope.definitionVisualDraft : __appScope.customDeviceDraft;
-  const terminalTypes = definitionScope ? __appScope.definitionVisualTerminalTypes : __appScope.customDraftTerminalTypes;
-  const terminalCount = Math.max(
-    0,
-    Number(draft?.terminalCount) || (Array.isArray(terminalTypes) ? terminalTypes.length : 0) || 0
-  );
-  return stateIconDrawingFrameRect(Boolean(current?.target?.scope && terminalCount > 0));
-}
-
-export function stateIconDrawingMovementVisibleFrames(__appScope: Record<string, any>) {
-  return {
-    image: __appScope.stateIconDrawingImageVisibleFrames ?? {},
-    svg: __appScope.stateIconDrawingSvgVisibleFrames ?? {}
-  };
-}
-
-export function stateIconDrawingRectFromPoints(start: Point, current: Point) {
-  return {
-    left: Math.min(start.x, current.x),
-    right: Math.max(start.x, current.x),
-    top: Math.min(start.y, current.y),
-    bottom: Math.max(start.y, current.y)
-  };
-}
-
-function stateIconDrawingBoundsIntersectRect(bounds: any, rect: any) {
-  return bounds.right >= rect.left && bounds.left <= rect.right && bounds.bottom >= rect.top && bounds.top <= rect.bottom;
-}
-
-export function stateIconDrawingElementIdsInRect(elements: any[], rect: { left: number; right: number; top: number; bottom: number }) {
-  return elements
-    .filter((element) => stateIconDrawingBoundsIntersectRect(stateIconDrawingElementBounds(element), rect))
-    .map((element) => element.id);
-}
-
-function stateIconDrawingBoundsAnchors(bounds: any, axis: "x" | "y") {
-  return axis === "x"
-    ? [
-        { key: "start", value: bounds.left, priority: 1 },
-        { key: "center", value: bounds.centerX, priority: 0 },
-        { key: "end", value: bounds.right, priority: 1 }
-      ]
-    : [
-        { key: "start", value: bounds.top, priority: 1 },
-        { key: "center", value: bounds.centerY, priority: 0 },
-        { key: "end", value: bounds.bottom, priority: 1 }
-      ];
-}
-
-function translatedStateIconDrawingBounds(bounds: any, delta: Point) {
-  return {
-    ...bounds,
-    left: bounds.left + delta.x,
-    right: bounds.right + delta.x,
-    top: bounds.top + delta.y,
-    bottom: bounds.bottom + delta.y,
-    centerX: bounds.centerX + delta.x,
-    centerY: bounds.centerY + delta.y
-  };
-}
-
-function bestStateIconDrawingAlignmentSnap(axis: "x" | "y", movedBounds: any, candidates: any[], threshold: number) {
-  let best: any = null;
-  const movedAnchors = stateIconDrawingBoundsAnchors(movedBounds, axis);
-  for (const candidate of candidates) {
-    const candidateAnchors = candidate.anchors
-      ? (candidate.anchors[axis] ?? [])
-      : stateIconDrawingBoundsAnchors(candidate.bounds, axis);
-    for (const movedAnchor of movedAnchors) {
-      for (const candidateAnchor of candidateAnchors) {
-        const adjustment = candidateAnchor.value - movedAnchor.value;
-        const distance = Math.abs(adjustment);
-        const priority = movedAnchor.priority + candidateAnchor.priority;
-        if (distance > threshold) {
-          continue;
-        }
-        if (best && (distance > best.distance || (distance === best.distance && priority >= best.priority))) {
-          continue;
-        }
-        const guide = axis === "x"
-          ? {
-              id: `state-icon-vertical:${candidate.id}:${candidateAnchor.key}:${movedAnchor.key}`,
-              orientation: "vertical",
-              position: candidateAnchor.value,
-              start: Math.min(movedBounds.top, candidate.bounds.top) - STATE_ICON_DRAWING_SMART_ALIGNMENT_GUIDE_PADDING,
-              end: Math.max(movedBounds.bottom, candidate.bounds.bottom) + STATE_ICON_DRAWING_SMART_ALIGNMENT_GUIDE_PADDING
-            }
-          : {
-              id: `state-icon-horizontal:${candidate.id}:${candidateAnchor.key}:${movedAnchor.key}`,
-              orientation: "horizontal",
-              position: candidateAnchor.value,
-              start: Math.min(movedBounds.left, candidate.bounds.left) - STATE_ICON_DRAWING_SMART_ALIGNMENT_GUIDE_PADDING,
-              end: Math.max(movedBounds.right, candidate.bounds.right) + STATE_ICON_DRAWING_SMART_ALIGNMENT_GUIDE_PADDING
-            };
-        best = { adjustment, distance, priority, guide };
-      }
-    }
-  }
-  return best;
-}
-
-function stateIconDrawingFrameAlignmentCandidates() {
-  const terminalFrame = stateIconDrawingTerminalFrame();
-  const xGuides = Array.from(new Set([
-    0,
-    terminalFrame.centerX - terminalFrame.width / 2,
-    ...STATE_ICON_DRAWING_FRAME_GUIDE_RATIOS.map((ratio) => STATE_ICON_DRAWING_FRAME_WIDTH * ratio),
-    terminalFrame.centerX + terminalFrame.width / 2,
-    STATE_ICON_DRAWING_FRAME_WIDTH
-  ]));
-  const yGuides = Array.from(new Set([
-    0,
-    terminalFrame.centerY - terminalFrame.height / 2,
-    ...STATE_ICON_DRAWING_FRAME_GUIDE_RATIOS.map((ratio) => STATE_ICON_DRAWING_FRAME_HEIGHT * ratio),
-    terminalFrame.centerY + terminalFrame.height / 2,
-    STATE_ICON_DRAWING_FRAME_HEIGHT
-  ]));
-  const verticalCandidates = xGuides.map((x) => {
-    return {
-      id: `frame-x-${x}`,
-      bounds: {
-        left: x,
-        right: x,
-        top: 0,
-        bottom: STATE_ICON_DRAWING_FRAME_HEIGHT,
-        centerX: x,
-        centerY: STATE_ICON_DRAWING_FRAME_HEIGHT / 2
-      },
-      anchors: {
-        x: [{ key: `frame-${x}`, value: x, priority: 2 }],
-        y: []
-      }
-    };
-  });
-  const horizontalCandidates = yGuides.map((y) => {
-    return {
-      id: `frame-y-${y}`,
-      bounds: {
-        left: 0,
-        right: STATE_ICON_DRAWING_FRAME_WIDTH,
-        top: y,
-        bottom: y,
-        centerX: STATE_ICON_DRAWING_FRAME_WIDTH / 2,
-        centerY: y
-      },
-      anchors: {
-        x: [],
-        y: [{ key: `frame-${y}`, value: y, priority: 2 }]
-      }
-    };
-  });
-  return [...verticalCandidates, ...horizontalCandidates];
-}
-
-function stateIconDrawingPointAlignmentCandidate(id: string, x: number, y: number, priority: number) {
-  return {
-    id,
-    bounds: {
-      left: x,
-      right: x,
-      top: y,
-      bottom: y,
-      centerX: x,
-      centerY: y
-    },
-    anchors: {
-      x: [{ key: id, value: x, priority }],
-      y: [{ key: id, value: y, priority }]
-    }
-  };
-}
-
-function stateIconDrawingTerminalFrame() {
-  return {
-    width: STATE_ICON_DRAWING_FRAME_WIDTH * 3 / 4,
-    height: STATE_ICON_DRAWING_FRAME_HEIGHT * 3 / 4,
-    centerX: STATE_ICON_DRAWING_FRAME_WIDTH / 2,
-    centerY: STATE_ICON_DRAWING_FRAME_HEIGHT / 2,
-    marginX: STATE_ICON_DRAWING_FRAME_WIDTH / 8,
-    marginY: STATE_ICON_DRAWING_FRAME_HEIGHT / 8
-  };
-}
-
-function stateIconDrawingTerminalConnectorSegment(anchor: Point, projectAnchor: (anchor: Point) => Point = (value) => value) {
-  const frame = stateIconDrawingTerminalFrame();
-  const boundaryAnchor = projectAnchor(anchor);
-  const framePoint = {
-    x: frame.centerX + boundaryAnchor.x * frame.width,
-    y: frame.centerY + boundaryAnchor.y * frame.height
-  };
-  const horizontal = Math.abs(boundaryAnchor.x) >= Math.abs(boundaryAnchor.y);
-  const bodyReachX = frame.marginX * 2.6;
-  const bodyReachY = frame.marginY * 2.6;
-  return {
-    from: horizontal
-      ? { x: framePoint.x - Math.sign(boundaryAnchor.x || 1) * bodyReachX, y: framePoint.y }
-      : { x: framePoint.x, y: framePoint.y - Math.sign(boundaryAnchor.y || 1) * bodyReachY },
-    to: horizontal
-      ? { x: framePoint.x + (boundaryAnchor.x < 0 ? -frame.marginX : frame.marginX), y: framePoint.y }
-      : { x: framePoint.x, y: framePoint.y + (boundaryAnchor.y < 0 ? -frame.marginY : frame.marginY) }
-  };
-}
-
-function stateIconDrawingTerminalAlignmentCandidates(__appScope: Record<string, any>, options: { excludeTerminalIndex?: number } = {}) {
-  const {
-    customDeviceDraft,
-    customDeviceTerminalAnchors,
-    customDraftTerminalTypes,
-    definitionVisualDraft,
-    definitionVisualTerminalAnchors,
-    definitionVisualTerminalTypes,
-    projectCustomDeviceTerminalAnchorToBoundary,
-    stateIconDrawingDialog
-  } = __appScope;
-  const scope = stateIconDrawingDialog?.target?.scope;
-  const draft = scope === "definition" ? definitionVisualDraft : scope === "custom" ? customDeviceDraft : null;
-  const terminalTypes = scope === "definition" ? definitionVisualTerminalTypes : customDraftTerminalTypes;
-  const terminalAnchors = scope === "definition" ? definitionVisualTerminalAnchors : customDeviceTerminalAnchors;
-  const terminalCount = Math.max(
-    0,
-    Number(draft?.terminalCount) || (Array.isArray(terminalTypes) ? terminalTypes.length : 0) || 0
-  );
-  if (!terminalCount || !Array.isArray(terminalAnchors)) {
-    return [];
-  }
-  const projectAnchor = typeof projectCustomDeviceTerminalAnchorToBoundary === "function"
-    ? projectCustomDeviceTerminalAnchorToBoundary
-    : (anchor: Point) => anchor;
-  return terminalAnchors.slice(0, terminalCount).flatMap((anchor, index) => {
-    if (index === options.excludeTerminalIndex) {
-      return [];
-    }
-    const segment = stateIconDrawingTerminalConnectorSegment(anchor, projectAnchor);
-    return [
-      stateIconDrawingPointAlignmentCandidate(`terminal-anchor-${index}`, segment.to.x, segment.to.y, -3),
-      stateIconDrawingPointAlignmentCandidate(`terminal-inner-${index}`, segment.from.x, segment.from.y, -2)
-    ];
-  });
-}
-
-function stateIconDrawingElementAlignmentCandidates(elements: readonly StateIconDrawingElement[] = [], selectedIds: readonly string[] = []) {
-  const selectedSet = new Set(selectedIds);
-  return elements
-    .filter((element) => !selectedSet.has(element.id))
-    .map((element) => ({ id: element.id, bounds: stateIconDrawingElementBounds(element) }));
-}
-
-function stateIconDrawingPointBounds(point: Point) {
-  return {
-    left: point.x,
-    right: point.x,
-    top: point.y,
-    bottom: point.y,
-    centerX: point.x,
-    centerY: point.y
-  };
-}
-
-export function stateIconDrawingTerminalPointSnap(
-  __appScope: Record<string, any>,
-  point: Point,
-  options: { excludeTerminalIndex?: number; selectedIds?: readonly string[] } = {}
-) {
-  if (!__appScope.smartAlignmentEnabled) {
-    return { point, guides: [] };
-  }
-  const candidates = [
-    ...stateIconDrawingTerminalAlignmentCandidates(__appScope, options),
-    ...stateIconDrawingElementAlignmentCandidates(__appScope.stateIconDrawingDialog?.elements ?? [], options.selectedIds ?? []),
-    ...stateIconDrawingFrameAlignmentCandidates()
-  ];
-  if (candidates.length === 0) {
-    return { point, guides: [] };
-  }
-  const pointBounds = stateIconDrawingPointBounds(point);
-  const xSnap = bestStateIconDrawingAlignmentSnap("x", pointBounds, candidates, STATE_ICON_DRAWING_SMART_ALIGNMENT_TOLERANCE);
-  const ySnap = bestStateIconDrawingAlignmentSnap("y", pointBounds, candidates, STATE_ICON_DRAWING_SMART_ALIGNMENT_TOLERANCE);
-  return {
-    point: {
-      x: point.x + (xSnap?.adjustment ?? 0),
-      y: point.y + (ySnap?.adjustment ?? 0)
-    },
-    guides: [xSnap?.guide, ySnap?.guide].filter(Boolean)
-  };
-}
-
-export function createComputeStateIconDrawingSmartAlignmentSnap(__appScope: Record<string, any>) {
-  return ({
-    elements,
-    selectedIds,
-    startElements,
-    delta,
-    threshold = STATE_ICON_DRAWING_SMART_ALIGNMENT_TOLERANCE
-  }: {
-    elements: StateIconDrawingElement[];
-    selectedIds: readonly string[];
-    startElements: StateIconDrawingElement[];
-    delta: Point;
-    threshold?: number;
-  }) => {
-  const { smartAlignmentEnabled } = __appScope;
-    if (!smartAlignmentEnabled || selectedIds.length === 0 || startElements.length === 0) {
-      return { delta, guides: [] };
-    }
-    const startBounds = stateIconDrawingSelectionBounds(startElements);
-    if (!startBounds) {
-      return { delta, guides: [] };
-    }
-    const candidates = [
-      ...stateIconDrawingElementAlignmentCandidates(elements, selectedIds),
-      ...stateIconDrawingTerminalAlignmentCandidates(__appScope),
-      ...stateIconDrawingFrameAlignmentCandidates()
-    ];
-    if (candidates.length === 0) {
-      return { delta, guides: [] };
-    }
-    const movedBounds = translatedStateIconDrawingBounds(startBounds, delta);
-    const xSnap = bestStateIconDrawingAlignmentSnap("x", movedBounds, candidates, threshold);
-    const ySnap = bestStateIconDrawingAlignmentSnap("y", movedBounds, candidates, threshold);
-    const guides = [xSnap?.guide, ySnap?.guide].filter(Boolean);
-    return {
-      delta: {
-        x: delta.x + (xSnap?.adjustment ?? 0),
-        y: delta.y + (ySnap?.adjustment ?? 0)
-      },
-      guides
-    };
-  };
-}
-
-export function stateIconDrawingFrameDashArray(frame: any) {
-  const width = atLeastOneNumber(frame?.strokeWidth, 1);
-  if (frame?.strokeStyle === "dotted") {
-    return `${width * 0.2} ${width * 2}`;
-  }
-  if (frame?.strokeStyle === "dashed") {
-    return `${width * 5} ${width * 3}`;
-  }
-  return undefined;
-}
-
-export function clampStateIconDrawingPoint(point: Point) {
-  return {
-    x: clampNumber(point.x, 0, 240),
-    y: clampNumber(point.y, 0, 160)
-  };
-}
-
-function sameStateIconDrawingPoint(left: Point, right: Point) {
-  return Math.abs(left.x - right.x) < 0.01 && Math.abs(left.y - right.y) < 0.01;
-}
-
-export function appendDistinctStateIconDrawingPoint(points: readonly Point[], point: Point) {
-  const nextPoint = clampStateIconDrawingPoint(point);
-  const lastPoint = points[points.length - 1];
-  return lastPoint && sameStateIconDrawingPoint(lastPoint, nextPoint)
-    ? points.map(clampStateIconDrawingPoint)
-    : [...points.map(clampStateIconDrawingPoint), nextPoint];
-}
-
-export function stateIconDrawingPolylineElementFromPoints(element: any, points: readonly Point[]) {
-  const clampedPoints = points.map(clampStateIconDrawingPoint);
-  const drawPoints = clampedPoints.length >= 2
-    ? clampedPoints
-    : clampedPoints.length === 1
-      ? [clampedPoints[0], clampedPoints[0]]
-      : [{ x: 120, y: 80 }, { x: 120, y: 80 }];
-  const left = Math.min(...drawPoints.map((point) => point.x));
-  const right = Math.max(...drawPoints.map((point) => point.x));
-  const top = Math.min(...drawPoints.map((point) => point.y));
-  const bottom = Math.max(...drawPoints.map((point) => point.y));
-  const width = Math.max(1, right - left);
-  const height = Math.max(1, bottom - top);
-  const center = {
-    x: left + width / 2,
-    y: top + height / 2
-  };
-  return {
-    ...element,
-    x: center.x,
-    y: center.y,
-    width,
-    height,
-    rotation: 0,
-    points: drawPoints.map((point) => ({
-      x: (point.x - center.x) / width,
-      y: (point.y - center.y) / height
-    }))
-  };
-}
-
-export function stateIconDrawingElementFromPoints(element: any, startPoint: Point, currentPoint: Point) {
-  const start = clampStateIconDrawingPoint(startPoint);
-  const current = clampStateIconDrawingPoint(currentPoint);
-  const dx = current.x - start.x;
-  const dy = current.y - start.y;
-  const absWidth = Math.abs(dx);
-  const absHeight = Math.abs(dy);
-  const center = {
-    x: start.x + dx / 2,
-    y: start.y + dy / 2
-  };
-  if (element.kind === "line") {
-    const length = Math.max(1, Math.hypot(dx, dy));
-    return {
-      ...element,
-      x: center.x,
-      y: center.y,
-      width: length,
-      height: Math.max(12, element.height),
-      rotation: Math.atan2(dy, dx || 0.000001) * 180 / Math.PI
-    };
-  }
-  if (element.kind === "polyline") {
-    return stateIconDrawingPolylineElementFromPoints(element, [start, current]);
-  }
-  if (element.kind === "point") {
-    const size = Math.max(8, absWidth, absHeight);
-    return {
-      ...element,
-      x: center.x,
-      y: center.y,
-      width: size,
-      height: size
-    };
-  }
-  if (element.kind === "circle" || element.kind === "square" || element.kind === "semicircle") {
-    const size = Math.max(1, absWidth, absHeight);
-    const end = {
-      x: start.x + (dx < 0 ? -size : size),
-      y: start.y + (dy < 0 ? -size : size)
-    };
-    return {
-      ...element,
-      x: start.x + (end.x - start.x) / 2,
-      y: start.y + (end.y - start.y) / 2,
-      width: size,
-      height: size
-    };
-  }
-  const minimumWidth = element.kind === "text" ? 24 : 1;
-  const minimumHeight = element.kind === "text" ? 16 : 1;
-  return {
-    ...element,
-    x: center.x,
-    y: center.y,
-    width: Math.max(minimumWidth, absWidth),
-    height: Math.max(minimumHeight, absHeight)
-  };
-}
-
-export function finishStateIconDrawingDraft(current: any, historyRef: any) {
-  if (!current?.drawingDraft) {
-    return current;
-  }
-  const draft = current.drawingDraft;
-  let element = draft.element;
-  if (draft.kind === "polyline") {
-    const draftPoints = draft.points?.length ? draft.points : [draft.start];
-    const finalPoint = draft.current ?? draftPoints[draftPoints.length - 1] ?? draft.start;
-    const finalPoints = appendDistinctStateIconDrawingPoint(draftPoints, finalPoint);
-    if (finalPoints.length < 2) {
-      return current;
-    }
-    element = stateIconDrawingPolylineElementFromPoints(draft.element, finalPoints);
-  } else {
-    element = stateIconDrawingElementFromPoints(draft.element, draft.start, draft.current ?? draft.start);
-  }
-  pushStateIconDrawingHistorySnapshot(historyRef, current.elements);
-  return {
-    ...current,
-    elements: [...current.elements, element],
-    selectedElementId: element.id,
-    selectedElementIds: [element.id],
-    pendingElementKind: undefined,
-    pendingStaticTemplate: undefined,
-    drawingDraft: undefined,
-    smartAlignmentGuides: []
-  };
-}
-
-function createTemplateDefaultStateIconImage(__appScope: Record<string, any>, template: any, options: Record<string, any> = {}) {
-  if (!template) {
-    return "";
-  }
-  const { DeviceGlyph, MAX_CUSTOM_DEVICE_TERMINALS, createNodeFromTemplate, escapeXml, formatSvgNumber, nodeGeometryTransform, renderSvgElementMarkup, colorDisplayMode, colorPalette, themeMode } = __appScope;
-  if (!DeviceGlyph || !createNodeFromTemplate || !renderSvgElementMarkup) {
-    return "";
-  }
-  const width = Math.max(1, Math.round(options.size?.width ?? template.size?.width ?? 104));
-  const height = Math.max(1, Math.round(options.size?.height ?? template.size?.height ?? 64));
-  const terminalCount = clampNumber(Math.round(options.terminalCount ?? template.terminalCount ?? 0), 0, MAX_CUSTOM_DEVICE_TERMINALS ?? 64);
-  const sourceTerminalTypes = (
-    options.terminalTypes ??
-    template.terminalTypes ??
-    Array.from({ length: terminalCount }, () => template.terminalType ?? "ac")
-  ).slice(0, terminalCount);
-  const terminalTypes = sourceTerminalTypes.length > 0 ? sourceTerminalTypes : [template.terminalType ?? "ac"];
-  const explicitStatus = options.status !== undefined && options.status !== null && String(options.status) !== "";
-  const stateParamKey = switchingDeviceUsesClosedStatus(String(template.kind ?? ""), template.params ?? {})
-    ? "closed_status"
-    : "status";
-  const visualTemplate = {
-    ...template,
-    label: options.label || template.label,
-    size: { width, height },
-    params: {
-      ...template.params,
-      backgroundImage: "",
-      backgroundImageAssetId: ""
-    },
-    ...(explicitStatus
-      ? { params: { ...template.params, [stateParamKey]: String(options.status), backgroundImage: "", backgroundImageAssetId: "" } }
-      : {}),
-    terminalType: terminalTypes[0] ?? template.terminalType,
-    terminalCount,
-    terminalTypes,
-    terminalLabels: (options.terminalLabels ?? template.terminalLabels ?? []).slice(0, terminalCount),
-    terminalAnchors: (options.terminalAnchors ?? template.terminalAnchors ?? []).slice(0, terminalCount)
-  };
-  const node = createNodeFromTemplate(visualTemplate, { x: 0, y: 0 });
-  if (explicitStatus) {
-    node.params = { ...node.params, [stateParamKey]: String(options.status) };
-  }
-  const stateVisual = options.stateVisual
-    ? {
-        ...options.stateVisual,
-        image: "",
-        imageAssetId: "",
-        backgroundImage: "",
-        backgroundImageAssetId: "",
-        imageCleared: ""
-      }
-    : null;
-  const glyphMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "geometry", colorDisplayMode, colorPalette, themeMode, stateVisual }));
-  const glyphTextMarkup = renderSvgElementMarkup(DeviceGlyph({ node, mode: "text", colorDisplayMode, colorPalette, themeMode, stateVisual }));
-  const viewBoxX = -width / 2;
-  const viewBoxY = -height / 2;
-  const viewBoxWidth = width;
-  const viewBoxHeight = height;
-  const drawingWidth = 240;
-  const drawingHeight = 160;
-  const contentWidth = terminalCount > 0 ? drawingWidth * 3 / 4 : drawingWidth;
-  const contentHeight = terminalCount > 0 ? drawingHeight * 3 / 4 : drawingHeight;
-  const contentCenterX = drawingWidth / 2;
-  const contentCenterY = drawingHeight / 2;
-  const isStaticTemplate = typeof __appScope.isStaticKind === "function"
-    ? __appScope.isStaticKind(template.kind)
-    : String(template.kind ?? "").startsWith("static-");
-  const staticTemplateSizeAttrs = isStaticTemplate
-    ? ` data-state-icon-template-width="${formatSvgNumber(width)}" data-state-icon-template-height="${formatSvgNumber(height)}"`
-    : "";
-  const svg =
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${formatSvgNumber(drawingWidth)}" height="${formatSvgNumber(drawingHeight)}" viewBox="0 0 ${formatSvgNumber(drawingWidth)} ${formatSvgNumber(drawingHeight)}">` +
-    `<g data-state-icon-layer-width="${formatSvgNumber(contentWidth)}" data-state-icon-layer-height="${formatSvgNumber(contentHeight)}"${staticTemplateSizeAttrs} transform="translate(${formatSvgNumber(contentCenterX)} ${formatSvgNumber(contentCenterY)})">` +
-    `<svg x="${formatSvgNumber(-contentWidth / 2)}" y="${formatSvgNumber(-contentHeight / 2)}" width="${formatSvgNumber(contentWidth)}" height="${formatSvgNumber(contentHeight)}" data-state-icon-preserve-view-box="true" viewBox="${formatSvgNumber(viewBoxX)} ${formatSvgNumber(viewBoxY)} ${formatSvgNumber(viewBoxWidth)} ${formatSvgNumber(viewBoxHeight)}" preserveAspectRatio="xMidYMid meet" overflow="visible">` +
-    `<g data-platform-generated-default="true" transform="${escapeXml(nodeGeometryTransform(node))}">${glyphMarkup}${glyphTextMarkup}</g>` +
-    `</svg></g></svg>`;
-  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
-}
-
-function isGeneratedTemplateDefaultStateIconImage(value: unknown) {
-  const image = String(value ?? "");
-  if (!image.startsWith("data:image/svg+xml")) {
-    return false;
-  }
-  const payload = image.includes(",") ? image.slice(image.indexOf(",") + 1) : image;
-  try {
-    const decoded = decodeURIComponent(payload);
-    return (
-      decoded.includes('data-platform-generated-default="true"') ||
-      decoded.includes("data-state-icon-layer-width") ||
-      decoded.includes("data-state-icon-layer-height") ||
-      decoded.includes("data-custom-device-persisted-terminal-connectors") ||
-      (
-        decoded.includes('width="240"') &&
-        decoded.includes('height="160"') &&
-        decoded.includes('d="M -64 0 H 64"') &&
-        decoded.includes(">文本框</text>")
-      )
-    );
-  } catch {
-    return false;
-  }
-}
-
-export function clearGeneratedDefinitionVisualDraftImage(template: any, draft: any) {
-  if (!template || template.custom || !draft || !isGeneratedTemplateDefaultStateIconImage(draft.backgroundImage)) {
-    return draft;
-  }
-  return {
-    ...draft,
-    backgroundImage: "",
-    backgroundImageAssetId: "",
-    backgroundImageFit: "cover",
-    backgroundImageCleared: ""
-  };
-}
-
-export function createDefinitionStateDraftRowsWithDefaultImages(__appScope: Record<string, any>, template: any) {
-  const { createDefinitionStateDraftRows, imageAssets = {} } = __appScope;
-  const rows = createDefinitionStateDraftRows(template);
-  if (!template || template.custom) {
-    return rows;
-  }
-  return rows.map((row: any) => {
-    const imageAssetHref = row.imageAssetId ? imageAssets[row.imageAssetId] : "";
-    const backgroundImageAssetHref = row.backgroundImageAssetId ? imageAssets[row.backgroundImageAssetId] : "";
-    const hasCustomStateImage = Boolean(
-      (row.image && !isGeneratedTemplateDefaultStateIconImage(row.image)) ||
-      (row.imageAssetId && !isGeneratedTemplateDefaultStateIconImage(imageAssetHref)) ||
-      (row.backgroundImage && !isGeneratedTemplateDefaultStateIconImage(row.backgroundImage)) ||
-      (row.backgroundImageAssetId && !isGeneratedTemplateDefaultStateIconImage(backgroundImageAssetHref)) ||
-      row.imageCleared
-    );
-    if (hasCustomStateImage) {
-      return row;
-    }
-    const image = createTemplateDefaultStateIconImage(__appScope, template, {
-      status: row.value,
-      stateVisual: row
-    });
-    return {
-      ...row,
-      image,
-      imageAssetId: "",
-      imageCleared: image ? "" : "1"
-    };
-  });
-}
-
-export function createOpenEdgeContextMenu(__appScope: Record<string, any>) {
-  return (event: MouseEvent<SVGPathElement>, edgeId: string, routePoints?: Point[]) => {
-  const { activateInspectorFromCanvas, activeLayerEdgeIdSet, canvasInteractionRef, clampPointToCanvas, lastCanvasPointerRef, lastRawCanvasPointerRef, openGraphicContextMenu, projectListPointerInsideRef, screenToSvgPoint, selectCanvasGraphics, svgRef, updateMouseStatus } = __appScope;
-    event.preventDefault();
-    event.stopPropagation();
-    if (!activeLayerEdgeIdSet.has(edgeId)) {
-      return;
-    }
-    activateInspectorFromCanvas();
-    canvasInteractionRef.current = true;
-    projectListPointerInsideRef.current = false;
-    let pointer: Point | undefined;
-    if (svgRef.current) {
-      const rawPointer = screenToSvgPoint(svgRef.current, event.clientX, event.clientY);
-      pointer = clampPointToCanvas(rawPointer);
-      lastRawCanvasPointerRef.current = rawPointer;
-      lastCanvasPointerRef.current = pointer;
-      updateMouseStatus(pointer);
-    }
-    selectCanvasGraphics([], [edgeId]);
-    openGraphicContextMenu({
-      x: event.clientX,
-      y: event.clientY,
-      target: "edge",
-      canvasPoint: pointer,
-      edgeId,
-      routePoints: routePoints?.map((point) => ({ ...point }))
-    });
-  };
-}
-
-export function createCaptureCanvasPointer(__appScope: Record<string, any>) {
-  return (pointerId: number) => {
-  const { svgRef } = __appScope;
-    try {
-      svgRef.current?.setPointerCapture(pointerId);
-    } catch {
-      // Pointer capture can fail if the browser has already canceled the pointer.
-    }
-  };
-}
-
-export function createStartManualSegmentDrag(__appScope: Record<string, any>) {
-  return (
-    event: PointerEvent<SVGPathElement>,
-    edgeId: string,
-    segmentIndex: number,
-    orientation: "horizontal" | "vertical",
-    routePoints: Point[]
-  ) => {
-  const { activeLayerEdgeIdSet, captureCanvasPointer, clampPointToCanvas, edgePointerBendInsertRef, hasCanvasSelectionModifier, insertManualBendAtPoint, routeManualPoints, screenToSvgPoint, selectCanvasGraphics, setManualPathDrag, startModifierSelectionPress, svgRef } = __appScope;
-    event.stopPropagation();
-    if (event.button !== 0 || !svgRef.current || !activeLayerEdgeIdSet.has(edgeId)) {
-      return;
-    }
-    if (hasCanvasSelectionModifier(event)) {
-      startModifierSelectionPress(event, { kind: "edge", edgeId });
-      return;
-    }
-    const pointer = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
-    if (event.detail >= 2) {
-      event.preventDefault();
-      edgePointerBendInsertRef.current = {
-        edgeId,
-        clientX: event.clientX,
-        clientY: event.clientY,
-        at: Date.now()
-      };
-      insertManualBendAtPoint(edgeId, segmentIndex, routePoints, pointer);
-      return;
-    }
-    selectCanvasGraphics([], [edgeId]);
-    setManualPathDrag({
-      edgeId,
-      segmentIndex,
-      orientation,
-      startPoint: pointer,
-      originalManualPoints: routeManualPoints(routePoints),
-      originalRoutePoints: routePoints.map((point) => ({ ...point }))
-    });
-    captureCanvasPointer(event.pointerId);
-  };
-}
-
-export function createStartManualPointDrag(__appScope: Record<string, any>) {
-  return (event: PointerEvent<SVGCircleElement>, edgeId: string, pointIndex: number, routePoints: Point[]) => {
-  const { activeLayerEdgeIdSet, captureCanvasPointer, clampPointToCanvas, edgePointerBendInsertRef, findBendInsertRouteSegmentIndex, hasCanvasSelectionModifier, insertManualBendAtPoint, routeManualPoints, screenToSvgPoint, selectCanvasGraphics, setManualPathDrag, startModifierSelectionPress, svgRef } = __appScope;
-    event.stopPropagation();
-    if (event.button !== 0 || !svgRef.current || !activeLayerEdgeIdSet.has(edgeId)) {
-      return;
-    }
-    if (hasCanvasSelectionModifier(event)) {
-      startModifierSelectionPress(event, { kind: "edge", edgeId });
-      return;
-    }
-    const pointer = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
-    if (event.detail >= 2) {
-      event.preventDefault();
-      const segmentIndex = findBendInsertRouteSegmentIndex(routePoints, pointer);
-      if (segmentIndex >= 0) {
-        edgePointerBendInsertRef.current = {
-          edgeId,
-          clientX: event.clientX,
-          clientY: event.clientY,
-          at: Date.now()
-        };
-        insertManualBendAtPoint(edgeId, segmentIndex, routePoints, pointer);
-      }
-      return;
-    }
-    selectCanvasGraphics([], [edgeId]);
-    setManualPathDrag({
-      edgeId,
-      pointIndex,
-      startPoint: pointer,
-      originalManualPoints: routeManualPoints(routePoints),
-      originalRoutePoints: routePoints.map((point) => ({ ...point }))
-    });
-    captureCanvasPointer(event.pointerId);
-  };
-}
-
-export function createRouteSegmentPointerDistance(__appScope: Record<string, any>) {
-  return (point: Point, from: Point, to: Point) => {
-    if (from.y === to.y) {
-      const minX = Math.min(from.x, to.x);
-      const maxX = Math.max(from.x, to.x);
-      if (point.x >= minX && point.x <= maxX) {
-        return Math.abs(point.y - from.y);
-      }
-    } else if (from.x === to.x) {
-      const minY = Math.min(from.y, to.y);
-      const maxY = Math.max(from.y, to.y);
-      if (point.y >= minY && point.y <= maxY) {
-        return Math.abs(point.x - from.x);
-      }
-    }
-    return Math.min(
-      Math.hypot(point.x - from.x, point.y - from.y),
-      Math.hypot(point.x - to.x, point.y - to.y)
-    );
-  };
-}
-
-export function createFindEditableRouteSegmentIndex(__appScope: Record<string, any>) {
-  return (routePoints: Point[], point: Point) => {
-  const { routeSegmentPointerDistance, sameOptionalPoint } = __appScope;
-    const candidates = routePoints
-      .slice(0, -1)
-      .map((from, segmentIndex) => ({ from, to: routePoints[segmentIndex + 1], segmentIndex }))
-      .filter(({ from, to }) => to && !sameOptionalPoint(from, to) && (from.x === to.x || from.y === to.y));
-    return candidates.reduce<{ index: number; distance: number } | null>((nearest, candidate) => {
-      const distance = routeSegmentPointerDistance(point, candidate.from, candidate.to);
-      return !nearest || distance < nearest.distance ? { index: candidate.segmentIndex, distance } : nearest;
-    }, null)?.index ?? -1;
-  };
-}
-
-export function createConnectionHitTolerance(__appScope: Record<string, any>) {
-  return () => {
-  const { CONNECTION_HIT_SCREEN_TOLERANCE, svgRef } = __appScope;
-    const svg = svgRef.current;
-    const rect = svg?.getBoundingClientRect();
-    if (!svg || !rect || rect.width <= 0 || rect.height <= 0) {
-      return 16;
-    }
-    const svgViewBox = svg.viewBox.baseVal;
-    const xTolerance = (svgViewBox.width / rect.width) * CONNECTION_HIT_SCREEN_TOLERANCE;
-    const yTolerance = (svgViewBox.height / rect.height) * CONNECTION_HIT_SCREEN_TOLERANCE;
-    return Math.max(xTolerance, yTolerance);
-  };
-}
-
-export function createFindConnectionRouteHitAtPoint(__appScope: Record<string, any>) {
-  return (point: Point) => {
-  const { activeLayerEdgeIdSet, connectionHitTolerance, queryRouteSpatialIndex, routeSegmentPointerDistance, routedEdgeIndexById, routedEdgeSpatialIndex } = __appScope;
-    const tolerance = connectionHitTolerance();
-    const hitBounds = {
-      left: point.x - tolerance,
-      right: point.x + tolerance,
-      top: point.y - tolerance,
-      bottom: point.y + tolerance
-    };
-    return queryRouteSpatialIndex(routedEdgeSpatialIndex, hitBounds)
-      .filter((route) => activeLayerEdgeIdSet.has(route.edgeId))
-      .flatMap((route) =>
-        route.points.slice(0, -1).map((from, segmentIndex) => ({
-          edgeId: route.edgeId,
-          routePoints: route.points,
-          distance: routeSegmentPointerDistance(point, from, route.points[segmentIndex + 1]),
-          routeOrder: routedEdgeIndexById.get(route.edgeId) ?? -1,
-          segmentIndex
-        }))
-      )
-      .filter((candidate) => candidate.distance <= tolerance)
-      .sort((first, second) =>
-        first.distance - second.distance ||
-        second.routeOrder - first.routeOrder ||
-        first.segmentIndex - second.segmentIndex
-      )[0] ?? null;
-  };
-}
-
-export function createInsertManualBendAtPoint(__appScope: Record<string, any>) {
-  return (edgeId: string, segmentIndex: number, routePoints: Point[], clickPoint: Point) => {
-  const { activeLayerEdgeIdSet, canvasBounds, insertOrthogonalRouteBend, pushUndoSnapshot, routeManualPoints, setEdgeManualPoints } = __appScope;
-    if (!activeLayerEdgeIdSet.has(edgeId)) {
-      return;
-    }
-    const from = routePoints[segmentIndex];
-    const to = routePoints[segmentIndex + 1];
-    if (!from || !to || (from.x !== to.x && from.y !== to.y)) {
-      return;
-    }
-    pushUndoSnapshot();
-    const nextPoints = insertOrthogonalRouteBend(routePoints, segmentIndex, clickPoint, canvasBounds);
-    setEdgeManualPoints(edgeId, routeManualPoints(nextPoints), nextPoints);
-  };
-}
-
-export function createInsertManualBendFromPointer(__appScope: Record<string, any>) {
-  return (edgeId: string, routePoints: Point[], clickPoint: Point) => {
-  const { findEditableRouteSegmentIndex, insertManualBendAtPoint } = __appScope;
-    const segmentIndex = findEditableRouteSegmentIndex(routePoints, clickPoint);
-    if (segmentIndex >= 0) {
-      insertManualBendAtPoint(edgeId, segmentIndex, routePoints, clickPoint);
-      return true;
-    }
-    return false;
-  };
-}
-
-export function createAddManualBendFromContextMenu(__appScope: Record<string, any>) {
-  return () => {
-  const { contextMenu, insertManualBendFromPointer, lastCanvasPointerRef, selectedEdgeId, selectedRoutedEdge } = __appScope;
-    const edgeId = contextMenu?.edgeId ?? selectedEdgeId;
-    const routePoints = contextMenu?.routePoints ?? selectedRoutedEdge?.points;
-    const point = contextMenu?.canvasPoint ?? lastCanvasPointerRef.current;
-    if (!edgeId || !routePoints?.length || !point) {
-      return;
-    }
-    insertManualBendFromPointer(edgeId, routePoints, point);
-  };
-}
-
-export function createAddRoutableLineBendFromContextMenu(__appScope: Record<string, any>) {
-  return () => {
-  const { contextMenu, insertRoutableLineBendFromPointer, isRoutableLineDeviceKind, lastCanvasPointerRef, nodeById, routableLineDeviceCanvasPoints } = __appScope;
-    const nodeId = contextMenu?.nodeId;
-    const lineNode = nodeId ? nodeById.get(nodeId) : undefined;
-    const point = contextMenu?.canvasPoint ?? lastCanvasPointerRef.current;
-    if (!nodeId || !lineNode || !isRoutableLineDeviceKind(lineNode.kind) || !point) {
-      return;
-    }
-    const routePoints = contextMenu?.routePoints ?? routableLineDeviceCanvasPoints(lineNode);
-    if (routePoints.length < 2) {
-      return;
-    }
-    insertRoutableLineBendFromPointer(nodeId, routePoints, point);
-  };
-}
-
-export function createInsertManualBendFromEdgePath(__appScope: Record<string, any>) {
-  return (event: MouseEvent<SVGElement>, edgeId: string, routePoints: Point[]) => {
-  const { activateInspectorFromCanvas, activeLayerEdgeIdSet, clampPointToCanvas, edgePointerBendInsertRef, insertManualBendFromPointer, screenToSvgPoint, selectCanvasGraphics, staticDrawing, svgRef } = __appScope;
-    event.preventDefault();
-    event.stopPropagation();
-    if (staticDrawing) {
-      return;
-    }
-    if (!activeLayerEdgeIdSet.has(edgeId)) {
-      return;
-    }
-    const pointerInsertedBend = edgePointerBendInsertRef.current;
-    if (
-      pointerInsertedBend &&
-      pointerInsertedBend.edgeId === edgeId &&
-      Date.now() - pointerInsertedBend.at < 800 &&
-      Math.hypot(event.clientX - pointerInsertedBend.clientX, event.clientY - pointerInsertedBend.clientY) <= 8
-    ) {
-      edgePointerBendInsertRef.current = null;
-      return;
-    }
-    if (!svgRef.current) {
-      return;
-    }
-    activateInspectorFromCanvas();
-    selectCanvasGraphics([], [edgeId]);
-    const clickPoint = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
-    insertManualBendFromPointer(edgeId, routePoints, clickPoint);
-  };
-}
-
-export function createHandleEdgePathPointerDown(__appScope: Record<string, any>) {
-  return (event: PointerEvent<SVGPathElement>, edgeId: string, routePoints: Point[]) => {
-  const { activateInspectorFromCanvas, activeLayerEdgeIdSet, appendStaticDrawingPoint, clampPointToCanvas, edgePointerBendInsertRef, hasCanvasSelectionModifier, insertManualBendFromPointer, isRepeatedEdgePointerClick, lastEdgePointerClickRef, screenToSvgPoint, selectCanvasGraphics, startModifierSelectionPress, staticDrawing, svgRef } = __appScope;
-    event.stopPropagation();
-    if (event.button !== 0 || !svgRef.current) {
-      return;
-    }
-    if (staticDrawing) {
-      const pointer = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
-      appendStaticDrawingPoint(pointer, event.detail >= 2);
-      return;
-    }
-    if (!activeLayerEdgeIdSet.has(edgeId)) {
-      return;
-    }
-    if (hasCanvasSelectionModifier(event)) {
-      startModifierSelectionPress(event, { kind: "edge", edgeId });
-      return;
-    }
-    activateInspectorFromCanvas();
-    selectCanvasGraphics([], [edgeId]);
-    const clickPoint = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
-    const edgeClick = {
-      edgeId,
-      clientX: event.clientX,
-      clientY: event.clientY,
-      at: Date.now()
-    };
-    const repeatedClick = isRepeatedEdgePointerClick(lastEdgePointerClickRef.current, edgeClick);
-    lastEdgePointerClickRef.current = edgeClick;
-    if (event.detail < 2 && !repeatedClick) {
-      return;
-    }
-    event.preventDefault();
-    if (insertManualBendFromPointer(edgeId, routePoints, clickPoint)) {
-      edgePointerBendInsertRef.current = {
-        edgeId,
-        clientX: event.clientX,
-        clientY: event.clientY,
-        at: Date.now()
-      };
-      lastEdgePointerClickRef.current = null;
-    }
-  };
-}
-
-export function createDeleteManualBendPoint(__appScope: Record<string, any>) {
-  return (edgeId: string, routePointIndex: number, routePoints: Point[]) => {
-  const { activeLayerEdgeIdSet, pushUndoSnapshot, routeManualPoints, setEdgeManualPoints } = __appScope;
-    if (!activeLayerEdgeIdSet.has(edgeId)) {
-      return;
-    }
-    if (routePointIndex <= 0 || routePointIndex >= routePoints.length - 1) {
-      return;
-    }
-    pushUndoSnapshot();
-    const nextPoints = routePoints.filter((_, index) => index !== routePointIndex);
-    setEdgeManualPoints(edgeId, routeManualPoints(nextPoints), nextPoints);
-  };
-}
-
-export function createSetRoutableLineManualPathPoints(__appScope: Record<string, any>) {
-  return (nodeId: string, routePoints: Point[]) => {
-  const { activeLayerNodeIdSet, canvasBounds, isRoutableLineDeviceKind, nodeById, patchGraphNodes, setRoutableLineDeviceCanvasPoints } = __appScope;
-    const lineNode = nodeById.get(nodeId);
-    if (!lineNode || !activeLayerNodeIdSet.has(nodeId) || !isRoutableLineDeviceKind(lineNode.kind)) {
-      return;
-    }
-    // 提交路径：面板/菜单改路径点时强制「从设备外侧指向锚点」。
-    const nextNode = setRoutableLineDeviceCanvasPoints(lineNode, routePoints, { nodeById, bounds: canvasBounds });
-    if (nextNode !== lineNode) {
-      patchGraphNodes([nextNode]);
-    }
-  };
-}
-
-export function createInsertRoutableLineBendAtPoint(__appScope: Record<string, any>) {
-  return (nodeId: string, segmentIndex: number, routePoints: Point[], clickPoint: Point) => {
-  const { activeLayerNodeIdSet, canvasBounds, insertRoutableLineDeviceBend, isRoutableLineDeviceKind, nodeById, patchGraphNodes, pushUndoSnapshot, setRoutableLineDeviceCanvasPoints, writeOperationLog } = __appScope;
-    const lineNode = nodeById.get(nodeId);
-    if (!lineNode || !activeLayerNodeIdSet.has(nodeId) || !isRoutableLineDeviceKind(lineNode.kind)) {
-      return false;
-    }
-    const from = routePoints[segmentIndex];
-    const to = routePoints[segmentIndex + 1];
-    if (!from || !to || (from.x !== to.x && from.y !== to.y)) {
-      return false;
-    }
-    pushUndoSnapshot();
-    // 提交路径：加拐点前先把基线摆成端点合规走向，再插拐点。
-    const baseNode = setRoutableLineDeviceCanvasPoints(lineNode, routePoints, { nodeById, bounds: canvasBounds });
-    const nextNode = insertRoutableLineDeviceBend(baseNode, segmentIndex, clickPoint, canvasBounds);
-    if (nextNode !== lineNode) {
-      patchGraphNodes([nextNode]);
-      writeOperationLog(`添加可变线路拐点：${nextNode.name}`);
-    }
-    return true;
-  };
-}
-
-export function createInsertRoutableLineBendFromPointer(__appScope: Record<string, any>) {
-  return (nodeId: string, routePoints: Point[], clickPoint: Point) => {
-  const { findEditableRouteSegmentIndex, insertRoutableLineBendAtPoint } = __appScope;
-    const segmentIndex = findEditableRouteSegmentIndex(routePoints, clickPoint);
-    if (segmentIndex >= 0) {
-      return insertRoutableLineBendAtPoint(nodeId, segmentIndex, routePoints, clickPoint);
-    }
-    return false;
-  };
-}
-
-export function createStartRoutableLineSegmentDrag(__appScope: Record<string, any>) {
-  return (
-    event: PointerEvent<SVGPathElement>,
-    node: ModelNode,
-    segmentIndex: number,
-    orientation: "horizontal" | "vertical",
-    routePoints: Point[]
-  ) => {
-  const { activeLayerNodeIdSet, captureCanvasPointer, clampPointToCanvas, hasCanvasSelectionModifier, insertRoutableLineBendAtPoint, screenToSvgPoint, selectCanvasGraphics, setManualPathDrag, startModifierSelectionPress, svgRef } = __appScope;
-    event.stopPropagation();
-    if (event.button !== 0 || !svgRef.current || !activeLayerNodeIdSet.has(node.id)) {
-      return;
-    }
-    if (hasCanvasSelectionModifier(event)) {
-      startModifierSelectionPress(event, { kind: "node", nodeId: node.id });
-      return;
-    }
-    const pointer = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
-    if (event.detail >= 2) {
-      event.preventDefault();
-      insertRoutableLineBendAtPoint(node.id, segmentIndex, routePoints, pointer);
-      return;
-    }
-    selectCanvasGraphics([node.id], [], { scope: "direct" });
-    setManualPathDrag({
-      nodeId: node.id,
-      segmentIndex,
-      orientation,
-      startPoint: pointer,
-      originalManualPoints: [],
-      originalRoutePoints: routePoints.map((point) => ({ ...point }))
-    });
-    captureCanvasPointer(event.pointerId);
-  };
-}
-
-export function createStartRoutableLinePointDrag(__appScope: Record<string, any>) {
-  return (event: PointerEvent<SVGCircleElement>, node: ModelNode, pointIndex: number, routePoints: Point[]) => {
-  const { activeLayerNodeIdSet, captureCanvasPointer, clampPointToCanvas, hasCanvasSelectionModifier, insertRoutableLineBendFromPointer, screenToSvgPoint, selectCanvasGraphics, setManualPathDrag, startModifierSelectionPress, svgRef } = __appScope;
-    event.stopPropagation();
-    if (event.button !== 0 || !svgRef.current || !activeLayerNodeIdSet.has(node.id)) {
-      return;
-    }
-    if (hasCanvasSelectionModifier(event)) {
-      startModifierSelectionPress(event, { kind: "node", nodeId: node.id });
-      return;
-    }
-    const pointer = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
-    if (event.detail >= 2) {
-      event.preventDefault();
-      insertRoutableLineBendFromPointer(node.id, routePoints, pointer);
-      return;
-    }
-    selectCanvasGraphics([node.id], [], { scope: "direct" });
-    setManualPathDrag({
-      nodeId: node.id,
-      pointIndex,
-      startPoint: pointer,
-      originalManualPoints: [],
-      originalRoutePoints: routePoints.map((point) => ({ ...point }))
-    });
-    captureCanvasPointer(event.pointerId);
-  };
-}
-
-export function createDeleteRoutableLineBendPoint(__appScope: Record<string, any>) {
-  return (nodeId: string, routePointIndex: number, routePoints: Point[]) => {
-  const { activeLayerNodeIdSet, pushUndoSnapshot, setRoutableLineManualPathPoints } = __appScope;
-    if (!activeLayerNodeIdSet.has(nodeId) || routePointIndex <= 0 || routePointIndex >= routePoints.length - 1) {
-      return;
-    }
-    pushUndoSnapshot();
-    const nextPoints = routePoints.filter((_, index) => index !== routePointIndex);
-    setRoutableLineManualPathPoints(nodeId, nextPoints);
-  };
-}
-
-export function createStartConnectFromTerminal(__appScope: Record<string, any>) {
-  return (node: ModelNode, terminalId: string, point?: Point) => {
-  const { activeLayerNodeIdSet, applyConnectPreviewState, getModelEdgeEndpointPoint, resetRoutableLinePreviewState, setCanvasSelectionScope, setConnectSource, setMode, setRoutableLinePlacement, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds } = __appScope;
-    if (isLineOnlyConnectionNode(node)) {
-      return;
-    }
-    if (!activeLayerNodeIdSet.has(node.id)) {
-      return;
-    }
-    const sourcePoint = point ?? getModelEdgeEndpointPoint(node, undefined, terminalId);
-    const nextConnectSource: NonNullable<typeof connectSource> = point ? { nodeId: node.id, terminalId, point } : { nodeId: node.id, terminalId };
-    setRoutableLinePlacement(null);
-    resetRoutableLinePreviewState();
-    setConnectSource(nextConnectSource);
-    applyConnectPreviewState(sourcePoint, false, null, null, nextConnectSource);
-    setMode("connect");
-    setCanvasSelectionScope("group");
-    setSelectedNodeIds([]);
-    setSelectedEdgeId("");
-    setSelectedEdgeIds([]);
-  };
-}
-
-export function createFinishTerminalPress(__appScope: Record<string, any>) {
-  return () => {
-  const { busAnchorFromPoint, isBusNode, nodeById, patchSingleTerminalAnchorFromPoint, setTerminalPress, startConnectFromTerminal, terminalPress } = __appScope;
-    if (!terminalPress) {
-      return;
-    }
-    const node = nodeById.get(terminalPress.nodeId);
-    if (!node) {
-      setTerminalPress(null);
-      return;
-    }
-    const busPoint = isBusNode(node) ? busAnchorFromPoint(node, terminalPress.startPoint) : undefined;
-    if (!terminalPress.moved) {
-      startConnectFromTerminal(node, terminalPress.terminalId, busPoint);
-      setTerminalPress(null);
-      return;
-    }
-    if (!isBusNode(node) && node.terminals.length === 1) {
-      patchSingleTerminalAnchorFromPoint(
-        terminalPress.nodeId,
-        terminalPress.terminalId,
-        terminalPress.currentPoint,
-        terminalPress.startPoint
-      );
-    }
-    setTerminalPress(null);
-  };
-}
-
-export function createHandleTerminalPointerDown(__appScope: Record<string, any>) {
-  return (
-    event: PointerEvent<SVGCircleElement>,
-    node: ModelNode,
-    terminalId: string
-  ) => {
-  const { activeLayerNodeIdSet, appendStaticDrawingPoint, busAnchorFromEvent, busAnchorFromPoint, canConnectTerminals, canvasBounds, captureCanvasPointer, clampPointToCanvas, commitNewConnectionEdge, connectPreviewPointRef, connectSource, connectTargetTerminalType, connectionCommitFailureMessage, connectionEndpointRuleFailureMessage, edgeById, finishConnectToTarget, finishRoutableLineToTarget, getTerminalPoint, hasCanvasSelectionModifier, isBusNode, markBusTerminalSyncDirtyForEdges, markRouteEdgesDirty, markStoredRouteEdgesDirty, nodeById, nodes, patchGraphEdges, prepareConnectionEdgeForCommit, preserveConnectionEdgeRouteShape, previewStoredRoutePointsForEdge, pushUndoSnapshot, resetConnectPreviewState, resolveStraightBusSlideEndpointToPoint, rewiring, routableLinePlacement, routableLineTemplateTerminalType, routedEdges, routingNodesForConnectionEdge, screenToSvgPoint, setCanvasSelectionScope, setConnectSource, setRewiring, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, setTerminalPress, startConnectFromTerminal, startModifierSelectionPress, startRoutableLineFromTerminal, staticDrawing, svgRef, visibleNodeById, writeOperationLog } = __appScope;
-    event.stopPropagation();
-    if (staticDrawing && event.button === 0 && svgRef.current) {
-      const pointer = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
-      appendStaticDrawingPoint(pointer, event.detail >= 2);
-      return;
-    }
-    if (!activeLayerNodeIdSet.has(node.id)) {
-      return;
-    }
-    if (routableLinePlacement && event.button === 0 && svgRef.current) {
-      const busPoint = busAnchorFromEvent(node, event);
-      const target: ConnectTarget = { node, terminalId, point: busPoint };
-      if (routableLinePlacement.source) {
-        if (connectTargetTerminalType(target) === routableLineTemplateTerminalType(routableLinePlacement.template)) {
-          finishRoutableLineToTarget(target, routableLinePlacement.manualPoints);
-        }
-      } else {
-        startRoutableLineFromTerminal(node, terminalId, busPoint);
-      }
-      return;
-    }
-    if (event.button === 0 && svgRef.current && !rewiring) {
-      event.preventDefault();
-      const busPoint = busAnchorFromEvent(node, event);
-      if (connectSource) {
-        const target: ConnectTarget = { node, terminalId, point: busPoint };
-        finishConnectToTarget(target, busPoint ?? getTerminalPoint(node, terminalId));
-      } else if (!isBusNode(node) && node.terminals.length === 1) {
-        const point = clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
-        setTerminalPress({
-          nodeId: node.id,
-          terminalId,
-          pointerId: event.pointerId,
-          startPoint: point,
-          currentPoint: point,
-          moved: false
-        });
-        captureCanvasPointer(event.pointerId);
-      } else {
-        startConnectFromTerminal(node, terminalId, busPoint);
-      }
-      return;
-    }
-    if (event.button === 0 && hasCanvasSelectionModifier(event)) {
-      startModifierSelectionPress(event, { kind: "node", nodeId: node.id });
-      return;
-    }
-    setCanvasSelectionScope("direct");
-    setSelectedNodeIds([node.id]);
-    setSelectedEdgeId("");
-    setSelectedEdgeIds([]);
-    if (event.button !== 0 || !svgRef.current) {
-      return;
-    }
-    const busPoint = busAnchorFromEvent(node, event);
-    if (rewiring) {
-      const edge = edgeById.get(rewiring.edgeId);
-      const otherNode = edge ? nodeById.get(rewiring.endpoint === "source" ? edge.targetId : edge.sourceId) : undefined;
-      const otherTerminalId = rewiring.endpoint === "source" ? edge?.targetTerminalId : edge?.sourceTerminalId;
-      if (edge && otherNode && otherTerminalId && canConnectTerminals(node, terminalId, otherNode, otherTerminalId)) {
-        const movingPoint = busPoint ?? getTerminalPoint(node, terminalId);
-        const sourceNode = nodeById.get(edge.sourceId);
-        const targetNode = nodeById.get(edge.targetId);
-        const rewiredEdge =
-          rewiring.endpoint === "source"
-            ? { ...edge, sourceId: node.id, sourceTerminalId: terminalId, sourcePoint: busPoint }
-            : { ...edge, targetId: node.id, targetTerminalId: terminalId, targetPoint: busPoint };
-        const slidePatch = sourceNode && targetNode
-          ? resolveStraightBusSlideEndpointToPoint({
-              edge,
-              sourceNode,
-              targetNode,
-              movingEndpoint: rewiring.endpoint,
-              movingPoint,
-              nodes,
-              movingNode: node,
-              movingTerminalId: terminalId
-            })
-          : null;
-        const candidateEdge = slidePatch ? { ...rewiredEdge, ...slidePatch } : rewiredEdge;
-        const routingNodes = routingNodesForConnectionEdge(candidateEdge, nodes);
-        const edgeForCommit = preserveConnectionEdgeRouteShape(
-          routingNodes,
-          candidateEdge,
-          previewStoredRoutePointsForEdge(edge),
-          canvasBounds
-        );
-        const endpointRuleMessage = connectionEndpointRuleFailureMessage(edgeForCommit);
-        const prepared = endpointRuleMessage
-          ? null
-          : prepareConnectionEdgeForCommit(
-          routingNodes,
-          [edgeForCommit],
-          edge.id,
-          canvasBounds,
-          routedEdges,
-          { preserveManualRouteDisplay: Boolean(edgeForCommit.manualPoints?.length) }
-        );
-        if (prepared?.ok && prepared.edge) {
-          const preparedEdge = prepared.edge;
-          pushUndoSnapshot();
-          markRouteEdgesDirty([edge.id]);
-          markStoredRouteEdgesDirty([edge.id]);
-          markBusTerminalSyncDirtyForEdges([edge, preparedEdge]);
-          patchGraphEdges([preparedEdge]);
-        } else {
-          const message = endpointRuleMessage || connectionCommitFailureMessage(prepared?.issues);
-          showGlobalMessage(`联络线端子调整失败：${message}`);
-          writeOperationLog(`联络线端子调整失败：${message}`);
-        }
-      }
-      setRewiring(null);
-      return;
-    }
-    if (!connectSource) {
-      return;
-    }
-    const sourceNode = visibleNodeById.get(connectSource.nodeId);
-    if (sourceNode?.id === node.id && connectSource.terminalId === terminalId) {
-      return;
-    }
-    if (!sourceNode || !canConnectTerminals(sourceNode, connectSource.terminalId, node, terminalId)) {
-      return;
-    }
-    const newEdge: Edge = {
-      id: `edge-${Date.now()}`,
-      sourceId: sourceNode.id,
-      targetId: node.id,
-      sourceTerminalId: connectSource.terminalId,
-      sourcePoint: connectSource.point,
-      manualPoints: connectSource.manualPoints,
-      targetTerminalId: terminalId,
-      targetPoint: isBusNode(node) ? busAnchorFromPoint(node, connectPreviewPointRef.current ?? busPoint ?? getTerminalPoint(node, terminalId)) : busPoint
-    };
-    commitNewConnectionEdge(newEdge, sourceNode.name, node.name);
-  };
-}
-
-// 模块级变量，用于跨渲染周期传递跳过保存检查的标志
-let skipSaveCheckFlag = false;
-
-export function setSkipSaveCheck(value: boolean) {
-  skipSaveCheckFlag = value;
-}
-
-export function getSkipSaveCheck(): boolean {
-  return skipSaveCheckFlag;
-}
-
-export function createEnsureSavedBeforeExport(__appScope: Record<string, any>) {
-  return () => {
-    // 使用模块级变量，避免闭包捕获旧值
-    if (getSkipSaveCheck() || __appScope.canExportCurrentModel) {
-      return true;
-    }
-    showGlobalMessage("当前模型存在未保存修改，请先保存后再导出文件。");
-    return false;
-  };
-}
-
-// 纯逻辑单源在 src/export/svg-images.ts（后端 Node 直载同源），此处仅 re-export 保持既有调用方不变
-export { createSvgExportReferencedImageHrefById } from "../export/svg-images.ts";
-
-export function createLoadSvgImageExportPathById(__appScope: Record<string, any>) {
-  return async () => {
-  const { fetchAllBackendImages, fetchBackendImageDataUrl, imageAssetList, imageAssets, imageExportPathByIdFromAssets, isImageDataUrl, svgExportReferencedImageHrefById } = __appScope;
-    const referencedHrefById = svgExportReferencedImageHrefById();
-    if (referencedHrefById.size === 0) {
-      return {};
-    }
-    let assets = imageAssetList;
-    let exportHrefById = imageExportPathByIdFromAssets(assets, imageAssets);
-    const hasAllReferencedImages = () => Array.from(referencedHrefById.keys()).every((id) => Boolean(exportHrefById[id]));
-    if (hasAllReferencedImages()) {
-      return exportHrefById;
-    }
-    try {
-      const backendAssets = await fetchAllBackendImages();
-      const mergedById = new Map<string, ImageAsset>();
-      for (const asset of assets) {
-        mergedById.set(asset.id, asset);
-      }
-      for (const asset of backendAssets) {
-        const existing = mergedById.get(asset.id);
-        mergedById.set(asset.id, existing ? { ...existing, ...asset } : asset);
-      }
-      assets = Array.from(mergedById.values());
-      exportHrefById = imageExportPathByIdFromAssets(assets, imageAssets);
-    } catch {
-      // 后端图片清单不可用时，保持现有导出逻辑，不影响本地图形导出。
-    }
-    const assetById = new Map(assets.map((asset) => [asset.id, asset]));
-    await Promise.all(Array.from(referencedHrefById.entries()).map(async ([id, href]) => {
-      if (exportHrefById[id]) {
-        return;
-      }
-      const asset = { ...(assetById.get(id) ?? { id, name: id, url: href }) };
-      asset.url = asset.url || href;
-      try {
-        const dataUrl = await fetchBackendImageDataUrl(asset);
-        if (isImageDataUrl(dataUrl)) {
-          exportHrefById[id] = dataUrl;
-        }
-      } catch {
-        // 单张图片无法读取时，保留原始 href，避免阻断 SVG 导出。
-      }
-    }));
-    return exportHrefById;
-  };
-}
-
-export function createExportSvg(__appScope: Record<string, any>) {
-  return async (textEncoding: TextFileEncoding = "utf-8") => {
-  const {
-    ensureSavedBeforeExport,
-    isPickerAbort,
-    projectName,
-    safeFilePart,
-    writeTextFileToDirectory,
-    writeOperationLog
-  } = __appScope;
-    let exportStartedAt = performance.now();
-    const exportElapsedText = () => `${((performance.now() - exportStartedAt) / 1000).toFixed(2)} 秒`;
-    if (!ensureSavedBeforeExport()) {
-      return;
-    }
-
-    const directoryPicker = (window as Window & {
-      showDirectoryPicker?: (options?: { id?: string; mode?: "read" | "readwrite" }) => Promise<any>;
-    }).showDirectoryPicker;
-    if (typeof directoryPicker !== "function") {
-      showGlobalMessage(`导出失败：当前浏览器不支持选择导出目录，请使用最新版 Chrome 或 Edge。\n总耗时：${exportElapsedText()}`);
-      return;
-    }
-    let directoryHandle: any;
-    try {
-      directoryHandle = await directoryPicker.call(window, {
-        id: "model-bundle-export",
-        mode: "readwrite"
-      });
-      exportStartedAt = performance.now();
-    } catch (error) {
-      if (typeof isPickerAbort === "function" && isPickerAbort(error)) {
-        return;
-      }
-      const message = error instanceof Error ? error.message : String(error ?? "未知错误");
-      showGlobalMessage(`导出失败：无法打开目标目录。\n${message}\n总耗时：${exportElapsedText()}`);
-      return;
-    }
-
-    try {
-      // 三份产物全部走后端：先并行发起请求
-      const svgTextPromise = Promise.resolve()
-        .then(() => fetchBackendModelSvgText(__appScope, textEncoding, "SVG 生成失败。"))
-        .then(
-          (value: string) => ({ ok: true as const, value }),
-          (error: unknown) => ({ ok: false as const, error })
-        );
-      // JSON 与 SVG 同走后端：与单文件导出 createExportJsonFile 同源
-      const jsonTextPromise = Promise.resolve()
-        .then(() => fetchBackendModelJsonText(__appScope, "JSON 生成失败。"))
-        .then(
-          (value: string) => ({ ok: true as const, value }),
-          (error: unknown) => ({ ok: false as const, error })
-        );
-      const baseFilename = safeFilePart(projectName);
-      type PendingExportFile = {
-        label: string;
-        filename: string;
-        mime: string;
-        operationLog: string;
-        promise: Promise<void>;
-      };
-      const exportFiles: PendingExportFile[] = [];
-      const startFileWrite = (file: Omit<PendingExportFile, "promise">, text: string) => {
-        exportFiles.push({
-          ...file,
-          promise: Promise.resolve().then(() => writeTextFileToDirectory(
-            directoryHandle,
-            file.filename,
-            text,
-            file.mime,
-            textEncoding
-          ))
-        });
-      };
-      // E 与 JSON/SVG 同走后端（与单文件导出 createExportEFile 同源）：三份产物同口径，
-      // 前端不再本地 buildEFileExport —— 本地生成用的是界面态 + PARAM_LABELS，与后端 ?template= 口径不同。
-      let eGenerationError: unknown;
-      let eFileWarningDetails: string[] = [];
-      const eFileResult = await Promise.resolve()
-        .then(() => fetchBackendModelEFile(__appScope, textEncoding, "E 文件生成失败。"))
-        .then(
-          (value) => ({ ok: true as const, value }),
-          (error: unknown) => ({ ok: false as const, error })
-        );
-      if (eFileResult.ok) {
-        eFileWarningDetails = eFileResult.value.warningDetails;
-        startFileWrite({
-          label: "E",
-          filename: `${baseFilename}.e`,
-          mime: "text/plain",
-          operationLog: `导出模型文件：${baseFilename}.e`
-        }, eFileResult.value.text);
-      } else {
-        eGenerationError = eFileResult.error;
-      }
-      let jsonGenerationError: unknown;
-      const jsonTextResult = await jsonTextPromise;
-      if (jsonTextResult.ok) {
-        startFileWrite({
-          label: "JSON",
-          filename: `${baseFilename}.json`,
-          mime: "application/json",
-          operationLog: `导出模型文件：${baseFilename}.json`
-        }, jsonTextResult.value);
-      } else {
-        jsonGenerationError = jsonTextResult.error;
-      }
-      let svgGenerationError: unknown;
-      const svgTextResult = await svgTextPromise;
-      if (svgTextResult.ok) {
-        startFileWrite({
-          label: "SVG",
-          filename: `${baseFilename}.svg`,
-          mime: "image/svg+xml",
-          operationLog: `导出图形文件：${baseFilename}.svg`
-        }, svgTextResult.value);
-      } else {
-        svgGenerationError = svgTextResult.error;
-      }
-      const results = await Promise.allSettled(
-        exportFiles.map((file) => file.promise)
-      );
-      const failures: string[] = [];
-      let successCount = 0;
-      results.forEach((result, index) => {
-        const file = exportFiles[index];
-        if (!file) {
-          return;
-        }
-        if (result.status === "fulfilled") {
-          successCount += 1;
-          writeOperationLog(file.operationLog);
-          return;
-        }
-        const reason = result.reason instanceof Error
-          ? result.reason.message
-          : String(result.reason ?? "未知错误");
-        failures.push(`${file.filename}：${reason}`);
-      });
-      if (eGenerationError !== undefined) {
-        const reason = eGenerationError instanceof Error
-          ? eGenerationError.message
-          : String(eGenerationError ?? "未知错误");
-        failures.push(`${baseFilename}.e：${reason}`);
-      }
-      if (jsonGenerationError !== undefined) {
-        const reason = jsonGenerationError instanceof Error
-          ? jsonGenerationError.message
-          : String(jsonGenerationError ?? "未知错误");
-        failures.push(`${baseFilename}.json：${reason}`);
-      }
-      if (svgGenerationError !== undefined) {
-        const reason = svgGenerationError instanceof Error
-          ? svgGenerationError.message
-          : String(svgGenerationError ?? "未知错误");
-        failures.push(`${baseFilename}.svg：${reason}`);
-      }
-      const warningLines = eFileWarningDetails;
-      const directoryName = String(directoryHandle?.name ?? "").trim() || "已选择目录";
-      if (failures.length === 0 && successCount === 3) {
-        showGlobalMessage([
-          "E、JSON 和 SVG 文件导出成功。",
-          `目录：${directoryName}`,
-          `字符编码：${textFileEncodingLabel(textEncoding)}`,
-          ...exportFiles.map((file) => `${file.label}：${file.filename}`),
-          `总耗时：${exportElapsedText()}`,
-          ...warningLines
-        ].join("\n"));
-        return;
-      }
-      showGlobalMessage([
-        "部分文件导出失败。",
-        `目录：${directoryName}`,
-        `字符编码：${textFileEncodingLabel(textEncoding)}`,
-        `成功：${successCount} / 3`,
-        "失败文件：",
-        ...failures.map((failure) => `- ${failure}`),
-        `总耗时：${exportElapsedText()}`,
-        ...warningLines
-      ].join("\n"));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error ?? "未知错误");
-      showGlobalMessage(`导出失败：${message}\n总耗时：${exportElapsedText()}`);
-    }
-  };
-}
-
-// 后端 x-e-file-warnings 头带回「未导出设备」清单（百分比编码 JSON，生成器单源产出）。
-// 头缺失/损坏/内容非法一律按无告警处理，不抛出。
-function eFileWarningDetailsFromResponse(response: Response): string[] {
-  const raw = response.headers?.get?.("x-e-file-warnings");
-  if (!raw) {
-    return [];
-  }
-  let payload: any;
-  try {
-    payload = JSON.parse(decodeURIComponent(raw));
-  } catch {
-    return [];
-  }
-  const items = Array.isArray(payload?.items) ? payload.items : [];
-  const total = Number.isFinite(Number(payload?.total)) ? Number(payload.total) : items.length;
-  // 后端可能因响应头字节封顶只回总数（不带 items）：仍给出首行与「未列出」提示
-  if (total <= 0) {
-    return [];
-  }
-  return [
-    `有 ${total} 个图上设备未导出到 E 文件：`,
-    ...items.map((item: any) => `- ${item?.nodeName ?? ""}（${item?.kind ?? ""}）：${item?.reason ?? ""}`),
-    total > items.length ? `... 还有 ${total - items.length} 个设备未列出。` : ""
-  ].filter(Boolean);
-}
-
-export function showStandaloneExportCompletion(
-  __appScope: Record<string, any>,
-  title: string,
-  message: string,
-  details: string[] = [],
-  file: SavedExportFile | null = null
-) {
-  const { setExportCompletionDialog } = __appScope;
-  if (typeof setExportCompletionDialog === "function") {
-    setExportCompletionDialog({
-      title,
-      message,
-      ...(details.length > 0 ? { details } : {}),
-      // 无 file（浏览器下载兜底 / 非本机部署）时弹框里不出现「查看」，不假装能给
-      ...(file ? { file } : {})
-    });
-    return;
-  }
-  showGlobalMessage([message, ...details].join("\n"));
-}
-
-// 当前 E 接口处于「预定义模板只读态」时，导出必须带上模板名：
-// 后端 ?template= 与前端「加载预定义模板」共用同一实现（空基线重建），产物逐字节一致。
-// 不带该参数时后端只能读磁盘库，界面态与库态一旦漂移（落盘失败/多端并发/手动还原），
-// 导出会静默产出缺列的 E 文件（实测：界面已加载国网模板，导出却缺 runstat 列）。
-// 文件模板/自定义态（可编辑）不传：此时以后端库态为准，避免丢弃用户改动。
-function eFileTemplateQueryName(__appScope: Record<string, any>): string {
-  const { eDeviceInterfaceLoadedTemplateName, eDeviceInterfaceReadonlyMode } = __appScope;
-  if (!eDeviceInterfaceReadonlyMode) {
-    return "";
-  }
-  const name = String(eDeviceInterfaceLoadedTemplateName ?? "");
-  return Object.prototype.hasOwnProperty.call(E_DEVICE_TEMPLATE_ALLOWED_MODEL_TYPES, name) ? name : "";
-}
-
-// E 文件生成已移至后端 /v1/schemes/model/export?format=e-file（单文件导出与目录导出共用本函数）。
-async function fetchBackendModelEFile(__appScope: Record<string, any>, textEncoding: TextFileEncoding, failureMessage: string) {
-  const { projectName } = __appScope;
-  const path = backendExportSchemePath(__appScope);
-  const templateName = eFileTemplateQueryName(__appScope);
-  const url = apiPath(
-    `/v1/schemes/model/export?format=e-file&${schemePathQueryParam("schemePath", path)}`
-    + `&name=${encodeURIComponent(String(projectName ?? ""))}`
-    + `&encoding=${encodeURIComponent(textEncoding)}`
-    + (templateName ? `&template=${encodeURIComponent(templateName)}` : "")
-  );
-  const response = await fetch(url, { method: "GET" });
-  if (!response.ok) {
-    throw new Error(await backendErrorMessage(response, failureMessage));
-  }
-  const warningDetails = eFileWarningDetailsFromResponse(response);
-  // Body.text() 恒按 UTF-8 解码、不认 content-type charset，故按 arraybuffer 收字节后按请求编码解码
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  return {
-    text: textEncoding === "gbk" ? decodeGbk(bytes) : new TextDecoder("utf-8").decode(bytes),
-    warningDetails
-  };
-}
-
-// SVG 生成已移至后端 /v1/schemes/model/export?format=svg；colorMode=voltage 保持前端导出原有按电压着色。
-// 已知差异（后端渲染器舍去）：不含背景页图层；配色取自部署的 color-config.json（与前端本地导出同源）。
-// XML 声明由后端产出，前端不再前置，保证响应体与落盘文件逐字节一致。
-async function fetchBackendModelSvgText(__appScope: Record<string, any>, textEncoding: TextFileEncoding, failureMessage: string) {
-  const { projectName } = __appScope;
-  const path = backendExportSchemePath(__appScope);
-  const url = apiPath(
-    `/v1/schemes/model/export?format=svg&${schemePathQueryParam("schemePath", path)}`
-    + `&name=${encodeURIComponent(String(projectName ?? ""))}`
-    + `&colorMode=voltage`
-    + `&encoding=${encodeURIComponent(textEncoding)}`
-  );
-  const response = await fetch(url, { method: "GET" });
-  if (!response.ok) {
-    throw new Error(await backendErrorMessage(response, failureMessage));
-  }
-  // Body.text() 恒按 UTF-8 解码、不认 content-type charset，故按 arraybuffer 收字节后按请求编码解码（同 createExportEFile）
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  return textEncoding === "gbk" ? decodeGbk(bytes) : new TextDecoder("utf-8").decode(bytes);
-}
-
-// JSON 生成已移至后端 /v1/schemes/model/export?format=json：与 E/SVG/CIM 同口径（先保存再请求），
-// 输出为存档态压缩 JSON（不再本地序列化浏览器实时态）。
-async function fetchBackendModelJsonText(__appScope: Record<string, any>, failureMessage: string) {
-  const { projectName } = __appScope;
-  const path = backendExportSchemePath(__appScope);
-  const url = apiPath(
-    `/v1/schemes/model/export?format=json&${schemePathQueryParam("schemePath", path)}`
-    + `&name=${encodeURIComponent(String(projectName ?? ""))}`
-  );
-  const response = await fetch(url, { method: "GET" });
-  if (!response.ok) {
-    throw new Error(await backendErrorMessage(response, failureMessage));
-  }
-  const payload = await response.json();
-  return JSON.stringify(payload?.data?.project ?? {});
-}
-
-export function createExportSvgFile(__appScope: Record<string, any>) {
-  return async (textEncoding: TextFileEncoding = "utf-8") => {
-    const {
-      ensureSavedBeforeExport,
-      projectName,
-      safeFilePart,
-      saveLazyTextFile,
-      saveTextFile,
-      showGlobalMessage = () => undefined,
-      writeOperationLog
-    } = __appScope;
-    let exportStartedAt = performance.now();
-    const markSaveTargetReady = () => {
-      exportStartedAt = performance.now();
-    };
-    if (!ensureSavedBeforeExport()) {
-      return;
-    }
-    const baseFilename = safeFilePart(projectName);
-    let svgTextPromise: Promise<string> | undefined;
-    const loadSvgText = () => {
-      // SVG 生成已移至后端 /v1/schemes/model/export?format=svg（见 fetchBackendModelSvgText）
-      svgTextPromise ??= Promise.resolve().then(() => fetchBackendModelSvgText(__appScope, textEncoding, "SVG 导出失败。"));
-      return svgTextPromise;
-    };
-    // 本机另存为才拿得到磁盘路径 → 弹框里才有【查看】
-    let savedFile: SavedExportFile | null = null;
-    const captureSavedFile = (file: SavedExportFile) => {
-      savedFile = file;
-    };
-    // 后端不可达/4xx/5xx 均为常规失败路径：与 createExportEFile 一致，catch 后提示并终止
-    let saved: boolean;
-    try {
-      saved = typeof saveLazyTextFile === "function"
-        ? await saveLazyTextFile({
-            filename: `${baseFilename}.svg`,
-            loadText: loadSvgText,
-            mime: "image/svg+xml",
-            description: "SVG 图形文件",
-            extensions: [".svg"],
-            encoding: textEncoding,
-            preferNativeDialog: true,
-            onSaveTargetReady: markSaveTargetReady,
-            onSaved: captureSavedFile
-          })
-        : await saveTextFile({
-            filename: `${baseFilename}.svg`,
-            text: await loadSvgText(),
-            mime: "image/svg+xml",
-            description: "SVG 图形文件",
-            extensions: [".svg"],
-            encoding: textEncoding,
-            preferNativeDialog: true,
-            onSaveTargetReady: markSaveTargetReady,
-            onSaved: captureSavedFile
-          });
-    } catch (error) {
-      showGlobalMessage(error instanceof Error ? error.message : String(error));
-      return;
-    }
-    if (!saved) {
-      return;
-    }
-    writeOperationLog(`导出图形文件：${baseFilename}.svg`);
-    const elapsedSeconds = ((performance.now() - exportStartedAt) / 1000).toFixed(2);
-    const successMessage = `SVG 文件导出成功：${baseFilename}.svg；字符编码：${textFileEncodingLabel(textEncoding)}；总耗时：${elapsedSeconds} 秒`;
-    showStandaloneExportCompletion(__appScope, "SVG 文件导出完成", successMessage, [], savedFile);
-  };
-}
-
-export function createExportJsonFile(__appScope: Record<string, any>) {
-  return async (textEncoding: TextFileEncoding = "utf-8") => {
-    const {
-      ensureSavedBeforeExport,
-      projectName,
-      safeFilePart,
-      saveLazyTextFile,
-      saveTextFile,
-      showGlobalMessage = () => undefined,
-      writeOperationLog
-    } = __appScope;
-    let exportStartedAt = performance.now();
-    const markSaveTargetReady = () => {
-      exportStartedAt = performance.now();
-    };
-    if (!ensureSavedBeforeExport()) {
-      return;
-    }
-    const baseFilename = safeFilePart(projectName);
-    let jsonTextPromise: Promise<string> | undefined;
-    const loadJsonText = () => {
-      jsonTextPromise ??= Promise.resolve().then(() => fetchBackendModelJsonText(__appScope, "JSON 导出失败。"));
-      return jsonTextPromise;
-    };
-    // 本机另存为才拿得到磁盘路径 → 弹框里才有【查看】
-    let savedFile: SavedExportFile | null = null;
-    const captureSavedFile = (file: SavedExportFile) => {
-      savedFile = file;
-    };
-    // 后端不可达/4xx/5xx 均为常规失败路径：与 createExportSvgFile 一致，catch 后提示并终止
-    let saved: boolean;
-    try {
-      saved = typeof saveLazyTextFile === "function"
-        ? await saveLazyTextFile({
-            filename: `${baseFilename}.json`,
-            loadText: loadJsonText,
-            mime: "application/json",
-            description: "JSON 模型文件",
-            extensions: [".json"],
-            encoding: textEncoding,
-            preferNativeDialog: true,
-            onSaveTargetReady: markSaveTargetReady,
-            onSaved: captureSavedFile
-          })
-        : await saveTextFile({
-            filename: `${baseFilename}.json`,
-            text: await loadJsonText(),
-            mime: "application/json",
-            description: "JSON 模型文件",
-            extensions: [".json"],
-            encoding: textEncoding,
-            preferNativeDialog: true,
-            onSaveTargetReady: markSaveTargetReady,
-            onSaved: captureSavedFile
-          });
-    } catch (error) {
-      showGlobalMessage(error instanceof Error ? error.message : String(error));
-      return;
-    }
-    if (!saved) {
-      return;
-    }
-    writeOperationLog(`导出模型文件：${baseFilename}.json`);
-    const elapsedSeconds = ((performance.now() - exportStartedAt) / 1000).toFixed(2);
-    const successMessage = `JSON 文件导出成功：${baseFilename}.json；字符编码：${textFileEncodingLabel(textEncoding)}；总耗时：${elapsedSeconds} 秒`;
-    showStandaloneExportCompletion(__appScope, "JSON 文件导出完成", successMessage, [], savedFile);
-  };
-}
-
-export function createExportEFile(__appScope: Record<string, any>) {
-  return async (textEncoding: TextFileEncoding = "gbk") => {
-    const {
-      ensureSavedBeforeExport,
-      projectName,
-      safeFilePart,
-      saveLazyTextFile,
-      saveTextFile,
-      showGlobalMessage = () => undefined,
-      writeOperationLog
-    } = __appScope;
-    let exportStartedAt = performance.now();
-    const markSaveTargetReady = () => {
-      exportStartedAt = performance.now();
-    };
-    if (!ensureSavedBeforeExport()) {
-      return;
-    }
-
-    const filenameBase = typeof safeFilePart === "function"
-      ? safeFilePart(String(projectName ?? ""))
-      : sharedSafeFilePart(String(projectName ?? ""));
-    // 后端经响应头带回落盘用告警（生成器单源）；保存完成后展示
-    let warningDetails: string[] = [];
-    // E 文件生成已移至后端 /v1/schemes/model/export?format=e-file（预定义模板只读态随请求带模板名）。
-    const generatedFilePromise = Promise.resolve().then(async () => {
-      const generated = await fetchBackendModelEFile(__appScope, textEncoding, "E 文件导出失败。");
-      warningDetails = generated.warningDetails;
-      return { file: { filename: `${filenameBase}.e`, text: generated.text, mime: "text/plain" } };
-    });
-    // 本机另存为才拿得到磁盘路径 → 弹框里才有【查看】
-    let savedFile: SavedExportFile | null = null;
-    const captureSavedFile = (file: SavedExportFile) => {
-      savedFile = file;
-    };
-    let saved: boolean;
-    try {
-      saved = typeof saveLazyTextFile === "function"
-        ? await saveLazyTextFile({
-            filename: `${filenameBase}.e`,
-            loadText: async () => (await generatedFilePromise).file.text,
-            mime: "text/plain",
-            description: "E 模型文件",
-            extensions: [".e"],
-            encoding: textEncoding,
-            preferNativeDialog: true,
-            onSaveTargetReady: markSaveTargetReady,
-            onSaved: captureSavedFile
-          })
-        : await (async () => {
-            const { file } = await generatedFilePromise;
-            return saveTextFile({
-              filename: file.filename,
-              text: file.text,
-              mime: file.mime,
-              description: "E 模型文件",
-              extensions: [".e"],
-              encoding: textEncoding,
-              preferNativeDialog: true,
-              onSaveTargetReady: markSaveTargetReady,
-              onSaved: captureSavedFile
-            });
-          })();
-    } catch (error) {
-      showGlobalMessage(error instanceof Error ? error.message : String(error));
-      return;
-    }
-    if (!saved) {
-      return;
-    }
-    const { file } = await generatedFilePromise;
-    writeOperationLog(`导出模型文件：${file.filename}`);
-    const elapsedSeconds = ((performance.now() - exportStartedAt) / 1000).toFixed(2);
-    const successMessage = `E 文件导出成功：${file.filename}；字符编码：${textFileEncodingLabel(textEncoding)}；总耗时：${elapsedSeconds} 秒`;
-    showStandaloneExportCompletion(__appScope, "E 文件导出完成", successMessage, warningDetails, savedFile);
-  };
-}
-
-export function createExportEDeviceDefinitionFile(__appScope: Record<string, any>) {
-  return async () => {
-    const { libraryTemplates, PARAM_LABELS, eDeviceDefinitionLabels, eDeviceDefinitionClassExportEnabled, eDeviceDefinitionFieldOrder, eDeviceDefinitionTableIds, eDeviceDefinitionTemplateFields, resolveTemplateComponentLibrary, saveTextFile, writeOperationLog } = __appScope;
-    // libraryTemplates 已合并内置 + 自定义元件并应用 deviceDefinitionOverrides，导出范围覆盖所有元件（含内置）
-    const interfaceDefinitions = buildEFileExportOptionsFromLibrary({
-      libraryTemplates,
-      labels: PARAM_LABELS,
-      eDeviceDefinitionLabels,
-      eDeviceDefinitionClassExportEnabled,
-      eDeviceDefinitionFieldOrder,
-      eDeviceDefinitionTemplateFields,
-      eDeviceDefinitionTableIds,
-      resolveDefinitionComponentLibrary: resolveTemplateComponentLibrary
-    }).interfaceDefinitions;
-    const file = buildEDeviceDefinitionFileFromInterfaceDefinitions(interfaceDefinitions);
-    if (!file.text) {
-      showGlobalMessage("没有可导出的元件定义：所有元件均未勾选导出字段。");
-      return;
-    }
-    // 本机另存为才拿得到磁盘路径 → 弹框里才有【查看】
-    let savedFile: SavedExportFile | null = null;
-    const saved = await saveTextFile({
-      filename: file.filename,
-      text: file.text,
-      mime: file.mime,
-      description: "E 元件定义文件",
-      extensions: [".e"],
-      encoding: "gbk",
-      preferNativeDialog: true,
-      onSaved: (saved) => {
-        savedFile = saved;
-      }
-    });
-    if (!saved) {
-      return;
-    }
-    writeOperationLog(`导出元件定义文件：${file.filename}`);
-    showStandaloneExportCompletion(__appScope, "E 元件定义文件导出完成", `元件定义文件导出成功：${file.filename}`, [], savedFile);
-  };
-}
-
-export function createImportEDeviceDefinitionFile(__appScope: Record<string, any>) {
-  return (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) {
-      return;
-    }
-    const {
-      customDeviceTemplates,
-      deviceDefinitionOverrides,
-      eDeviceDefinitionLabels,
-      eDeviceDefinitionClassExportEnabled,
-      eDeviceDefinitionFieldOrder,
-      eDeviceDefinitionTemplateFields,
-      libraryTemplates,
-      persistDeviceLibraryChange,
-      setCustomDeviceTemplates,
-      setDeviceDefinitionOverrides,
-      setEDeviceDefinitionLabels,
-      setEDeviceDefinitionClassExportEnabled,
-      setEDeviceDefinitionFieldOrder,
-      setEDeviceDefinitionTemplateFields,
-      setEDeviceInterfaceLoadedTemplateName,
-      setEDeviceInterfaceReadonlyMode,
-      writeOperationLog
-    } = __appScope;
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        // E 文件统一为 GBK 编码（导出强制 GBK），导入时按字节解码以兼容 GBK/UTF-8
-        const sections = parseEDeviceDefinitionFile(decodeEFileText(reader.result));
-        if (sections.length === 0) {
-          showGlobalMessage("未在文件中解析到元件定义。");
-          return;
-        }
-        const result = applyEDeviceDefinitionSectionsToLibraryState({
-          sections,
-          customDeviceTemplates,
-          libraryTemplates,
-          deviceDefinitionOverrides,
-          eDeviceDefinitionLabels: {},
-          eDeviceDefinitionClassExportEnabled: {},
-          eDeviceDefinitionFieldOrder,
-          eDeviceDefinitionTemplateFields: {},
-          labels: __appScope.PARAM_LABELS,
-          deviceDefinitionOverrideForTemplate: __appScope.deviceDefinitionOverrideForTemplate,
-          resolveDefinitionComponentLibrary: __appScope.resolveTemplateComponentLibrary ?? ((template: any) => inferESection(template.kind, template.params ?? {}))
-        });
-        setCustomDeviceTemplates(result.customDeviceTemplates);
-        setDeviceDefinitionOverrides(result.deviceDefinitionOverrides);
-        setEDeviceDefinitionLabels(result.eDeviceDefinitionLabels);
-        setEDeviceDefinitionClassExportEnabled(result.eDeviceDefinitionClassExportEnabled);
-        setEDeviceDefinitionFieldOrder(result.eDeviceDefinitionFieldOrder);
-        setEDeviceDefinitionTemplateFields(result.eDeviceDefinitionTemplateFields);
-        persistDeviceLibraryChange({
-          customDeviceTemplates: result.customDeviceTemplates,
-          deviceDefinitionOverrides: result.deviceDefinitionOverrides,
-          eDeviceDefinitionLabels: result.eDeviceDefinitionLabels,
-          eDeviceDefinitionClassExportEnabled: result.eDeviceDefinitionClassExportEnabled,
-          eDeviceDefinitionFieldOrder: result.eDeviceDefinitionFieldOrder,
-          eDeviceDefinitionTemplateFields: result.eDeviceDefinitionTemplateFields
-        }, {
-          success: `元件定义导入成功：匹配 ${result.matched.length} 个，跳过 ${result.skipped.length} 个。`,
-          failure: `元件定义已更新本地，后台保存失败：匹配 ${result.matched.length} 个。`
-        });
-        // 重置 E 文件接口定义基线，避免显示"有未保存修改"
-        if (typeof __appScope.setEDeviceInterfaceDefinitionBaseline === "function") {
-          __appScope.setEDeviceInterfaceDefinitionBaseline(null);
-        }
-        if (typeof __appScope.setEDeviceInterfaceSelectedClassBaseline === "function") {
-          __appScope.setEDeviceInterfaceSelectedClassBaseline(null);
-        }
-        writeOperationLog(`导入元件定义文件：${file.name}`);
-        // 设置文件名和只读模式（与预定义模板逻辑一致）
-        if (typeof setEDeviceInterfaceLoadedTemplateName === "function") {
-          setEDeviceInterfaceLoadedTemplateName(file.name);
-          try { localStorage.setItem("eDeviceInterfaceLoadedTemplateName", file.name); } catch { /* ignore */ }
-        }
-        if (typeof setEDeviceInterfaceReadonlyMode === "function") {
-          setEDeviceInterfaceReadonlyMode(true);
-          try { localStorage.setItem("eDeviceInterfaceReadonlyMode", "true"); } catch { /* ignore */ }
-        }
-        const detail = result.skipped.length > 0 ? `\n未匹配（跳过）：${result.skipped.length} 个` : "";
-        showGlobalMessage(`元件定义导入成功。\n匹配元件：${result.matched.length} 个${detail}`);
-      } catch (error) {
-        showGlobalMessage(error instanceof Error ? error.message : "导入元件定义文件失败。");
-      }
-    };
-    reader.onerror = () => {
-      showGlobalMessage("读取元件定义文件失败。");
-    };
-    reader.readAsArrayBuffer(file);
-  };
-}
-
-// E 文件统一为 GBK 编码（导出强制 GBK）。导入时按字节读取：
-// 有 UTF-8 BOM 或可按 UTF-8 无损解码时按 UTF-8，否则按 GBK 解码。
-function decodeEFileText(result: unknown): string {
-  if (typeof result === "string") {
-    return result;
-  }
-  if (result instanceof ArrayBuffer) {
-    const bytes = new Uint8Array(result);
-    if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
-      return new TextDecoder("utf-8").decode(bytes);
-    }
-    try {
-      const decoded = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-      return decoded;
-    } catch {
-      return decodeGbk(bytes);
-    }
-  }
-  return "";
-}
-
-// 程序化导出 E 文件定义（经 WS control 指令调用，返回文本不触发浏览器下载）
-export function createProgrammaticExportEDeviceDefinition(__appScope: Record<string, any>) {
-  return () => {
-    const { libraryTemplates, PARAM_LABELS, eDeviceDefinitionLabels, eDeviceDefinitionClassExportEnabled, eDeviceDefinitionFieldOrder, eDeviceDefinitionTableIds, eDeviceDefinitionTemplateFields, resolveTemplateComponentLibrary } = __appScope;
-    return buildEDeviceDefinitionFileFromInterfaceDefinitions(buildEFileExportOptionsFromLibrary({
-      libraryTemplates,
-      labels: PARAM_LABELS,
-      eDeviceDefinitionLabels,
-      eDeviceDefinitionClassExportEnabled,
-      eDeviceDefinitionFieldOrder,
-      eDeviceDefinitionTemplateFields,
-      eDeviceDefinitionTableIds,
-      resolveDefinitionComponentLibrary: resolveTemplateComponentLibrary
-    }).interfaceDefinitions);
-  };
-}
-
-// 程序化导入 E 文件定义（经 WS control 指令调用，返回匹配结果，不实际写入）
-export function createProgrammaticImportEDeviceDefinition(__appScope: Record<string, any>) {
-  return (text: string) => {
-    const { libraryTemplates } = __appScope;
-    const resolveDefinitionComponentLibrary = __appScope.resolveTemplateComponentLibrary ?? ((template: any) => inferESection(template.kind, template.params ?? {}));
-    const sections = parseEDeviceDefinitionFile(String(text ?? ""));
-    if (sections.length === 0) {
-      const e: any = new Error("未在文件中解析到元件定义。");
-      e.code = "bad-request";
-      throw e;
-    }
-    const sectionByKind = new Map(sections.map((s: any) => [s.componentLibrary || s.kind, s]));
-    const matched: string[] = [];
-    const skipped: string[] = [];
-    for (const template of (libraryTemplates ?? []) as any[]) {
-      const componentLibrary = resolveDefinitionComponentLibrary(template);
-      const section = componentLibrary ? sectionByKind.get(componentLibrary) : undefined;
-      if (!section) {
-        skipped.push(template.label || template.kind);
-        continue;
-      }
-      matched.push(template.label || template.kind);
-    }
-    return { matched, skipped, matchedCount: matched.length, skippedCount: skipped.length };
-  };
-}
-
-export function createIsProjectFilePayload(__appScope: Record<string, any>) {
-  return (value: unknown): value is ProjectFile => {
-  const { isObjectRecord } = __appScope;
-    if (!isObjectRecord(value)) {
-      return false;
-    }
-    return value.version === 1 && Array.isArray(value.nodes) && Array.isArray(value.edges);
-  };
-}
-
-export function createCreateImportedSchemeRecord(__appScope: Record<string, any>) {
-  return (text: string, fileName: string): SavedSchemeRecord => {
-  const { createImportedSchemeRecord, createSavedProject, createSavedScheme, isObjectRecord, isProjectFilePayload } = __appScope;
-    const payload = JSON.parse(text) as unknown;
-    const payloadRecord = isObjectRecord(payload) ? payload : null;
-    const rawScheme =
-      payloadRecord && isObjectRecord(payloadRecord.scheme)
-        ? payloadRecord.scheme
-        : payloadRecord && Array.isArray(payloadRecord.schemes) && isObjectRecord(payloadRecord.schemes[0])
-          ? payloadRecord.schemes[0]
-          : payloadRecord;
-    if (!rawScheme || !Array.isArray(rawScheme.projects)) {
-      throw new Error("方案文件格式不正确。");
-    }
-    const fileBaseName = fileName.replace(/\.scheme\.json$/i, "").replace(/\.json$/i, "");
-    const importedName = typeof rawScheme.name === "string" && rawScheme.name.trim() ? rawScheme.name.trim() : fileBaseName || "导入方案";
-    const importedProjects = rawScheme.projects.map((projectPayload, index) => {
-      const projectRecord = isObjectRecord(projectPayload) ? projectPayload : null;
-      const projectFile = projectRecord && isProjectFilePayload(projectRecord.project)
-        ? projectRecord.project
-        : isProjectFilePayload(projectPayload)
-          ? projectPayload
-          : null;
-      if (!projectFile) {
-        throw new Error(`方案文件中的第 ${index + 1} 个模型格式不正确。`);
-      }
-      const importedProjectName =
-        projectRecord && typeof projectRecord.name === "string" && projectRecord.name.trim()
-          ? projectRecord.name.trim()
-          : projectFile.name || `导入模型${index + 1}`;
-      // 方案文件导入的是「已存在于后台」的模型，保留其 model_id；createSavedProject 默认不继承 idx。
-      const createdRecord = createSavedProject(importedProjectName, projectFile);
-      return projectFile.idx === undefined
-        ? createdRecord
-        : { ...createdRecord, project: { ...createdRecord.project, idx: projectFile.idx } };
-    });
-    const importedChildren: SavedSchemeRecord[] = Array.isArray(rawScheme.children)
-      ? rawScheme.children.map((childPayload, index): SavedSchemeRecord => {
-          try {
-            return createImportedSchemeRecord(JSON.stringify(childPayload), `子方案${index + 1}.json`);
-          } catch (error) {
-            throw new Error(error instanceof Error ? `子方案${index + 1}：${error.message}` : `子方案${index + 1}格式不正确。`);
-          }
-        })
-      : [];
-    return createSavedScheme(importedName, importedProjects, importedChildren);
-  };
-}
-
-export function createExportProjectRecordFile(__appScope: Record<string, any>) {
-  return async (project: SavedProjectRecord) => {
-  const { activeProjectKey, currentProject, projectName, safeFilePart, saveTextFile, serializeProject, writeOperationLog } = __appScope;
-    const projectFile = project.id === activeProjectKey ? currentProject() : project.project;
-    const exportName = project.id === activeProjectKey ? projectName : project.name;
-    // 本机另存为才拿得到磁盘路径 → 弹框里才有【查看】
-    let savedFile: SavedExportFile | null = null;
-    const saved = await saveTextFile({
-      filename: `${safeFilePart(exportName)}.json`,
-      text: serializeProject(projectFile),
-      mime: "application/json",
-      description: "平台模型文件",
-      extensions: [".json"],
-      preferNativeDialog: true,
-      onSaved: (saved) => {
-        savedFile = saved;
-      }
-    });
-    if (!saved) {
-      return;
-    }
-    writeOperationLog(`导出模型文件：${exportName}.json`);
-    showStandaloneExportCompletion(__appScope, "模型文件导出完成", `模型文件导出成功：${safeFilePart(exportName)}.json`, [], savedFile);
-  };
-}
-
-export function createExportCurrentModelFile(__appScope: Record<string, any>) {
-  return async () => {
-  const { currentProject, projectName, safeFilePart, saveTextFile, serializeProject, writeOperationLog } = __appScope;
-    // 本机另存为才拿得到磁盘路径 → 弹框里才有【查看】
-    let savedFile: SavedExportFile | null = null;
-    const saved = await saveTextFile({
-      filename: `${safeFilePart(projectName)}.json`,
-      text: serializeProject(currentProject()),
-      mime: "application/json",
-      description: "平台模型文件",
-      extensions: [".json"],
-      preferNativeDialog: true,
-      onSaved: (saved) => {
-        savedFile = saved;
-      }
-    });
-    if (!saved) {
-      return;
-    }
-    writeOperationLog(`导出当前模型文件：${projectName}.json`);
-    showStandaloneExportCompletion(__appScope, "当前模型文件导出完成", `当前模型文件导出成功：${safeFilePart(projectName)}.json`, [], savedFile);
-  };
-}
-
-export function createOpenModelImportFilePicker(__appScope: Record<string, any>) {
-  return (targetSchemeId = "") => {
-  const { modelImportInputRef, modelImportTargetSchemeIdRef } = __appScope;
-    modelImportTargetSchemeIdRef.current = targetSchemeId;
-    modelImportInputRef.current?.click();
-  };
-}
-
-export function createOpenSvgModelImportFilePicker(__appScope: Record<string, any>) {
-  return (targetSchemeId = "") => {
-  const { modelImportTargetSchemeIdRef, svgModelImportInputRef } = __appScope;
-    modelImportTargetSchemeIdRef.current = targetSchemeId;
-    if (svgModelImportInputRef.current) {
-      svgModelImportInputRef.current.value = "";
-      svgModelImportInputRef.current.click();
-    }
-  };
-}
-
-export function createCompleteImportedModelFeedback(__appScope: Record<string, any>) {
-  return (feedback?: { successMessage: string; warnings: string[] }) => {
-  const { writeOperationLog } = __appScope;
-    if (!feedback) {
-      return;
-    }
-    for (const warning of feedback.warnings) {
-      writeOperationLog(`SVG 导入警告：${warning}`);
-    }
-    showGlobalMessage(feedback.successMessage);
-  };
-}
-
-function svgModelImportCompletionFeedback(importedName: string, result: any) {
-  const modeLabel = result.mode === "platform" ? "平台语义恢复" : "普通 SVG 静态图元";
-  const warnings = Array.isArray(result.warnings) ? result.warnings.map((warning: unknown) => String(warning)) : [];
-  const warningLines = warnings.slice(0, 20).map((warning: string, index: number) => `${index + 1}. ${warning}`);
-  return {
-    warnings,
-    successMessage: [
-      `从 SVG 生成模型成功：${importedName}`,
-      `解析方式：${modeLabel}`,
-      `设备：${Number(result.stats?.nodes) || 0}`,
-      `连接线：${Number(result.stats?.edges) || 0}`,
-      `量测组：${Number(result.stats?.measurementGroups) || 0}`,
-      `静态图元：${Number(result.stats?.staticNodes) || 0}`,
-      `警告：${warnings.length}`,
-      ...(warningLines.length > 0 ? ["", ...warningLines] : []),
-      ...(warnings.length > warningLines.length ? ["", `其余 ${warnings.length - warningLines.length} 条警告已写入操作日志。`] : [])
-    ].join("\n")
-  };
-}
-
-export function createOpenSchemeImportFilePicker(__appScope: Record<string, any>) {
-  return (parentSchemeId = "") => {
-  const { schemeImportInputRef, schemeImportParentSchemeIdRef } = __appScope;
-    schemeImportParentSchemeIdRef.current = parentSchemeId;
-    if (schemeImportInputRef.current) {
-      schemeImportInputRef.current.value = "";
-      schemeImportInputRef.current.click();
-    }
-  };
-}
-
-export function createMergeImportedSchemeIntoExisting(__appScope: Record<string, any>) {
-  return (existingScheme: SavedSchemeRecord, importedScheme: SavedSchemeRecord): SavedSchemeRecord => {
-  const { hasSameName, mergeImportedSchemeIntoExisting, upsertSavedProject } = __appScope;
-    const now = new Date().toISOString();
-    const nextProjects = importedScheme.projects.reduce<SavedProjectRecord[]>((current, importedProject) => {
-      const duplicateProject = current.find((project) => hasSameName(project.name, [importedProject.name]));
-      if (!duplicateProject) {
-        return upsertSavedProject(current, importedProject);
-      }
-      return upsertSavedProject(current, {
-        ...importedProject,
-        id: duplicateProject.id,
-        name: duplicateProject.name,
-        project: { ...importedProject.project, name: duplicateProject.name }
-      });
-    }, existingScheme.projects);
-    const nextChildren = (importedScheme.children ?? []).reduce<SavedSchemeRecord[]>((current, importedChild) => {
-      const duplicateChild = current.find((child) => hasSameName(child.name, [importedChild.name]));
-      if (!duplicateChild) {
-        return [...current, importedChild];
-      }
-      return current.map((child) => child.id === duplicateChild.id ? mergeImportedSchemeIntoExisting(child, importedChild) : child);
-    }, existingScheme.children ?? []);
-    return { ...existingScheme, updatedAt: now, projects: nextProjects, children: nextChildren };
-  };
-}
-
-export function createCommitImportedSchemeRecord(__appScope: Record<string, any>) {
-  return (importedScheme: SavedSchemeRecord, parentSchemeId = "") => {
-  const { insertChildSavedScheme, persistSchemeTreeToBackend, schemePathForScheme, selectSingleScheme, setExpandedSchemeIds, setSchemes, writeOperationLog } = __appScope;
-    const parentPath = parentSchemeId ? schemePathForScheme(parentSchemeId) : [];
-    setSchemes((current) => insertChildSavedScheme(current, parentSchemeId, importedScheme));
-    persistSchemeTreeToBackend(importedScheme, parentPath, `导入方案：${importedScheme.name}`);
-    if (parentSchemeId) {
-      setExpandedSchemeIds((current) => (current.includes(parentSchemeId) ? current : [...current, parentSchemeId]));
-    }
-    setExpandedSchemeIds((current) => (current.includes(importedScheme.id) ? current : [...current, importedScheme.id]));
-    selectSingleScheme(importedScheme.id);
-    writeOperationLog(`导入方案：${importedScheme.name}`);
-  };
-}
-
-export function createApplyBackendSchemeArchiveImport(__appScope: Record<string, any>) {
-  return (payload: BackendSchemeArchiveImportResponse, fallbackName: string) => {
-  const { findSavedSchemeByPath, hydrateSavedSchemeRuntimeIds, normalizeSavedSchemeIndexes, rememberPersistedSchemesPayload, selectSingleScheme, serializeSchemesForStorage, setExpandedSchemeIds, setSchemesState, suppressNextBackendSchemeSyncRef, writeOperationLog } = __appScope;
-    const importedPath = Array.isArray(payload.importedPath) ? payload.importedPath : [];
-    const backendSchemes = hydrateSavedSchemeRuntimeIds((payload.schemes ?? []).map(normalizeSavedSchemeIndexes));
-    suppressNextBackendSchemeSyncRef.current = true;
-    rememberPersistedSchemesPayload(serializeSchemesForStorage(backendSchemes));
-    setSchemesState(backendSchemes);
-    const importedScheme = importedPath.length > 0 ? findSavedSchemeByPath(backendSchemes, importedPath) : null;
-    if (importedScheme) {
-      const parentPath = importedPath.slice(0, -1);
-      const parentScheme = parentPath.length > 0 ? findSavedSchemeByPath(backendSchemes, parentPath) : null;
-      if (parentScheme) {
-        setExpandedSchemeIds((current) => (current.includes(parentScheme.id) ? current : [...current, parentScheme.id]));
-      }
-      setExpandedSchemeIds((current) => (current.includes(importedScheme.id) ? current : [...current, importedScheme.id]));
-      selectSingleScheme(importedScheme.id);
-    }
-    writeOperationLog(`导入方案压缩包：${payload.importedName || fallbackName}`);
-  };
-}
-
-export function createImportSchemeFile(__appScope: Record<string, any>) {
-  return async (event: ChangeEvent<HTMLInputElement>) => {
-  const { applyBackendSchemeArchiveImport, commitImportedSchemeRecord, createImportedSchemeRecord, findSavedSchemeById, hasSameName, schemeImportParentSchemeIdRef, schemePathForScheme, schemes, setPendingSchemeImportConflict, uploadBackendSchemeArchive } = __appScope;
-    const input = event.currentTarget;
-    const file = input.files?.[0];
-    if (!file) {
-      schemeImportParentSchemeIdRef.current = "";
-      input.value = "";
-      return;
-    }
-    try {
-      if (/\.zip$/iu.test(file.name)) {
-        const parentSchemeId = schemeImportParentSchemeIdRef.current;
-        const parentPath = parentSchemeId ? schemePathForScheme(parentSchemeId) : [];
-        const payload = await uploadBackendSchemeArchive(file, parentPath);
-        if (payload.conflict) {
-          setPendingSchemeImportConflict({
-            importFile: file,
-            importedPath: payload.parentPath,
-            importedName: payload.importedName || file.name.replace(/\.zip$/iu, "") || "导入方案",
-            duplicateSchemeName: payload.duplicateSchemeName || payload.importedName || "同名方案",
-            targetParentSchemeId: parentSchemeId
-          });
-          return;
-        }
-        applyBackendSchemeArchiveImport(payload, file.name);
-        return;
-      }
-      const text = await file.text();
-      const importedScheme = createImportedSchemeRecord(text, file.name);
-      const parentSchemeId = schemeImportParentSchemeIdRef.current;
-      const targetSchemes = parentSchemeId ? findSavedSchemeById(schemes, parentSchemeId)?.children ?? [] : schemes;
-      const duplicateScheme = targetSchemes.find((scheme) => hasSameName(importedScheme.name, [scheme.name]));
-      if (duplicateScheme) {
-        setPendingSchemeImportConflict({
-          importedScheme,
-          importedName: importedScheme.name,
-          duplicateSchemeId: duplicateScheme.id,
-          duplicateSchemeName: duplicateScheme.name,
-          targetParentSchemeId: parentSchemeId
-        });
-        return;
-      }
-      commitImportedSchemeRecord(importedScheme, parentSchemeId);
-    } catch (error) {
-      showGlobalMessage(error instanceof Error ? `导入方案失败：${error.message}` : "导入方案失败。");
-    } finally {
-      schemeImportParentSchemeIdRef.current = "";
-      input.value = "";
-    }
-  };
-}
-
-export function createCommitImportedModelRecord(__appScope: Record<string, any>) {
-  return (targetScheme: SavedSchemeRecord, importedRecord: SavedProjectRecord) => {
-  const { findSavedSchemeById, handleBackendSchemeMutationFailure, loadSavedProject, saveBackendProjectRecord, schemePathForRecord, setExpandedSchemeIds, setSchemes, upsertSavedProjectInScheme, writeOperationLog } = __appScope;
-    const targetPath = schemePathForRecord(targetScheme);
-    setSchemes((current) => {
-      const fallback = current.length > 0 ? current : [targetScheme];
-      const nextSchemes = findSavedSchemeById(fallback, targetScheme.id) ? fallback : [...fallback, targetScheme];
-      return upsertSavedProjectInScheme(nextSchemes, targetScheme.id, importedRecord);
-    });
-    void saveBackendProjectRecord(targetPath, importedRecord)
-      // 后端保存时才分配 model_id（idx），回填本地记录，避免新模型一直显示无 ID。
-      .then((saved) => setSchemes((current) => upsertSavedProjectInScheme(current, targetScheme.id, saved)))
-      .catch((error) => handleBackendSchemeMutationFailure(`导入模型同步后台：${importedRecord.name}`, error));
-    setExpandedSchemeIds((current) => (current.includes(targetScheme.id) ? current : [...current, targetScheme.id]));
-    loadSavedProject(importedRecord, targetScheme.id);
-    writeOperationLog(`导入模型文件：${importedRecord.name}`);
-  };
-}
-
-export function createImportModelFile(__appScope: Record<string, any>) {
-  return async (event: ChangeEvent<HTMLInputElement>) => {
-  const { activeSchemeRecord, commitImportedModelRecord, createSavedProject, createSavedScheme, deserializeProject, findSavedSchemeById, modelImportTargetSchemeIdRef, schemes, selectedSchemeRecord, setPendingModelImportConflict } = __appScope;
-    const input = event.currentTarget;
-    const file = input.files?.[0];
-    if (!file) {
-      return;
-    }
-    try {
-      const text = await file.text();
-      const importedProject = deserializeProject(text);
-      const importTargetSchemeId = modelImportTargetSchemeIdRef.current;
-      const targetScheme =
-        findSavedSchemeById(schemes, importTargetSchemeId) ??
-        activeSchemeRecord ??
-        selectedSchemeRecord ??
-        schemes[0] ??
-        createSavedScheme("默认方案");
-      const fileBaseName = file.name.replace(/\.json$/i, "");
-      const importedName = (importedProject.name || fileBaseName || "导入模型").trim() || "导入模型";
-      const duplicateProject = targetScheme.projects.find((project) => project.name.trim() === importedName.trim());
-      if (duplicateProject) {
-        setPendingModelImportConflict({
-          targetSchemeId: targetScheme.id,
-          importedProject,
-          importedName,
-          duplicateProjectId: duplicateProject.id,
-          duplicateProjectName: duplicateProject.name
-        });
-        return;
-      }
-      commitImportedModelRecord(targetScheme, createSavedProject(importedName, importedProject));
-    } catch (error) {
-      showGlobalMessage(error instanceof Error ? `导入模型文件失败：${error.message}` : "导入模型文件失败。");
-    } finally {
-      modelImportTargetSchemeIdRef.current = "";
-      input.value = "";
-    }
-  };
-}
-
-export function createImportSvgModelFile(__appScope: Record<string, any>) {
-  return async (event: ChangeEvent<HTMLInputElement>) => {
-  const {
-    activeSchemeRecord,
-    commitImportedModelRecord,
-    completeImportedModelFeedback,
-    createSavedProject,
-    createSavedScheme,
-    findSavedSchemeById,
-    libraryTemplates,
-    modelImportTargetSchemeIdRef,
-    parseSvgModel,
-    schemes,
-    selectedSchemeRecord,
-    setPendingModelImportConflict,
-    writeOperationLog,
-    yieldToBrowser
-  } = __appScope;
-    const input = event.currentTarget;
-    const file = input.files?.[0];
-    if (!file) {
-      modelImportTargetSchemeIdRef.current = "";
-      input.value = "";
-      return;
-    }
-    try {
-      if (!/\.svg$/iu.test(file.name) && file.type !== "image/svg+xml") {
-        throw new Error("请选择 SVG 文件。");
-      }
-      writeOperationLog(`正在从 SVG 生成模型：${file.name}`);
-      if (typeof yieldToBrowser === "function") {
-        await yieldToBrowser();
-      } else {
-        await new Promise<void>((resolve) => globalThis.setTimeout(resolve, 0));
-      }
-      const text = await file.text();
-      const importedName = file.name.replace(/\.svg$/iu, "").trim() || "SVG 导入模型";
-      const result = await parseSvgModel(text, {
-        name: importedName,
-        templates: libraryTemplates
-      });
-      const targetScheme =
-        findSavedSchemeById(schemes, modelImportTargetSchemeIdRef.current) ??
-        activeSchemeRecord ??
-        selectedSchemeRecord ??
-        schemes[0] ??
-        createSavedScheme("默认方案");
-      const completionFeedback = svgModelImportCompletionFeedback(importedName, result);
-      const duplicateProject = targetScheme.projects.find((project: any) => project.name.trim() === importedName);
-      if (duplicateProject) {
-        setPendingModelImportConflict({
-          targetSchemeId: targetScheme.id,
-          importedProject: result.project,
-          importedName,
-          duplicateProjectId: duplicateProject.id,
-          duplicateProjectName: duplicateProject.name,
-          completionFeedback
-        });
-        return;
-      }
-      commitImportedModelRecord(targetScheme, createSavedProject(importedName, result.project));
-      completeImportedModelFeedback(completionFeedback);
-    } catch (error) {
-      showGlobalMessage(error instanceof Error ? `从 SVG 生成模型失败：${error.message}` : "从 SVG 生成模型失败。");
-    } finally {
-      modelImportTargetSchemeIdRef.current = "";
-      input.value = "";
-    }
-  };
-}
-
-// dot 导入完成反馈：仿 SVG 版，报告字段映射设备/连接线/收缩点/未知图元/容性假设/[OPEN] 开关，
-// 警告来自 unknownStaticNames 与 shuntAssumedCapacitorNames，前 20 条内联、其余写入操作日志。
-function dotModelImportCompletionFeedback(importedName: string, result: any) {
-  const report = result?.report ?? {};
-  const warnings = [
-    ...(Array.isArray(report.unknownStaticNames) ? report.unknownStaticNames.map((name: string) => `未知图元：${name}（按静态图元导入）`) : []),
-    ...(Array.isArray(report.shuntAssumedCapacitorNames) ? report.shuntAssumedCapacitorNames.map((name: string) => `容性假设：${name}（按电容器导入）`) : [])
-  ];
-  const warningLines = warnings.slice(0, 20).map((warning: string, index: number) => `${index + 1}. ${warning}`);
-  return {
-    warnings,
-    successMessage: [
-      `从 dot 生成模型成功：${importedName}`,
-      `设备：${Number(report.deviceCount) || 0}`,
-      `连接线：${Number(report.edgeCount) || 0}`,
-      `收缩点：${Number(report.collapsedCount) || 0}`,
-      `未知图元：${Number(report.unknownStaticCount) || 0}`,
-      `容性假设：${Array.isArray(report.shuntAssumedCapacitorNames) ? report.shuntAssumedCapacitorNames.length : 0}`,
-      `[OPEN] 开关：${Number(report.openSwitchCount) || 0}`,
-      `警告：${warnings.length}`,
-      ...(warningLines.length > 0 ? ["", ...warningLines] : []),
-      ...(warnings.length > warningLines.length ? ["", `其余 ${warnings.length - warningLines.length} 条警告已写入操作日志。`] : [])
-    ].join("\n")
-  };
-}
-
-export function createOpenDotModelImportFilePicker(__appScope: Record<string, any>) {
-  return (targetSchemeId = "") => {
-  const { dotModelImportInputRef, modelImportTargetSchemeIdRef } = __appScope;
-    modelImportTargetSchemeIdRef.current = targetSchemeId;
-    if (dotModelImportInputRef.current) {
-      dotModelImportInputRef.current.value = "";
-      dotModelImportInputRef.current.click();
-    }
-  };
-}
-
-export function createImportDotModelFile(__appScope: Record<string, any>) {
-  return async (event: ChangeEvent<HTMLInputElement>) => {
-  const {
-    activeSchemeRecord,
-    commitImportedModelRecord,
-    createSavedProject,
-    createSavedScheme,
-    findSavedSchemeById,
-    importDotFile,
-    modelImportTargetSchemeIdRef,
-    requireEditMode,
-    schemes,
-    selectedSchemeRecord,
-    setPendingModelImportConflict,
-    writeOperationLog
-  } = __appScope;
-    const input = event.currentTarget;
-    const file = input.files?.[0];
-    if (!file) {
-      modelImportTargetSchemeIdRef.current = "";
-      input.value = "";
-      return;
-    }
-    try {
-      if (!/\.dot$/iu.test(file.name)) {
-        throw new Error("请选择 dot 文件。");
-      }
-      writeOperationLog(`正在从 dot 生成模型：${file.name}`);
-      const text = await file.text();
-      const importedName = file.name.replace(/\.dot$/iu, "").trim() || "dot 导入模型";
-      const result = importDotFile(text);
-      const targetScheme =
-        findSavedSchemeById(schemes, modelImportTargetSchemeIdRef.current) ??
-        activeSchemeRecord ??
-        selectedSchemeRecord ??
-        schemes[0] ??
-        createSavedScheme("默认方案");
-      const completionFeedback = dotModelImportCompletionFeedback(importedName, result);
-      const duplicateProject = targetScheme.projects.find((project: any) => project.name.trim() === importedName);
-      if (duplicateProject) {
-        setPendingModelImportConflict({
-          targetSchemeId: targetScheme.id,
-          importedProject: result.project,
-          importedName,
-          duplicateProjectId: duplicateProject.id,
-          duplicateProjectName: duplicateProject.name,
-          completionFeedback
-        });
-        return;
-      }
-      commitImportedModelRecord(targetScheme, createSavedProject(importedName, result.project));
-      for (const warning of completionFeedback.warnings) {
-        writeOperationLog(`dot 导入警告：${warning}`);
-      }
-      showGlobalMessage(completionFeedback.successMessage);
-    } catch (error) {
-      showGlobalMessage(error instanceof Error ? `从 dot 生成模型失败：${error.message}` : "从 dot 生成模型失败。");
-    } finally {
-      modelImportTargetSchemeIdRef.current = "";
-      input.value = "";
-    }
-  };
-}
-
-export function createResolveDuplicateSchemeImport(__appScope: Record<string, any>) {
-  return (action: "merge" | "rename" | "cancel") => {
-  const { applyBackendSchemeArchiveImport, commitImportedSchemeRecord, findSavedSchemeById, mergeImportedSchemeIntoExisting, pendingSchemeImportConflict, persistSchemeTreeToBackend, promptUniqueRecordName, replaceSavedSchemeById, savedChildSchemeNames, schemePathForRecord, schemePathForScheme, schemes, selectSingleScheme, setExpandedSchemeIds, setPendingSchemeImportConflict, setSchemes, uniqueRecordName, uploadBackendSchemeArchive, writeOperationLog } = __appScope;
-    const conflict = pendingSchemeImportConflict;
-    if (!conflict || action === "cancel") {
-      setPendingSchemeImportConflict(null);
-      return;
-    }
-    if (conflict.importFile) {
-      const parentPath = conflict.targetParentSchemeId ? schemePathForScheme(conflict.targetParentSchemeId) : [];
-      const handleZipImport = async (targetName?: string) => {
-        try {
-          const payload = await uploadBackendSchemeArchive(conflict.importFile as File, parentPath, { mode: "overwrite", targetName });
-          applyBackendSchemeArchiveImport(payload, targetName || conflict.importedName);
-        } catch (error) {
-          showGlobalMessage(error instanceof Error ? `导入方案压缩包失败：${error.message}` : "导入方案压缩包失败。");
-        }
-      };
-      if (action === "rename") {
-        const siblingNames = savedChildSchemeNames(schemes, conflict.targetParentSchemeId ?? "");
-        const renamed = promptUniqueRecordName(
-          "请输入导入后的方案名称",
-          uniqueRecordName(conflict.importedName, siblingNames, "导入方案"),
-          siblingNames,
-          "方案名称不能为空。",
-          "方案名称重复，无法导入。"
-        );
-        if (!renamed) {
-          return;
-        }
-        setPendingSchemeImportConflict(null);
-        void handleZipImport(renamed);
-        return;
-      }
-      setPendingSchemeImportConflict(null);
-      void handleZipImport();
-      return;
-    }
-    const duplicateScheme = findSavedSchemeById(schemes, conflict.duplicateSchemeId ?? "");
-    const targetParentSchemeId = conflict.targetParentSchemeId ?? "";
-    const siblingNames = savedChildSchemeNames(schemes, targetParentSchemeId);
-    if (!conflict.importedScheme) {
-      setPendingSchemeImportConflict(null);
-      return;
-    }
-    if (action === "rename") {
-      const renamed = promptUniqueRecordName(
-        "请输入导入后的方案名称",
-        uniqueRecordName(conflict.importedName, siblingNames, "导入方案"),
-        siblingNames,
-        "方案名称不能为空。",
-        "方案名称重复，无法导入。"
-      );
-      if (!renamed) {
-        return;
-      }
-      setPendingSchemeImportConflict(null);
-      commitImportedSchemeRecord({ ...conflict.importedScheme, name: renamed, updatedAt: new Date().toISOString() }, targetParentSchemeId);
-      return;
-    }
-    if (!duplicateScheme) {
-      setPendingSchemeImportConflict(null);
-      commitImportedSchemeRecord(conflict.importedScheme, targetParentSchemeId);
-      return;
-    }
-    setPendingSchemeImportConflict(null);
-    const mergedScheme = mergeImportedSchemeIntoExisting(duplicateScheme, conflict.importedScheme);
-    const duplicatePath = schemePathForRecord(duplicateScheme);
-    const parentPath = duplicatePath.slice(0, -1);
-    setSchemes((current) => replaceSavedSchemeById(current, duplicateScheme.id, mergedScheme));
-    persistSchemeTreeToBackend(mergedScheme, parentPath, `合并覆盖导入方案：${mergedScheme.name}`);
-    setExpandedSchemeIds((current) => (current.includes(duplicateScheme.id) ? current : [...current, duplicateScheme.id]));
-    selectSingleScheme(duplicateScheme.id);
-    writeOperationLog(`合并覆盖导入方案：${duplicateScheme.name}`);
-  };
-}
-
-export function createResolveDuplicateModelImport(__appScope: Record<string, any>) {
-  return (action: "overwrite" | "rename" | "cancel") => {
-  const { activeSchemeRecord, commitImportedModelRecord, completeImportedModelFeedback, createSavedProject, createSavedScheme, findSavedSchemeById, pendingModelImportConflict, promptUniqueRecordName, schemes, selectedSchemeRecord, setPendingModelImportConflict, uniqueRecordName } = __appScope;
-    const conflict = pendingModelImportConflict;
-    if (!conflict || action === "cancel") {
-      setPendingModelImportConflict(null);
-      return;
-    }
-    const targetScheme =
-      findSavedSchemeById(schemes, conflict.targetSchemeId) ??
-      activeSchemeRecord ??
-      selectedSchemeRecord ??
-      schemes[0] ??
-      createSavedScheme("默认方案");
-    const existingNames = targetScheme.projects.map((project) => project.name);
-    if (action === "rename") {
-      const renamed = promptUniqueRecordName(
-        "请输入导入后的模型名称",
-        uniqueRecordName(conflict.importedName, existingNames, "导入模型"),
-        existingNames,
-        "模型名称不能为空。",
-        "模型名称重复，无法导入。"
-      );
-      if (!renamed) {
-        return;
-      }
-      setPendingModelImportConflict(null);
-      commitImportedModelRecord(targetScheme, createSavedProject(renamed, conflict.importedProject));
-      completeImportedModelFeedback(conflict.completionFeedback);
-      return;
-    }
-    const duplicateProject = targetScheme.projects.find((project) => project.id === conflict.duplicateProjectId);
-    const targetName = duplicateProject?.name ?? conflict.duplicateProjectName;
-    const overwrittenRecord = createSavedProject(targetName, conflict.importedProject);
-    setPendingModelImportConflict(null);
-    commitImportedModelRecord(targetScheme, {
-      ...overwrittenRecord,
-      id: conflict.duplicateProjectId,
-      name: targetName,
-      project: { ...overwrittenRecord.project, name: targetName }
-    });
-    completeImportedModelFeedback(conflict.completionFeedback);
-  };
-}
-
-export function createExportSchemeRecord(__appScope: Record<string, any>) {
-  return async (scheme: SavedSchemeRecord) => {
-  const { downloadBackendSchemeArchive, flattenSavedProjects, isPickerAbort, safeFilePart, schemePathForRecord, writeOperationLog } = __appScope;
-    try {
-      const schemePath = schemePathForRecord(scheme);
-      // 本机另存为才拿得到磁盘路径 → 弹框里才有【查看】（ZIP 用系统默认解压器打开）
-      let savedFile: SavedExportFile | null = null;
-      const saved = await downloadBackendSchemeArchive(schemePath, `${safeFilePart(scheme.name)}.zip`, (file) => {
-        savedFile = file;
-      }, scheme.schemeId);
-      if (!saved) {
-        return;
-      }
-      writeOperationLog(`导出方案：${scheme.name}`);
-      showStandaloneExportCompletion(
-        __appScope,
-        "方案导出完成",
-        `已导出方案“${scheme.name}”，共 ${flattenSavedProjects([scheme]).length} 个模型。`,
-        [`文件：${safeFilePart(scheme.name)}.zip`],
-        savedFile
-      );
-    } catch (error) {
-      if (isPickerAbort(error)) {
-        return;
-      }
-      showGlobalMessage(error instanceof Error ? `导出方案失败：${error.message}` : "导出方案失败。");
-    }
-  };
-}
-
-export type ImageLibraryImportKind = "image" | "archive" | "mixed";
-
-const IMAGE_LIBRARY_ARCHIVE_FILE_PATTERN = /\.(docx|docm|pptx|pptm|ppsx|ppsm|xlsx|xlsm|vsdx|wps|dps|zip)$/iu;
-const IMAGE_LIBRARY_IMAGE_FILE_PATTERN = /\.(svg|png|jpe?g|gif|webp|bmp|ico)$/iu;
-
-export function imageLibraryImportKindForInput(input?: { dataset?: { imageImportKind?: string } } | null): ImageLibraryImportKind {
-  const kind = input?.dataset?.imageImportKind;
-  return kind === "image" || kind === "archive" ? kind : "mixed";
-}
-
-/**
- * 后台图片上传失败时，本地兜底素材的 id。
- *
- * 随机源可注入的原因（去向追踪结论）：这个 id 不停在内存里 ——
- * 它先被 saveImageAsset 当作 localStorage 键写进浏览器存储（刷新后仍在），
- * 再作为 asset.id 进入 setImageAssetList / setImageAssets，
- * 随后经 createApplyExistingImage 落到节点的 params.backgroundImageAssetId
- * （resolveNodeImage / resolveNodeForegroundImage 读的就是该字段），
- * 而节点 params 正是保存方案与 SVG / E 文件导出的内容。
- * 同一份图若换一台机器上传，id 会不同 ⇒ 导出结果不可复现。
- *
- * 默认参数仍是 Math.random，字符串格式与原先逐字一致（`asset-<ms>-<6位36进制>`）。
- */
-export function createImageUploadFallbackAssetId(random: () => number = Math.random) {
-  return `asset-${Date.now()}-${random().toString(36).slice(2, 8)}`;
-}
-
-export function imageLibraryFileMatchesImportKind(fileName: string, importKind: ImageLibraryImportKind) {
-  const normalizedName = String(fileName ?? "").trim().toLowerCase();
-  const isArchive = IMAGE_LIBRARY_ARCHIVE_FILE_PATTERN.test(normalizedName);
-  const isImage = IMAGE_LIBRARY_IMAGE_FILE_PATTERN.test(normalizedName);
-  if (importKind === "archive") {
-    return isArchive;
-  }
-  if (importKind === "image") {
-    return isImage;
-  }
-  return isArchive || isImage;
-}
-
-export function createChooseImage(__appScope: Record<string, any>) {
-  return (event: ChangeEvent<HTMLInputElement>) => {
-  const { activeImageFolderId, imageTarget, importBackendIconLibraryFile, randomSource: injectedRandomSource, refreshImageFolders, saveImageAsset, setImageAssetList, setImageAssets, uploadBackendImage } = __appScope;
-    // 兜底 id 会流进 localStorage 与节点 params（见 createImageUploadFallbackAssetId 的追踪注释），
-    // 所以随机源做成可注入；App.tsx 不装配该键 ⇒ 仍走 Math.random，行为不变。
-    const randomSource = typeof injectedRandomSource === "function" ? injectedRandomSource : Math.random;
-    const files = Array.from(event.target.files ?? []);
-    const importKind = imageLibraryImportKindForInput(event.currentTarget ?? event.target);
-    event.target.value = "";
-    if (files.length === 0 || !imageTarget) {
-      return;
-    }
-    const readFileAsDataUrl = (file: File) =>
-      new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result ?? ""));
-        reader.onerror = () => reject(reader.error ?? new Error("读取图片失败。"));
-        reader.readAsDataURL(file);
-      });
-    void (async () => {
-      const nextAssets: ImageAsset[] = [];
-      const nextAssetMap: Record<string, string> = {};
-      for (const file of files) {
-        const lowerName = file.name.toLowerCase();
-        const isIconArchive = IMAGE_LIBRARY_ARCHIVE_FILE_PATTERN.test(lowerName);
-        if (!imageLibraryFileMatchesImportKind(lowerName, importKind)) {
-          showGlobalMessage(importKind === "archive"
-            ? `“${file.name || "所选文件"}”不是 DOCX/PPTX/XLSX/VSDX/WPS/DPS/ZIP 文档图片导入文件，请使用外部图片入口直接导入图片。`
-            : `“${file.name || "所选文件"}”不是 SVG/PNG/JPG 等图片文件，请使用文档图片/图标入口导入文档中的图片和矢量图标素材。`);
-          continue;
-        }
-        let imageData = "";
-        try {
-          imageData = await readFileAsDataUrl(file);
-        } catch (error) {
-          showGlobalMessage(error instanceof Error ? error.message : `读取 ${file.name || "图片"} 失败。`);
-          continue;
-        }
-        if (isIconArchive) {
-          try {
-            const importedAssets = await importBackendIconLibraryFile(file.name, imageData, activeImageFolderId);
-            nextAssets.push(...importedAssets);
-            for (const asset of importedAssets) {
-              nextAssetMap[asset.id] = asset.url;
-            }
-          } catch (error) {
-            showGlobalMessage(error instanceof Error ? error.message : `导入 ${file.name || "文档图片"} 失败。`);
-          }
-          continue;
-        }
-        let asset: ImageAsset;
-        try {
-          asset = await uploadBackendImage(file.name, imageData, activeImageFolderId);
-        } catch (error) {
-          showGlobalMessage(error instanceof Error ? error.message : `上传 ${file.name || "图片"} 到后台失败。`);
-          const fallbackId = createImageUploadFallbackAssetId(randomSource);
-          saveImageAsset(fallbackId, imageData);
-          asset = { id: fallbackId, name: file.name || "本地图片", folderId: activeImageFolderId, url: imageData };
-        }
-        nextAssets.push(asset);
-        nextAssetMap[asset.id] = asset.url;
-      }
-      if (nextAssets.length > 0) {
-        setImageAssetList((current) => [...nextAssets, ...current.filter((item) => !nextAssets.some((asset) => asset.id === item.id))]);
-        setImageAssets((current) => ({ ...current, ...nextAssetMap }));
-      }
-      void refreshImageFolders();
-    })();
-  };
-}
-
-export function createApplyExistingImage(__appScope: Record<string, any>) {
-  return async (assetId: string) => {
-  const { createEditableStateIconElementsFromSvgSource, createImportedStateIconElement, imageAssetList, imageAssets, imageTarget, libraryTemplateByKind, pushUndoSnapshot, setCanvasBackgroundImage, setCanvasBackgroundImageAssetId, setImageTarget, setStateIconDrawingDialog, startLibraryDevicePlacement, stateIconDrawingHistoryRef, svgSourceFromDataUrl, updateGraphNodeById, writeOperationLog } = __appScope;
-    const asset = imageAssetList.find((item: ImageAsset) => item.id === assetId);
-    const imageData = imageAssets[assetId] ?? asset?.url;
-    if (!imageTarget || !imageData) {
-      return;
-    }
-    if (imageTarget.kind === "stateIconFrameBackground") {
-      const backgroundImage = asset?.url ?? apiPath(`/images/${assetId}`);
-      setStateIconDrawingDialog((current: any) =>
-        current
-          ? {
-              ...current,
-              frame: {
-                ...STATE_ICON_DRAFT_FRAME,
-                ...(current.frame ?? {}),
-                backgroundImage,
-                backgroundImageAssetId: assetId
-              }
-            }
-          : current
-      );
-      setImageTarget(null);
-      writeOperationLog?.(`选择图案背景图片：${asset?.name || assetId}`);
-      return;
-    }
-    if (imageTarget.kind === "canvasIcon") {
-      const baseTemplate = libraryTemplateByKind.get("static-image");
-      if (!baseTemplate) {
-        showGlobalMessage("未找到静态图片图元定义，无法插入图标。");
-        return;
-      }
-      const iconTemplate = {
-        ...baseTemplate,
-        label: asset?.name || baseTemplate.label || "图标",
-        params: {
-          ...baseTemplate.params,
-          text: asset?.name || baseTemplate.params?.text || "",
-          backgroundImage: imageData,
-          backgroundImageAssetId: assetId
-        }
-      };
-      startLibraryDevicePlacement(iconTemplate);
-      setImageTarget(null);
-      writeOperationLog?.(`从图标库选择图标：${asset?.name || assetId}`);
-      return;
-    }
-    if (imageTarget.kind === "stateIconDrawing") {
-      const assetName = asset?.name || assetId;
-      const lowerName = assetName.toLowerCase();
-      const isSvg = asset?.mimeType === "image/svg+xml" || lowerName.endsWith(".svg") || imageData.startsWith("data:image/svg+xml");
-      let importedElements: StateIconDrawingElement[] = [];
-      if (isSvg) {
-        let svgSource = svgSourceFromDataUrl(imageData);
-        if (!svgSource) {
-          try {
-            svgSource = await fetch(imageData).then((response) => response.ok ? response.text() : "");
-          } catch {
-            svgSource = "";
-          }
-        }
-        importedElements = svgSource
-          ? createEditableStateIconElementsFromSvgSource(svgSource, assetName, { preserveImportedSvg: true })
-          : [createImportedStateIconElement("image", imageData, assetName)];
-      } else {
-        importedElements = [createImportedStateIconElement("image", imageData, assetName)];
-      }
-      const selectedElementId = importedElements[0]?.id ?? "";
-      setStateIconDrawingDialog((current: any) =>
-        current
-          ? (pushStateIconDrawingHistorySnapshot(stateIconDrawingHistoryRef, current.elements), {
-              ...current,
-              elements: [...current.elements, ...importedElements],
-              selectedElementId,
-              selectedElementIds: selectedElementId ? [selectedElementId] : [],
-              pendingElementKind: undefined,
-              pendingStaticTemplate: undefined,
-              drawingDraft: undefined
-            })
-          : current
-      );
-      setImageTarget(null);
-      writeOperationLog?.(`从图标库导入元件图案：${assetName}`);
-      return;
-    }
-    pushUndoSnapshot();
-    if (imageTarget.kind === "canvas") {
-      setCanvasBackgroundImageAssetId(assetId);
-      setCanvasBackgroundImage(imageData);
-    } else {
-      updateGraphNodeById(imageTarget.nodeId, (node) =>
-        imageTarget.kind === "nodeForeground"
-          ? { ...node, params: { ...node.params, foregroundImageAssetId: assetId, foregroundImage: imageData } }
-          : { ...node, params: { ...node.params, backgroundImageAssetId: assetId, backgroundImage: imageData } }
-      );
-    }
-    setImageTarget(null);
-  };
-}
-
-export function stateIconDrawingImportedSvgSelectionFrame(element: any) {
-  if (element?.kind !== "imported-svg" || !element.svgSource) {
-    return null;
-  }
-  const [x, y, width, height] = stateIconSvgVisibleViewBox(element.svgSource)
-    .split(/\s+/u)
-    .map((value) => Number.parseFloat(value));
-  if (![x, y, width, height].every(Number.isFinite) || width <= 0 || height <= 0) {
-    return null;
-  }
-  const elementWidth = atLeastOneNumber(element.width, 1);
-  const elementHeight = atLeastOneNumber(element.height, 1);
-  const scale = Math.min(elementWidth / width, elementHeight / height);
-  const fittedWidth = width * scale;
-  const fittedHeight = height * scale;
-  return {
-    x: -fittedWidth / 2,
-    y: -fittedHeight / 2,
-    width: fittedWidth,
-    height: fittedHeight,
-    halfWidth: fittedWidth / 2,
-    halfHeight: fittedHeight / 2
-  };
-}
-
-export function createApplyIconLibraryCatalogIcon(__appScope: Record<string, any>) {
-  return async (iconEntryId: string) => {
-  const { createEditableStateIconElementsFromSvgSource, createImportedStateIconElement, iconLibraryPicker, imageTarget, libraryTemplateByKind, pushUndoSnapshot, setCanvasBackgroundImage, setCanvasBackgroundImageAssetId, setImageTarget, setStateIconDrawingDialog, startLibraryDevicePlacement, stateIconDrawingHistoryRef, updateGraphNodeById, writeOperationLog } = __appScope;
-    if (!imageTarget) {
-      return;
-    }
-    const entry = iconLibraryPicker?.entries?.find((item: any) => item.id === iconEntryId);
-    if (!entry) {
-      showGlobalMessage("未找到所选分类图标，请刷新后重试。");
-      return;
-    }
-    const assetName = `${entry.libraryLabel || entry.libraryId} / ${entry.categoryLabel || entry.categoryId} / ${entry.name || entry.iconId}`;
-    if (imageTarget.kind !== "stateIconDrawing") {
-      const iconUrl = entry.url;
-      if (!iconUrl) {
-        showGlobalMessage("未找到所选分类图标文件地址，请刷新后重试。");
-        return;
-      }
-      if (imageTarget.kind === "stateIconFrameBackground") {
-        setStateIconDrawingDialog((current: any) =>
-          current
-            ? {
-                ...current,
-                frame: {
-                  ...STATE_ICON_DRAFT_FRAME,
-                  ...(current.frame ?? {}),
-                  backgroundImage: iconUrl,
-                  backgroundImageAssetId: ""
-                }
-              }
-            : current
-        );
-        setImageTarget(null);
-        writeOperationLog?.(`选择图案背景图标：${assetName}`);
-        return;
-      }
-      if (imageTarget.kind === "canvasIcon") {
-        const baseTemplate = libraryTemplateByKind?.get("static-image");
-        if (!baseTemplate) {
-          showGlobalMessage("未找到静态图片图元定义，无法插入图标。");
-          return;
-        }
-        // 获取 SVG 内容转为 data URL，确保内联渲染（外部 SVG 文件在 <image href> 中可能不渲染）
-        let imageData = iconUrl;
-        try {
-          const response = await fetch(iconUrl);
-          if (response.ok) {
-            imageData = `data:image/svg+xml,${encodeURIComponent(await response.text())}`;
-          }
-        } catch { /* 回退到 URL 路径 */ }
-        startLibraryDevicePlacement({
-          ...baseTemplate,
-          label: entry.name || baseTemplate.label || "图标",
-          params: {
-            ...baseTemplate.params,
-            text: entry.name || baseTemplate.params?.text || "",
-            backgroundImage: imageData,
-            backgroundImageAssetId: ""
-          }
-        });
-        setImageTarget(null);
-        writeOperationLog?.(`从分类图标库选择图标：${assetName}`);
-        return;
-      }
-      pushUndoSnapshot?.();
-      if (imageTarget.kind === "canvas") {
-        setCanvasBackgroundImageAssetId("");
-        setCanvasBackgroundImage(iconUrl);
-      } else {
-        updateGraphNodeById(imageTarget.nodeId, (node: any) =>
-          imageTarget.kind === "nodeForeground"
-            ? { ...node, params: { ...node.params, foregroundImageAssetId: "", foregroundImage: iconUrl } }
-            : { ...node, params: { ...node.params, backgroundImageAssetId: "", backgroundImage: iconUrl } }
-        );
-      }
-      setImageTarget(null);
-      writeOperationLog?.(`从分类图标库选择图片：${assetName}`);
-      return;
-    }
-    let svgSource = "";
-    try {
-      const response = await fetch(entry.url);
-      svgSource = response.ok ? await response.text() : "";
-    } catch {
-      svgSource = "";
-    }
-    if (!svgSource) {
-      showGlobalMessage("读取分类图标失败。");
-      return;
-    }
-    const importedElements = createEditableStateIconElementsFromSvgSource(svgSource, assetName, { preserveImportedSvg: true });
-    const fallbackElements = importedElements.length > 0
-      ? importedElements
-      : [createImportedStateIconElement("imported-svg", svgSource, assetName)];
-    const selectedElementId = fallbackElements[0]?.id ?? "";
-    setStateIconDrawingDialog((current: any) =>
-      current
-        ? (pushStateIconDrawingHistorySnapshot(stateIconDrawingHistoryRef, current.elements), {
-            ...current,
-            elements: [...current.elements, ...fallbackElements],
-            selectedElementId,
-            selectedElementIds: selectedElementId ? [selectedElementId] : [],
-            pendingElementKind: undefined,
-            pendingStaticTemplate: undefined,
-            drawingDraft: undefined
-          })
-        : current
-    );
-    setImageTarget(null);
-    writeOperationLog?.(`从分类图标库导入元件图案：${assetName}`);
-  };
-}
-
-export function createClearSelectedImage(__appScope: Record<string, any>) {
-  return () => {
-  const { imageTarget, pushUndoSnapshot, setCanvasBackgroundImage, setCanvasBackgroundImageAssetId, setCanvasBackgroundImageFit, setImageTarget, setStateIconDrawingDialog, updateGraphNodeById } = __appScope;
-    if (!imageTarget) {
-      return;
-    }
-    if (imageTarget.kind === "canvasIcon" || imageTarget.kind === "stateIconDrawing") {
-      setImageTarget(null);
-      return;
-    }
-    if (imageTarget.kind === "stateIconFrameBackground") {
-      setStateIconDrawingDialog((current: any) =>
-        current
-          ? {
-              ...current,
-              frame: {
-                ...STATE_ICON_DRAFT_FRAME,
-                ...(current.frame ?? {}),
-                backgroundImage: "",
-                backgroundImageAssetId: "",
-                backgroundImageFit: "cover"
-              }
-            }
-          : current
-      );
-      setImageTarget(null);
-      return;
-    }
-    pushUndoSnapshot();
-    if (imageTarget.kind === "canvas") {
-      setCanvasBackgroundImage("");
-      setCanvasBackgroundImageAssetId("");
-      setCanvasBackgroundImageFit?.("cover");
-    } else {
-      updateGraphNodeById(imageTarget.nodeId, (node) =>
-        imageTarget.kind === "nodeForeground"
-          ? {
-              ...node,
-              params: {
-                ...node.params,
-                foregroundImage: "",
-                foregroundImageAssetId: "",
-                foregroundImageFit: "cover"
-              }
-            }
-          : {
-              ...node,
-              params: {
-                ...node.params,
-                backgroundImage: "",
-                backgroundImageAssetId: "",
-                backgroundImageFit: "cover"
-              }
-            }
-      );
-    }
-    setImageTarget(null);
-  };
-}
-
-export function createClearSelectedImageForNode(__appScope: Record<string, any>) {
-  return (nodeId: string, target: "background" | "foreground") => {
-  const { pushUndoSnapshot, updateGraphNodeById } = __appScope;
-    pushUndoSnapshot();
-    updateGraphNodeById(nodeId, (node) => ({
-      ...node,
-      params:
-        target === "foreground"
-          ? { ...node.params, foregroundImage: "", foregroundImageAssetId: "", foregroundImageFit: "cover" }
-          : { ...node.params, backgroundImage: "", backgroundImageAssetId: "", backgroundImageFit: "cover" }
-    }));
-  };
-}
-
-export function createCreateImageFolder(__appScope: Record<string, any>) {
-  return async () => {
-  const { createBackendImageFolder, refreshImageFolders, setActiveImageFolderId } = __appScope;
-    const inputName = await promptText("请输入图片文件夹名称", "新建文件夹");
-    if (inputName === null) {
-      return;
-    }
-    const name = inputName.trim();
-    if (!name) {
-      showGlobalMessage("图片文件夹名称不能为空。");
-      return;
-    }
-    try {
-      const folder = await createBackendImageFolder(name);
-      await refreshImageFolders();
-      setActiveImageFolderId(folder.id);
-    } catch (error) {
-      showGlobalMessage(error instanceof Error ? error.message : "新建图片文件夹失败。");
-    }
-  };
-}
-
-export function createRenameImageFolder(__appScope: Record<string, any>) {
-  return async () => {
-  const { activeImageFolderId, imageFolders, refreshImageFolders, renameBackendImageFolder } = __appScope;
-    const folder = imageFolders.find((item) => item.id === activeImageFolderId);
-    if (!folder || folder.id === "root") {
-      showGlobalMessage("默认文件夹不能重命名。");
-      return;
-    }
-    const inputName = await promptText("请输入新的图片文件夹名称", folder.name);
-    if (inputName === null) {
-      return;
-    }
-    const name = inputName.trim();
-    if (!name) {
-      showGlobalMessage("图片文件夹名称不能为空。");
-      return;
-    }
-    try {
-      await renameBackendImageFolder(folder.id, name);
-      await refreshImageFolders();
-    } catch (error) {
-      showGlobalMessage(error instanceof Error ? error.message : "重命名图片文件夹失败。");
-    }
-  };
-}
-
-export function createDeleteImageFolder(__appScope: Record<string, any>) {
-  return async () => {
-  const { activeImageFolderId, deleteBackendImageFolder, imageFolders, refreshImageFolders, setActiveImageFolderId } = __appScope;
-    const folder = imageFolders.find((item) => item.id === activeImageFolderId);
-    if (!folder || folder.id === "root") {
-      showGlobalMessage("默认文件夹不能删除。");
-      return;
-    }
-    if (!await showGlobalConfirm(`删除图片文件夹“${folder.name}”？文件夹内图片将移回默认文件夹。`)) {
-      return;
-    }
-    try {
-      await deleteBackendImageFolder(folder.id);
-      setActiveImageFolderId("root");
-      await refreshImageFolders();
-    } catch (error) {
-      showGlobalMessage(error instanceof Error ? error.message : "删除图片文件夹失败。");
-    }
-  };
-}
-
-export function createStartProjectRecordDrag(__appScope: Record<string, any>) {
-  return (event: DragEvent<HTMLDivElement>, projectId: string) => {
-  const { projectRecordDragActiveRef } = __appScope;
-    projectRecordDragActiveRef.current = true;
-    event.dataTransfer.setData("application/project-id", projectId);
-    event.dataTransfer.effectAllowed = "move";
-  };
-}
-export function createFinishProjectRecordDrag(__appScope: Record<string, any>) {
-  return () => {
-  const { projectRecordDragActiveRef } = __appScope;
-    projectRecordDragActiveRef.current = false;
-  };
-}
-
-export function createStartSchemeRecordDrag(__appScope: Record<string, any>) {
-  return (event: DragEvent<HTMLDivElement>, schemeId: string) => {
-  const { schemeRecordDragActiveRef } = __appScope;
-    schemeRecordDragActiveRef.current = true;
-    event.dataTransfer.setData("application/scheme-id", schemeId);
-    event.dataTransfer.effectAllowed = "move";
-  };
-}
-
-export function createFinishSchemeRecordDrag(__appScope: Record<string, any>) {
-  return () => {
-  const { schemeRecordDragActiveRef } = __appScope;
-    schemeRecordDragActiveRef.current = false;
-  };
-}
-
-export function projectModelTypeIconName(modelType: unknown) {
-  const t = typeof modelType === "string" ? modelType.trim() : "";
-  return MODEL_TYPE_META[t]?.icon ?? MODEL_TYPE_META["其他"].icon;
-}
-
-// ── 模型库方案树拖动排序（方案行 / 模型行）────────────────────────────────────
-// 与图元库、模板库同口径：
-//   · 行首把手拖动 = **唯一可拖入口**（行本体 draggable=false —— 祖先可拖会把把手的拖动顶掉）：
-//     同层重排 = 顺序覆盖（只存本机偏好 libraryTreeOrder.projectSchemes / projectModels，
-//     **不写回后端**）；跨层级移动 = 数据变更（改归属，落库）。
-//   · 插入位提示同样是目标行上/下边缘的一条虚线直线（before / after）；
-//     跨层级落在目标行上半区 = 成为其子方案（inside，浅蓝底提示）。
-// 键设计：方案桶按「父方案 id」分桶（顶层用空串），模型桶按「所属方案 id」分桶。
-
-export const PROJECT_TREE_DRAG_TYPE_SCHEME = "application/x-project-tree-scheme";
-export const PROJECT_TREE_DRAG_TYPE_MODEL = "application/x-project-tree-model";
-/** 方案列表的**末尾落点**（拖到列表空白处）= 移到顶层末尾。 */
-export const PROJECT_TREE_ROOT_END_KEY = "__project-tree-root-end__";
-
-function projectTreeDragDebug(label: string, payload: Record<string, unknown> = {}) {
-  if (import.meta.env.DEV && typeof window !== "undefined") {
-    const diagnosticWindow = window as typeof window & {
-      __projectTreeDragLogs?: Array<{ at: number; label: string; payload: Record<string, unknown> }>;
-    };
-    const logs = diagnosticWindow.__projectTreeDragLogs ?? [];
-    logs.push({ at: Date.now(), label, payload });
-    diagnosticWindow.__projectTreeDragLogs = logs.slice(-100);
-    console.info(`[project-tree-drag] ${label}`, payload);
-  }
-}
-
-/**
- * 方案树拖拽键的逻辑层级。
- * 方案记录使用 `scheme:`，模型记录的运行期 id 使用 `project:`；`model:` 只保留作
- * 旧测试/旧调用方的兼容形态。后续落点计算统一使用逻辑层级，不能直接比较原始前缀。
- */
-export function projectTreeDragLayer(key: string): "scheme" | "model" | "" {
-  const normalizedKey = String(key ?? "");
-  const prefix = normalizedKey.split(":")[0];
-  if (prefix === "scheme") {
-    return "scheme";
-  }
-  if (prefix === "project" || prefix === "model") {
-    return "model";
-  }
-  // schemeId 统一后，方案运行时兼容键是数字字符串；模型键仍带 project:/model: 前缀。
-  if (/^\d+$/u.test(normalizedKey)) {
-    return "scheme";
-  }
-  return "";
-}
-
-/** 方案所在层级（父方案 id；顶层为空串）。 */
-export function projectTreeParentKey(schemes: readonly any[], schemeId: string): string {
-  const walk = (list: readonly any[], parentId: string): string | null => {
-    for (const scheme of list) {
-      if (scheme.id === schemeId) {
-        return parentId;
-      }
-      const found = walk(scheme.children ?? [], scheme.id);
-      if (found !== null) {
-        return found;
-      }
-    }
-    return null;
-  };
-  return walk(schemes ?? [], "") ?? "";
-}
-
-/** 某父方案下的方案 id 清单。 */
-export function projectTreeSiblingIds(schemes: readonly any[], parentKey: string): string[] {
-  if (parentKey === "") {
-    return (schemes ?? []).map((scheme: any) => scheme.id);
-  }
-  const walk = (list: readonly any[]): any[] | null => {
-    for (const scheme of list) {
-      if (scheme.id === parentKey) {
-        return scheme.children ?? [];
-      }
-      const found = walk(scheme.children ?? []);
-      if (found) {
-        return found;
-      }
-    }
-    return null;
-  };
-  return (walk(schemes ?? []) ?? []).map((scheme: any) => scheme.id);
-}
-
-/** 某方案下的模型 id 清单。 */
-export function projectTreeModelIds(schemes: readonly any[], schemeId: string): string[] {
-  const walk = (list: readonly any[]): any[] | null => {
-    for (const scheme of list) {
-      if (scheme.id === schemeId) {
-        return scheme.projects ?? [];
-      }
-      const found = walk(scheme.children ?? []);
-      if (found) {
-        return found;
-      }
-    }
-    return null;
-  };
-  return (walk(schemes ?? []) ?? []).map((project: any) => project.id);
-}
-
-/**
- * 同级清单的**完整显示顺序** = 数据原始顺序 + 本机覆盖表重排。
- * 渲染（sortByKeyOrder）与落点结算（reorderKeys）必须用同一份清单 ——
- * 若结算用数据顺序、渲染用覆盖顺序，两套顺序一旦分叉，拖动就会「插错位置」
- * （表现为两项互换，而不是插入到虚线处）。
- */
-export function projectTreeDisplayIds(
-  ids: readonly string[],
-  order: readonly string[]
-): string[] {
-  const rankById = new Map<string, number>();
-  order.forEach((id, index) => {
-    if (!rankById.has(id)) {
-      rankById.set(id, index);
-    }
-  });
-  return ids
-    .map((id, index) => ({ id, index, rank: rankById.get(id) }))
-    .sort((a, b) => {
-      const rankA = a.rank ?? Number.MAX_SAFE_INTEGER;
-      const rankB = b.rank ?? Number.MAX_SAFE_INTEGER;
-      return rankA !== rankB ? rankA - rankB : a.index - b.index;
-    })
-    .map((entry) => entry.id);
-}
-
-/** 模型所属方案 id（模型桶键）；找不到返回空串。 */
-export function projectTreeModelOwnerKey(schemes: readonly any[], modelId: string): string {
-  const walk = (list: readonly any[]): string => {
-    for (const scheme of list) {
-      if ((scheme.projects ?? []).some((project: any) => project.id === modelId)) {
-        return scheme.id;
-      }
-      const found = walk(scheme.children ?? []);
-      if (found) {
-        return found;
-      }
-    }
-    return "";
-  };
-  return walk(schemes ?? []);
-}
-
-function projectTreeLayer(schemes: readonly any[], key: string): "scheme" | "model" | "" {
-  const legacyPrefix = key.split(":", 1)[0];
-  if (legacyPrefix === "scheme" || legacyPrefix === "model") {
-    return legacyPrefix;
-  }
-  const walk = (list: readonly any[]): "scheme" | "model" | "" => {
-    for (const scheme of list ?? []) {
-      if (String(scheme?.schemeId ?? scheme?.id ?? "") === String(key)) {
-        return "scheme";
-      }
-      if ((scheme?.projects ?? []).some((project: any) => String(project?.id ?? "") === String(key))) {
-        return "model";
-      }
-      const nested = walk(scheme?.children ?? []);
-      if (nested) {
-        return nested;
-      }
-    }
-    return "";
-  };
-  return walk(schemes ?? []);
-}
-
-/** 判断目标方案是否位于拖动方案的子树内，供 Tree 拖放循环保护使用。 */
-export function projectTreeSchemeContainsId(
-  schemes: readonly any[],
-  ancestorId: string,
-  targetId: string
-): boolean {
-  const normalizedAncestorId = String(ancestorId ?? "");
-  const normalizedTargetId = String(targetId ?? "");
-  if (!normalizedAncestorId || !normalizedTargetId) {
-    return false;
-  }
-  if (normalizedAncestorId === normalizedTargetId) {
-    return true;
-  }
-  const find = (list: readonly any[]): any | null => {
-    for (const scheme of list ?? []) {
-      if (String(scheme?.id ?? scheme?.schemeId ?? "") === normalizedAncestorId) {
-        return scheme;
-      }
-      const nested = find(scheme?.children ?? []);
-      if (nested) {
-        return nested;
-      }
-    }
-    return null;
-  };
-  const ancestor = find(schemes ?? []);
-  if (!ancestor) {
-    return false;
-  }
-  const contains = (list: readonly any[]): boolean =>
-    (list ?? []).some((scheme) =>
-      String(scheme?.id ?? scheme?.schemeId ?? "") === normalizedTargetId
-      || contains(scheme?.children ?? [])
-    );
-  return contains(ancestor.children ?? []);
-}
-
-export function createStartProjectTreeSortDrag(__appScope: Record<string, any>) {
-  return (event: DragEvent<HTMLSpanElement>, dragKey: string) => {
-    const { projectTreeDragKeyRef, projectTreeDragSuppressClickRef, schemes, setProjectTreeDragKey } = __appScope;
-    // 方案 id 带 "scheme:"，模型运行期 id 带 "project:"（兼容旧 "model:"），
-    // 这里**不能再加前缀** —— 否则会出现 "scheme:scheme:xxx" 这样的双前缀，
-    // 落点判定与顺序覆盖都对不上（拖动看起来毫无反应）。
-    const layer = projectTreeLayer(schemes ?? [], dragKey);
-    if (!layer) {
-      projectTreeDragDebug("dragstart:ignored-layer", { dragKey });
-      return;
-    }
-    clearProjectTreeDragExpandTimer(__appScope);
-    // 方案行/模型行**本体**也是 draggable（既有跨方案移动通道）。当拖动从把手发起时，
-    // 必须阻止本体通道接管，否则两条通道同时启动、dataTransfer 互相覆盖。
-    const target = event.target as HTMLElement | null;
-    if (!target?.closest?.(".project-tree-drag-handle")) {
-      projectTreeDragDebug("dragstart:ignored-target", { dragKey, targetClass: target?.className ?? "" });
-      return;
-    }
-    if (projectTreeDragSuppressClickRef) {
-      projectTreeDragSuppressClickRef.current = true;
-    }
-    event.stopPropagation();
-    event.dataTransfer.setData(layer === "model" ? PROJECT_TREE_DRAG_TYPE_MODEL : PROJECT_TREE_DRAG_TYPE_SCHEME, dragKey);
-    event.dataTransfer.effectAllowed = "move";
-    if (projectTreeDragKeyRef) {
-      projectTreeDragKeyRef.current = dragKey;
-    }
-    setProjectTreeDragKey(dragKey);
-    projectTreeDragDebug("dragstart:accepted", {
-      dragKey,
-      layer,
-      types: Array.from(event.dataTransfer.types ?? [])
-    });
-  };
-}
-
-export function createEndProjectTreeSortDrag(__appScope: Record<string, any>) {
-  return () => {
-    const { projectTreeDragKeyRef, projectTreeDragSuppressClickRef, setProjectTreeDragKey, setProjectTreeDropKey } = __appScope;
-    clearProjectTreeDragExpandTimer(__appScope);
-    if (projectTreeDragKeyRef) {
-      projectTreeDragKeyRef.current = "";
-    }
-    setProjectTreeDragKey("");
-    setProjectTreeDropKey("");
-    // 浏览器可能在 dragend 后补发一次 click；给它一个事件循环机会消费抑制标记，
-    // 没有 click 时自动清理，避免影响下一次正常单击。
-    if (projectTreeDragSuppressClickRef) {
-      window.setTimeout(() => {
-        projectTreeDragSuppressClickRef.current = false;
-      }, 0);
-    }
-  };
-}
-
-const PROJECT_TREE_DRAG_EXPAND_DELAY_MS = 1000;
-
-export function clearProjectTreeDragExpandTimer(scope: Record<string, any>) {
-  const timerRef = scope.projectTreeDragExpandTimerRef;
-  const pending = timerRef?.current;
-  if (!pending) {
-    return;
-  }
-  globalThis.clearTimeout(pending.timerId);
-  timerRef.current = null;
-}
-
-export function scheduleProjectTreeDragExpand(scope: Record<string, any>, schemeId: string) {
-  const timerRef = scope.projectTreeDragExpandTimerRef;
-  if (!timerRef) {
-    return;
-  }
-  if (timerRef.current?.schemeId === schemeId) {
-    return;
-  }
-  clearProjectTreeDragExpandTimer(scope);
-  const timerId = globalThis.setTimeout(() => {
-    const latestScope = (scope.__appScopeRef?.current ?? scope) as Record<string, any>;
-    const latestTimerRef = latestScope.projectTreeDragExpandTimerRef;
-    if (!latestTimerRef?.current || latestTimerRef.current.schemeId !== schemeId) {
-      return;
-    }
-    latestTimerRef.current = null;
-    latestScope.setExpandedSchemeIds?.((current: string[]) =>
-      current.includes(schemeId) ? current : [...current, schemeId]
-    );
-  }, PROJECT_TREE_DRAG_EXPAND_DELAY_MS);
-  timerRef.current = { schemeId, timerId };
-}
-
-/**
- * 拖动离开某个方案/模型行（或整个列表）时清掉落点键 ——
- * 否则插入线会残留在上一次的位置上。
- * 与图元库的 handleLibraryTreeDragLeave 同款，但清的是模型库自己的状态。
- */
-export function createHandleProjectTreeDragLeave(__appScope: Record<string, any>) {
-  return (event: DragEvent<HTMLElement>) => {
-    const scope = (__appScope.__appScopeRef?.current ?? __appScope) as Record<string, any>;
-    const { setProjectTreeDropKey } = scope;
-    if (!(event.currentTarget as Node).contains(event.relatedTarget as Node | null)) {
-      clearProjectTreeDragExpandTimer(scope);
-      setProjectTreeDropKey("");
-    }
-  };
-}
-
-export function createHandleProjectTreeDragOver(__appScope: Record<string, any>) {
-  // **__appScope 每帧重建**（App.tsx:661），工厂闭包捕获的引用会冻结在首帧 ——
-  // 拖动键/顺序表必须从 __appScopeRef.current（当前帧的 scope）读，否则永远是首帧快照。
-  return (event: DragEvent<HTMLElement>, dropKey: string, forcedEdge?: "inside" | "before" | "after") => {
-    const scope = (__appScope.__appScopeRef?.current ?? __appScope) as Record<string, any>;
-    const { projectTreeDragKey, setProjectTreeDropKey, schemes, expandedSchemeIds } = scope;
-    if (!projectTreeDragKey) {
-      projectTreeDragDebug("dragover:ignored-no-drag-key", { dropKey });
-      clearProjectTreeDragExpandTimer(scope);
-      return;
-    }
-    const dragLayer = projectTreeLayer(schemes ?? [], projectTreeDragKey);
-    const dropLayer = projectTreeLayer(schemes ?? [], dropKey);
-    projectTreeDragDebug("dragover:received", {
-      dragKey: projectTreeDragKey,
-      dropKey,
-      dragLayer,
-      dropLayer,
-      forcedEdge,
-      targetClass: (event.target as HTMLElement | null)?.className ?? "",
-      currentTargetClass: (event.currentTarget as HTMLElement | null)?.className ?? "",
-      types: Array.from(event.dataTransfer?.types ?? [])
-    });
-    // 末尾落点（拖到列表空白处）= 移到顶层末尾，只有一条边（after）。
-    // 必须在「层一致」检查**之前**判定 —— 末尾落点的键不是 scheme:/model: 前缀。
-    if (dropKey === PROJECT_TREE_ROOT_END_KEY) {
-      projectTreeDragDebug("dragover:root-end", { dragKey: projectTreeDragKey });
-      clearProjectTreeDragExpandTimer(scope);
-      event.preventDefault();
-      event.dataTransfer.dropEffect = "move";
-      const dropStateKey = `${dropKey}|after`;
-      setProjectTreeDropKey((current: string) => current === dropStateKey ? current : dropStateKey);
-      return;
-    }
-    // 方案↔方案、模型↔模型、模型→方案行（移动到该方案下）都允许；方案→模型行不允许。
-    const isModelIntoScheme = dragLayer === "model" && dropLayer === "scheme";
-    if (dragLayer !== dropLayer && !isModelIntoScheme) {
-      projectTreeDragDebug("dragover:rejected-layer-pair", { dragLayer, dropLayer, dragKey: projectTreeDragKey, dropKey });
-      clearProjectTreeDragExpandTimer(scope);
-      return;
-    }
-
-    if (isModelIntoScheme && !(expandedSchemeIds ?? []).includes(dropKey)) {
-      scheduleProjectTreeDragExpand(scope, dropKey);
-    } else {
-      clearProjectTreeDragExpandTimer(scope);
-    }
-    event.preventDefault();
-    event.dataTransfer.dropEffect = "move";
-    // 落点分三种（与图元库/模板库同款提示）：
-    //   inside = 指针在目标行**上半区** → 成为目标的**子方案**（跨层级移动，落库）
-    //   before/after = 指针在目标行下半区的上下四分位 → 插到目标之前/之后（同层重排，本机偏好）
-    // 覆盖表里已有顺序时按覆盖表的先后算边；没有则按指针位置兜底。
-    const edge = forcedEdge ?? projectTreeInsertEdge(scope, event, projectTreeDragKey, dropKey);
-    const dropStateKey = `${dropKey}|${edge}`;
-    projectTreeDragDebug("dragover:accepted", { dragKey: projectTreeDragKey, dropKey, edge, dropStateKey });
-    setProjectTreeDropKey((current: string) => current === dropStateKey ? current : dropStateKey);
-  };
-}
-
-/**
- * 插入位判定（**以指针位置为准**，所见即所得）：
- *   · 同层（父子相同）：
- *       上半区 → "before"（插到目标**之前**）；下半区 → "after"（插到目标**之后**）。
- *   · 跨层（父子不同）：
- *       上半区 → "inside"（成为目标的**子方案**）；下半区 → "after"（成为目标的**后继兄弟**）。
- *   落点判定**不能**用「覆盖表里的相对先后」—— 那是结算用的顺序，不是用户指针的位置。
- *   早前用覆盖表判边会导致：把已在目标前面的项拖到目标上方（想插到它前面），
- *   却被判成 after（插到它后面），看起来就像两项互换。
- */
-function projectTreeInsertEdge(
-  scope: Record<string, any>,
-  event: DragEvent<HTMLElement>,
-  dragKey: string,
-  dropKey: string
-): "inside" | "before" | "after" {
-  const { schemes } = scope;
-  const dragLayer = projectTreeLayer(schemes ?? [], dragKey);
-  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-  const ratio = rect.height > 0 ? (event.clientY - rect.top) / rect.height : 0.5;
-  const sameLevel = dragLayer === "scheme"
-    ? projectTreeParentKey(schemes ?? [], dragKey) === projectTreeParentKey(schemes ?? [], dropKey)
-    : projectTreeModelOwnerKey(schemes ?? [], dragKey) === projectTreeModelOwnerKey(schemes ?? [], dropKey);
-  // 上半区：同层 → 插到目标之前；跨层 → 成为目标的子方案。
-  if (ratio < 0.5) {
-    return sameLevel ? "before" : "inside";
-  }
-  // 下半区：同层/跨层都是「插到目标之后」（跨层 = 成为目标的后继兄弟）。
-  return "after";
-}
-
-export function createHandleProjectTreeDrop(__appScope: Record<string, any>) {
-  return (
-    event: DragEvent<HTMLElement>,
-    dropKey: string,
-    dropOptions: { dragKey?: string; edge?: "inside" | "before" | "after" } = {}
-  ) => {
-    // 同上：从当前帧 scope 读状态（__appScope 每帧重建，闭包捕获会冻结）。
-    const scope = (__appScope.__appScopeRef?.current ?? __appScope) as Record<string, any>;
-    const {
-      projectTreeDragKey, projectTreeDragKeyRef, setProjectTreeDragKey, setProjectTreeDropKey, setLibraryTreeOrder,
-      libraryTreeOrder, schemes, moveSchemeRecordToScheme, moveSchemeRecordToPosition, moveProjectRecordToScheme
-    } = scope;
-    clearProjectTreeDragExpandTimer(scope);
-    projectTreeDragDebug("drop:received", {
-      dragKey: projectTreeDragKey,
-      dropKey,
-      stateKey: scope.projectTreeDropKey ?? "",
-      types: Array.from(event.dataTransfer?.types ?? []),
-      schemeId: typeof (event.currentTarget as { getAttribute?: unknown } | null)?.getAttribute === "function"
-        ? (event.currentTarget as { getAttribute: (name: string) => string | null }).getAttribute("aria-label")
-        : ""
-    });
-    event.preventDefault();
-    event.stopPropagation();
-    const dragKey = dropOptions.dragKey ?? projectTreeDragKey;
-    // 落点边（inside = 成为目标的子方案；before/after = 同层插入位）。
-    const stateKey = scope.projectTreeDropKey ?? "";
-    const edge = dropOptions.edge ?? (stateKey.endsWith("|inside") ? "inside" : stateKey.endsWith("|after") ? "after" : "before");
-    if (projectTreeDragKeyRef) {
-      projectTreeDragKeyRef.current = "";
-    }
-    setProjectTreeDragKey("");
-    setProjectTreeDropKey("");
-    if (!dragKey) {
-      projectTreeDragDebug("drop:ignored-no-drag-key", { dropKey });
-      return;
-    }
-    const dragLayer = projectTreeLayer(schemes ?? [], dragKey);
-    const dropLayer = projectTreeLayer(schemes ?? [], dropKey);
-    // 末尾落点（拖到列表空白处）= 移到顶层末尾。
-    if (dropKey === PROJECT_TREE_ROOT_END_KEY) {
-      projectTreeDragDebug("drop:root-end", { dragKey, dragLayer });
-      if (dragLayer === "scheme" && typeof moveSchemeRecordToPosition === "function") {
-        moveSchemeRecordToPosition(dragKey, "", "");
-      } else if (dragLayer === "model" && typeof moveProjectRecordToScheme === "function") {
-        // 模型 → 顶层：顶层没有方案可挂，放到第一个顶层方案下。
-        const firstRootScheme = (schemes ?? [])[0];
-        if (firstRootScheme) {
-          moveProjectRecordToScheme(dragKey, firstRootScheme.id);
-        }
-      }
-      return;
-    }
-    // 模型 → 方案行 = 移动到该方案下（跨层级，允许）；方案 → 模型行 = 不允许。
-    const isModelIntoScheme = dragLayer === "model" && dropLayer === "scheme";
-    if (dragLayer !== dropLayer && !isModelIntoScheme) {
-      projectTreeDragDebug("drop:rejected-layer-pair", { dragKey, dropKey, dragLayer, dropLayer });
-      return;
-    }
-    const currentOrder = libraryTreeOrder ?? {
-      categoryLibraries: [],
-      componentLibraries: {},
-      templateTypes: [],
-      templates: {},
-      projectSchemes: {},
-      projectModels: {}
-    };
-    // ── 跨层级落点（数据变更，落库）──────────────────────────────────────────────
-    //  · inside = 成为目标行的**子方案**
-    //  · after  = 成为目标的**后继兄弟**（落到目标所在父级）
-    const dragParentKey = dragLayer === "scheme"
-      ? projectTreeParentKey(schemes ?? [], dragKey)
-      : projectTreeModelOwnerKey(schemes ?? [], dragKey);
-    const dropParentKey = dropLayer === "scheme"
-      ? projectTreeParentKey(schemes ?? [], dropKey)
-      : projectTreeModelOwnerKey(schemes ?? [], dropKey);
-    const isCrossLevel = dragParentKey !== dropParentKey;
-    // Tree 的 inside 落点表示「成为目标方案的子方案」。
-    // 顶层方案的父级都为空串，不能用 isCrossLevel 判断这一种合法的层级变化。
-    if (dragLayer === "scheme" && dropLayer === "scheme" && edge === "inside") {
-      if (dragKey === dropKey
-        || projectTreeSchemeContainsId(schemes ?? [], dragKey, dropKey)
-        || dropKey.startsWith(`${dragKey}/`)) {
-        projectTreeDragDebug("drop:move-scheme-inside-skipped-cycle", { dragKey, dropKey });
-        return;
-      }
-      projectTreeDragDebug("drop:move-scheme-inside", { dragKey, dropKey, sourceParentKey: dragParentKey, targetParentKey: dropParentKey });
-      if (typeof moveSchemeRecordToScheme === "function") {
-        moveSchemeRecordToScheme(dragKey, dropKey);
-      }
-      return;
-    }
-    if (isCrossLevel) {
-      if (dragLayer === "scheme") {
-        // inside = 成为目标行的子方案；after = 成为目标的后继兄弟（落到目标父级、排在目标之后）。
-        if (edge === "inside") {
-          if (typeof moveSchemeRecordToScheme === "function") {
-            moveSchemeRecordToScheme(dragKey, dropKey);
-          }
-          return;
-        }
-        if (typeof moveSchemeRecordToPosition === "function") {
-          // 插到目标**之后** → 目标是其父级里的第 N 项，插到第 N+1 项之前；
-          // 目标是最后一项时传空 → 追加到该父级末尾。
-          const insertBeforeId = projectTreeNextSiblingId(
-            schemes ?? [],
-            dropParentKey,
-            dropKey,
-            currentOrder.projectSchemes[dropParentKey] ?? []
-          );
-          moveSchemeRecordToPosition(dragKey, dropParentKey, insertBeforeId);
-        }
-        return;
-      }
-      if (typeof moveProjectRecordToScheme === "function") {
-        // 模型 → 方案行：inside = 落进该方案；after = 落到目标模型所在方案。
-        const targetSchemeId = dropLayer === "scheme"
-          ? edge === "inside"
-            ? dropKey
-            : projectTreeModelIds(schemes ?? [], dropKey).length === 0
-              ? dropKey
-              : dropParentKey
-          : dropParentKey;
-        projectTreeDragDebug("drop:move-project", {
-          projectId: dragKey,
-          targetSchemeId,
-          edge,
-          sourceSchemeId: dragParentKey,
-          dropParentKey,
-          dropKey
-        });
-        if (targetSchemeId) {
-          moveProjectRecordToScheme(dragKey, targetSchemeId);
-        } else {
-          projectTreeDragDebug("drop:move-project-skipped-no-target", { projectId: dragKey, dropKey, edge });
-        }
-      }
-      return;
-    }
-    if (dragLayer === "scheme") {
-      // 方案 id 本身带 "scheme:" 前缀 —— 整串就是清单里的键，**不能再 slice**。
-      const dragId = dragKey;
-      const dropId = dropKey;
-      const parentKey = projectTreeParentKey(schemes ?? [], dragId);
-      // 结算必须用**完整显示顺序**（数据顺序 + 覆盖表），与渲染口径一致 ——
-      // 否则会按数据顺序插入、按显示顺序渲染，看起来变成「两项互换」而非插入。
-      const siblings = projectTreeDisplayIds(
-        projectTreeSiblingIds(schemes ?? [], parentKey),
-        currentOrder.projectSchemes[parentKey] ?? []
-      );
-      // 方向由**指针位置**给出（before = 插到目标之前），不靠索引反推。
-      const next = moveKeyToEdge(siblings, dragId, dropId, edge === "after" ? "after" : "before");
-      if (!next) {
-        return;
-      }
-      const nextOrder = { ...currentOrder, projectSchemes: { ...currentOrder.projectSchemes, [parentKey]: next } };
-      writeLibraryTreeOrder(nextOrder);
-      setLibraryTreeOrder(nextOrder);
-      return;
-    }
-    if (dragLayer === "model") {
-      // 模型 id 同样带 "model:" 前缀 —— 整串即清单键。
-      const dragId = dragKey;
-      const dropId = dropKey;
-      const owner = projectTreeModelOwnerKey(schemes ?? [], dragId);
-      const siblings = projectTreeDisplayIds(
-        projectTreeModelIds(schemes ?? [], owner),
-        currentOrder.projectModels[owner] ?? []
-      );
-      const next = moveKeyToEdge(siblings, dragId, dropId, edge === "after" ? "after" : "before");
-      if (!next) {
-        return;
-      }
-      const nextOrder = { ...currentOrder, projectModels: { ...currentOrder.projectModels, [owner]: next } };
-      writeLibraryTreeOrder(nextOrder);
-      setLibraryTreeOrder(nextOrder);
-    }
-  };
-}
-
-/**
- * 旧路径键兼容：数字 schemeId 没有父级编码，无法从编号反推路径父级。
- * 新代码应通过方案树查找 `projectTreeParentKey`。
- */
-export function projectTreeParentIdOf(schemeId: string): string {
-  const index = schemeId.lastIndexOf("/");
-  return index < 0 ? "" : schemeId.slice(0, index);
-}
-
-/**
- * 目标在其父级清单里的**下一个兄弟 id**（用于「插到目标之后」）。
- * 目标已是最后一项 → 返回空串（追加到该父级末尾）。
- * 用**完整显示顺序**（数据顺序 + 覆盖表）算，与渲染/结算口径一致。
- */
-export function projectTreeNextSiblingId(
-  schemes: readonly any[],
-  parentKey: string,
-  schemeId: string,
-  order: readonly string[] = []
-): string {
-  const siblings = projectTreeDisplayIds(projectTreeSiblingIds(schemes, parentKey), order);
-  const index = siblings.indexOf(schemeId);
-  if (index < 0) {
-    return "";
-  }
-  return siblings[index + 1] ?? "";
-}
-export function createRenderProjectSchemeNode(__appScope: Record<string, any>) {
-  return (scheme: SavedSchemeRecord, depth = 0, showRootEndLine = false): ReactNode => {
-  // __appScope 每帧重建，本工厂闭包捕获的是首帧 scope —— 拖动态（projectTreeDropKey）与
-  // 顺序覆盖（libraryTreeOrder）必须从当前帧 scope 读，否则指示线与新顺序不会反映到 DOM。
-  const scope = (__appScope.__appScopeRef?.current ?? __appScope) as Record<string, any>;
-  const { Cable, ChevronDown, ChevronRight, Factory, FileJson, FolderOpen, HousePlug, Network, activeProjectKey, div, endProjectTreeSortDrag, expandedSchemeIds, handleProjectTreeDragLeave, handleProjectTreeDragOver, handleProjectTreeDrop, isEditMode, libraryTreeOrder, loadingModel, p, projectModelTypeFilter, projectSearchNeedle, projectTreeDropKey, renderProjectSchemeNode, requestLoadSavedProject, selectSingleProject, selectSingleScheme, selectedProjectId, selectedProjectIds, selectedSchemeId, selectedSchemeIds, setInspectorTab, setProjectMenu, span, startProjectTreeSortDrag, toggleProjectSelection, toggleSchemeExpanded, toggleSchemeSelection } = scope;
-    const isFiltering = Boolean(projectSearchNeedle || (projectModelTypeFilter && projectModelTypeFilter.length > 0));
-    const isExpanded = isFiltering ? true : expandedSchemeIds.includes(scheme.id);
-    // 同层顺序覆盖：方案按父层级分桶，模型按所属方案分桶；未拖动过的项保持原相对顺序垫底。
-    const children = sortByKeyOrder(
-      scheme.children ?? [],
-      (child: SavedSchemeRecord) => child.id,
-      libraryTreeOrder?.projectSchemes?.[scheme.id] ?? []
-    );
-    const orderedProjects = sortByKeyOrder(
-      scheme.projects ?? [],
-      (project: SavedProjectRecord) => project.id,
-      libraryTreeOrder?.projectModels?.[scheme.id] ?? []
-    );
-    const countModels = (s: SavedSchemeRecord): number => s.projects.length + (s.children ?? []).reduce((sum: number, c: SavedSchemeRecord) => sum + countModels(c), 0);
-    const modelCount = countModels(scheme);
-    const displaySchemeId = scheme.schemeId;
-    const schemeIdTooltip = Number.isSafeInteger(displaySchemeId) && displaySchemeId > 0
-      ? `方案 ID：${displaySchemeId}`
-      : "方案 ID：未分配";
-    const hasContent = scheme.projects.length > 0 || children.length > 0;
-    const schemeIndentStyle = { "--scheme-depth": depth } as CSSProperties;
-    const projectIndentStyle = { "--scheme-depth": depth + 1 } as CSSProperties;
-    // 方案/模型 id 本身已带 "scheme:" / "model:" 前缀 —— 拖动键直接用 id，不再叠加前缀。
-    const schemeDropKey = scheme.id;
-    const schemeDropLineClass = projectTreeDropKey === `${schemeDropKey}|before`
-      ? " library-tree-drop-line-before"
-      : projectTreeDropKey === `${schemeDropKey}|after`
-        ? " library-tree-drop-line-after"
-        : projectTreeDropKey === `${schemeDropKey}|inside`
-          ? " library-tree-drop-inside"
-          : showRootEndLine
-            // 列表末尾落点（拖到空白处 = 移到顶层末尾）：线画在本行下边缘。
-            ? " library-tree-drop-line-after"
-            : "";
-    return (
-      <div
-        className={`scheme-group ${depth > 0 ? "nested" : ""}`}
-        key={scheme.id}
-        style={schemeIndentStyle}
-      >
-        <div
-          role="option"
-          aria-label={`方案：${scheme.name}`}
-          title={schemeIdTooltip}
-          aria-selected={selectedSchemeIds.includes(scheme.id) || selectedSchemeId === scheme.id}
-          aria-expanded={isExpanded}
-          tabIndex={0}
-          // 行本体**不可拖** —— 只有行首把手能发起拖动（拖动排序 + 跨层级移动都走把手）。
-          // 行本体若也 draggable，浏览器会从祖先发起拖拽，把手的拖动根本起不来。
-          draggable={false}
-          className={`scheme-option ${selectedSchemeIds.includes(scheme.id) || selectedSchemeId === scheme.id ? "selected" : ""}${schemeDropLineClass}`}
-          style={schemeIndentStyle}
-          onClick={(event) => {
-            if (event.ctrlKey || event.metaKey || event.shiftKey) {
-              toggleSchemeSelection(scheme.id);
-            } else {
-              selectSingleScheme(scheme.id);
-            }
-            toggleSchemeExpanded(scheme.id);
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" || event.key === " " || event.key === "Spacebar") {
-              event.preventDefault();
-              if (event.ctrlKey || event.metaKey || event.shiftKey) {
-                toggleSchemeSelection(scheme.id);
-              } else {
-                selectSingleScheme(scheme.id);
-              }
-              toggleSchemeExpanded(scheme.id);
-            }
-          }}
-          onDragOver={(event) => {
-            // 排序通道（把手拖动）：算出插入边并画指示线；本体拖动（跨方案移动）只放行。
-            // 阻止冒泡 —— 列表容器的 dragover（末尾落点）不能覆盖行内算好的插入边。
-            event.stopPropagation();
-            handleProjectTreeDragOver(event, schemeDropKey);
-            event.preventDefault();
-          }}
-          onDragLeave={handleProjectTreeDragLeave}
-          onDrop={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            if (!isEditMode) {
-              return;
-            }
-            // 只有把手能发起拖动（行本体不可拖），所以这里只处理排序通道。
-            // 跨层级移动也在把手通道里完成（落在目标行上半区 = 成为其子方案）。
-            const sortSchemeId = event.dataTransfer.getData(PROJECT_TREE_DRAG_TYPE_SCHEME);
-            const sortModelId = event.dataTransfer.getData(PROJECT_TREE_DRAG_TYPE_MODEL);
-            projectTreeDragDebug("scheme-row:drop-mime", {
-              dropKey: schemeDropKey,
-              sortSchemeId,
-              sortModelId,
-              types: Array.from(event.dataTransfer.types ?? [])
-            });
-            if (sortSchemeId || sortModelId) {
-              // dropKey = **目标行**的键（拖动源由 libraryTreeDragKey 读出）。
-              handleProjectTreeDrop(event, schemeDropKey);
-            }
-          }}
-          onContextMenu={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            if (!selectedSchemeIds.includes(scheme.id)) {
-              selectSingleScheme(scheme.id);
-            }
-            setProjectMenu({ x: event.clientX, y: event.clientY, schemeId: scheme.id });
-          }}
-        >
-          <span
-            className="library-tree-drag-handle project-tree-drag-handle"
-            title="拖动调整顺序"
-            aria-label={`拖动调整方案 ${scheme.name} 的顺序`}
-            draggable={isEditMode}
-            onDragStart={(event) => startProjectTreeSortDrag(event, scheme.id)}
-            onDragEnd={endProjectTreeSortDrag}
-            onClick={(event) => event.stopPropagation()}
-          >
-            <GripVertical size={12} aria-hidden="true" />
-          </span>
-          {isExpanded ? <ChevronDown className="scheme-toggle-icon" size={14} /> : <ChevronRight className="scheme-toggle-icon" size={14} />}
-          <FolderOpen className="scheme-folder-icon" size={15} />
-          <span className="project-tree-name">{scheme.name}</span>
-          <span className="scheme-model-count">{modelCount}</span>
-        </div>
-        {isExpanded && (
-          <div className="scheme-projects">
-            {!hasContent && !isFiltering ? (
-              <p
-                className={`project-empty${projectTreeDropKey === `${schemeDropKey}|inside` ? " library-tree-drop-inside" : ""}`}
-                style={projectIndentStyle}
-                onDragOver={(event) => {
-                  event.stopPropagation();
-                  handleProjectTreeDragOver(event, schemeDropKey, "inside");
-                  event.preventDefault();
-                }}
-                onDragLeave={handleProjectTreeDragLeave}
-                onDrop={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  if (!isEditMode) {
-                    return;
-                  }
-                  if (event.dataTransfer.getData(PROJECT_TREE_DRAG_TYPE_MODEL)) {
-                    handleProjectTreeDrop(event, schemeDropKey);
-                  }
-                }}
-              >
-                暂无模型或子方案
-              </p>
-            ) : (
-              <>
-                {orderedProjects.map((project) => {
-                  const isProjectSelected = selectedProjectIds.includes(project.id) || project.id === selectedProjectId;
-                  const loadingProgress = loadingModel?.projectId === project.id ? loadingModel.progress : null;
-                  const projectModelType = ["微网", "厂站", "馈线", "台区"].includes(project.project?.modelType)
-                    ? project.project.modelType
-                    : "其他";
-                  const ProjectModelTypeIcon = {
-                    Cable,
-                    Factory,
-                    FileJson,
-                    HousePlug,
-                    Network
-                  }[projectModelTypeIconName(projectModelType)] ?? FileJson;
-                  const modelDropKey = project.id;
-                  const modelDropLineClass = projectTreeDropKey === `${modelDropKey}|before`
-                    ? " library-tree-drop-line-before"
-                    : projectTreeDropKey === `${modelDropKey}|after`
-                      ? " library-tree-drop-line-after"
-                      : projectTreeDropKey === `${modelDropKey}|inside`
-                        ? " library-tree-drop-inside"
-                        : "";
-                  return (
-                    <div
-                      role="option"
-                      aria-label={`模型：${project.name}`}
-                      aria-selected={isProjectSelected}
-                      aria-busy={loadingProgress !== null ? "true" : undefined}
-                      tabIndex={0}
-                      // 行本体**不可拖** —— 只有行首把手能发起拖动（拖动排序 + 跨方案移动都走把手）。
-                      draggable={false}
-                      className={`project-option ${isProjectSelected ? "selected" : ""} ${project.id === activeProjectKey ? "active" : ""}${modelDropLineClass}`}
-                      style={projectIndentStyle}
-                      key={project.id}
-                      onDragOver={(event) => {
-                        // 阻止冒泡 —— 列表容器的 dragover（末尾落点）不能覆盖行内插入边。
-                        event.stopPropagation();
-                        handleProjectTreeDragOver(event, modelDropKey);
-                        event.preventDefault();
-                      }}
-                      onDragLeave={handleProjectTreeDragLeave}
-                      onDrop={(event) => {
-                        // 只有把手能发起拖动（行本体不可拖），所以这里只处理排序通道。
-                        event.preventDefault();
-                        event.stopPropagation();
-                        if (!isEditMode) {
-                          return;
-                        }
-                        const sortModelId = event.dataTransfer.getData(PROJECT_TREE_DRAG_TYPE_MODEL);
-                        if (sortModelId) {
-                          // dropKey = **目标行**的键（拖动源由 libraryTreeDragKey 读出）。
-                          handleProjectTreeDrop(event, modelDropKey);
-                        }
-                      }}
-                      onClick={(event) => {
-                        const currentScope = (__appScope.__appScopeRef?.current ?? __appScope) as Record<string, any>;
-                        if (currentScope.projectTreeDragSuppressClickRef?.current) {
-                          currentScope.projectTreeDragSuppressClickRef.current = false;
-                          return;
-                        }
-                        if (event.ctrlKey || event.metaKey || event.shiftKey) {
-                          toggleProjectSelection(scheme.id, project.id);
-                        } else {
-                          selectSingleProject(scheme.id, project.id);
-                          requestLoadSavedProject(project, scheme.id);
-                        }
-                        setInspectorTab("model");
-                      }}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          requestLoadSavedProject(project, scheme.id);
-                        } else if (event.key === " " || event.key === "Spacebar") {
-                          event.preventDefault();
-                          if (event.ctrlKey || event.metaKey || event.shiftKey) {
-                            toggleProjectSelection(scheme.id, project.id);
-                          } else {
-                            selectSingleProject(scheme.id, project.id);
-                          }
-                        }
-                      }}
-                      onContextMenu={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        if (!selectedProjectIds.includes(project.id)) {
-                          selectSingleProject(scheme.id, project.id);
-                        }
-                        setProjectMenu({ x: event.clientX, y: event.clientY, schemeId: scheme.id, projectId: project.id });
-                      }}
-                    >
-                      <span
-                        className="library-tree-drag-handle project-tree-drag-handle"
-                        title="拖动调整顺序"
-                        aria-label={`拖动调整模型 ${project.name} 的顺序`}
-                        draggable={isEditMode}
-                        onDragStart={(event) => startProjectTreeSortDrag(event, project.id)}
-                        onDragEnd={endProjectTreeSortDrag}
-                        onClick={(event) => event.stopPropagation()}
-                      >
-                        <GripVertical size={12} aria-hidden="true" />
-                      </span>
-                      <ProjectModelTypeIcon
-                        aria-label={`${projectModelType}模型`}
-                        className="project-item-icon"
-                        data-model-type={projectModelType}
-                        role="img"
-                        size={14}
-                      />
-                      <span className="project-tree-name">{project.name}</span>
-                      <span className="project-model-type-tag" style={{ background: MODEL_TYPE_META[projectModelType]?.color ?? "#94a3b8" }}>{projectModelType}</span>
-                      {loadingProgress !== null && (
-                        <progress
-                          className="project-option-loading-progress"
-                          aria-label={`正在加载模型：${project.name}`}
-                          max={100}
-                          value={loadingProgress}
-                        />
-                      )}
-                    </div>
-                  );
-                })}
-                {children.map((child) => renderProjectSchemeNode(child, depth + 1))}              </>
-            )}
-          </div>
-        )}
-      </div>
-    );
-  };
-}
-
-export function createOpenBlankProjectLibraryContextMenu(__appScope: Record<string, any>) {
-  return (event: MouseEvent<HTMLElement>) => {
-  const { setProjectMenu } = __appScope;
-    const target = event.target as HTMLElement | null;
-    if (target?.closest(".scheme-option, .project-option, .project-tree-antd .ant-tree-treenode, .library-search")) {
-      return;
-    }
-    event.preventDefault();
-    event.stopPropagation();
-    setProjectMenu({ x: event.clientX, y: event.clientY });
-  };
-}
-
 export function createCustomDeviceDefaultStateVisualDraft(__appScope: Record<string, any>) {
   return (): Partial<DeviceStateDefinition> => {
   const { customDeviceDraft, customDevicePreviewLabel, customDevicePreviewSourceTemplate, customDraftTerminalTypes, generateCustomDeviceImage, selectedCustomComponentTemplate, selectedDefinitionTemplate } = __appScope;
@@ -5242,7 +603,7 @@ export function createSnapCustomDeviceTerminalAnchor(__appScope: Record<string, 
   const { CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES, CUSTOM_DEVICE_TERMINAL_ANCHOR_SNAP_SCREEN_TOLERANCE, customDevicePreviewHeight, customDevicePreviewWidth, customDeviceTerminalAnchorValue, projectCustomDeviceTerminalAnchorToBoundary } = __appScope;
     const snapAxis = (value: number, tolerance: number) => {
       const normalizedValue = customDeviceTerminalAnchorValue(value);
-      const guideValue = CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES.find((candidate) => Math.abs(normalizedValue - candidate) <= tolerance);
+      const guideValue = CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES.find((candidate: any) => Math.abs(normalizedValue - candidate) <= tolerance);
       return guideValue === undefined ? normalizedValue : customDeviceTerminalAnchorValue(guideValue);
     };
     const boundaryAnchor = projectCustomDeviceTerminalAnchorToBoundary(anchor);
@@ -5299,7 +660,7 @@ export function createCustomDeviceTerminalConnectorSegment(__appScope: Record<st
 export function createUpdateCustomDeviceTerminalAnchor(__appScope: Record<string, any>) {
   return (index: number, patch: Partial<Point>) => {
   const { createDefaultCustomDeviceTerminalAnchors, customDeviceTerminalAnchorValue, hasOverlappingCustomDeviceTerminalAnchors, projectCustomDeviceTerminalAnchorToBoundary, setCustomDeviceDraft } = __appScope;
-    setCustomDeviceDraft((current) => {
+    setCustomDeviceDraft((current: any) => {
       if (index < 0 || index >= current.terminalCount) {
         return current;
       }
@@ -5320,11 +681,11 @@ export function createUpdateCustomDeviceTerminalAnchor(__appScope: Record<string
 export function createUpdateCustomDeviceStateDraftRow(__appScope: Record<string, any>) {
   return (rowId: string, patch: Partial<DeviceDefinitionStateDraftRow>) => {
   const { isDefaultStatePageId, setCustomDeviceDraft } = __appScope;
-    setCustomDeviceDraft((current) => ({
+    setCustomDeviceDraft((current: any) => ({
       ...current,
       stateDefinitions: isDefaultStatePageId(rowId)
         ? current.stateDefinitions
-        : current.stateDefinitions.map((row) => (row.id === rowId ? { ...row, ...patch } : row)),
+        : current.stateDefinitions.map((row: any) => (row.id === rowId ? { ...row, ...patch } : row)),
       ...(isDefaultStatePageId(rowId)
         ? {
             backgroundImage: patch.image ?? patch.backgroundImage ?? current.backgroundImage,
@@ -5358,7 +719,7 @@ export function createAddCustomDeviceStateDraftRow(__appScope: Record<string, an
     const sourceDefaultVisual = inlineDefaultStateIconPatch
       ? { ...defaultVisual, ...inlineDefaultStateIconPatch }
       : defaultVisual;
-    setCustomDeviceDraft((current) => ({
+    setCustomDeviceDraft((current: any) => ({
       ...current,
       backgroundImage: inlineDefaultStateIconPatch ? stateIconDrawingInlineImage : current.backgroundImage,
       backgroundImageAssetId: inlineDefaultStateIconPatch ? "" : current.backgroundImageAssetId,
@@ -5385,9 +746,9 @@ export function createAddCustomDeviceStateDraftRow(__appScope: Record<string, an
 export function createDeleteCustomDeviceStateDraftRow(__appScope: Record<string, any>) {
   return (rowId: string) => {
   const { setCustomDeviceDraft } = __appScope;
-    setCustomDeviceDraft((current) => ({
+    setCustomDeviceDraft((current: any) => ({
       ...current,
-      stateDefinitions: current.stateDefinitions.filter((row) => row.id !== rowId),
+      stateDefinitions: current.stateDefinitions.filter((row: any) => row.id !== rowId),
       error: ""
     }));
   };
@@ -5469,7 +830,7 @@ export function createSnapDefinitionTerminalAnchor(__appScope: Record<string, an
   const { CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES, CUSTOM_DEVICE_TERMINAL_ANCHOR_SNAP_SCREEN_TOLERANCE, customDeviceTerminalAnchorValue, definitionVisualPreviewHeight, definitionVisualPreviewWidth, projectCustomDeviceTerminalAnchorToBoundary } = __appScope;
     const snapAxis = (value: number, tolerance: number) => {
       const normalizedValue = customDeviceTerminalAnchorValue(value);
-      const guideValue = CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES.find((candidate) => Math.abs(normalizedValue - candidate) <= tolerance);
+      const guideValue = CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES.find((candidate: any) => Math.abs(normalizedValue - candidate) <= tolerance);
       return guideValue === undefined ? normalizedValue : customDeviceTerminalAnchorValue(guideValue);
     };
     const boundaryAnchor = projectCustomDeviceTerminalAnchorToBoundary(anchor);
@@ -5518,7 +879,7 @@ export function createDefinitionTerminalConnectorSegment(__appScope: Record<stri
 export function createUpdateDefinitionTerminalAnchor(__appScope: Record<string, any>) {
   return (index: number, patch: Partial<Point>) => {
   const { createDefaultCustomDeviceTerminalAnchors, customDeviceTerminalAnchorValue, hasOverlappingCustomDeviceTerminalAnchors, projectCustomDeviceTerminalAnchorToBoundary, setDefinitionVisualDraft } = __appScope;
-    setDefinitionVisualDraft((current) => {
+    setDefinitionVisualDraft((current: any) => {
       if (!current || index < 0 || index >= current.terminalCount) {
         return current;
       }
@@ -5563,8 +924,8 @@ export function createLoadDefinitionTemplateDraft(__appScope: Record<string, any
     setSelectedDefinitionKind(template.kind);
     const group = normalizeCategoryLibraryName(template.categoryLibrary);
     const componentLibrary = resolveTemplateComponentLibrary(template);
-    setExpandedDefinitionGroups((current) => (current.includes(group) ? current : [...current, group]));
-    setCollapsedDefinitionComponentLibraries((current) => current.filter((item) => item !== categoryLibraryComponentLibraryKey(group, componentLibrary)));
+    setExpandedDefinitionGroups((current: any) => (current.includes(group) ? current : [...current, group]));
+    setCollapsedDefinitionComponentLibraries((current: any) => current.filter((item: any) => item !== categoryLibraryComponentLibraryKey(group, componentLibrary)));
     setDefinitionDraftRows(createDefinitionDraftRows(template));
     if (definitionDeleteAllParametersRequestedRef) definitionDeleteAllParametersRequestedRef.current = false;
     setDefinitionMeasurementDraft(cloneDeviceMeasurementDefinitions(template.measurementDefinitions) ?? []);
@@ -5639,7 +1000,7 @@ export function createStartDeviceLibraryDialogDrag(__appScope: Record<string, an
     event.preventDefault();
     event.stopPropagation();
     const rect = currentDeviceLibraryDialogRect(kind);
-    setDeviceLibraryDialogLayouts((current) => ({ ...current, [kind]: rect }));
+    setDeviceLibraryDialogLayouts((current: any) => ({ ...current, [kind]: rect }));
     setDeviceLibraryDialogDrag({
       kind,
       startClientX: event.clientX,
@@ -5662,7 +1023,7 @@ export function createStartDeviceLibraryDialogResize(__appScope: Record<string, 
     event.preventDefault();
     event.stopPropagation();
     const rect = currentDeviceLibraryDialogRect(kind);
-    setDeviceLibraryDialogLayouts((current) => ({ ...current, [kind]: rect }));
+    setDeviceLibraryDialogLayouts((current: any) => ({ ...current, [kind]: rect }));
     setDeviceLibraryDialogResize({
       kind,
       startClientX: event.clientX,
@@ -5768,8 +1129,8 @@ export function createCloseCustomDeviceDialog(__appScope: Record<string, any>) {
 export function createToggleDefinitionGroup(__appScope: Record<string, any>) {
   return (categoryLibrary: CategoryLibrary) => {
   const { setExpandedDefinitionGroups } = __appScope;
-    setExpandedDefinitionGroups((current) =>
-      current.includes(categoryLibrary) ? current.filter((item) => item !== categoryLibrary) : [...current, categoryLibrary]
+    setExpandedDefinitionGroups((current: any) =>
+      current.includes(categoryLibrary) ? current.filter((item: any) => item !== categoryLibrary) : [...current, categoryLibrary]
     );
   };
 }
@@ -5778,8 +1139,8 @@ export function createToggleDefinitionComponentLibrary(__appScope: Record<string
   return (categoryLibrary: CategoryLibrary, componentLibrary: string) => {
   const { categoryLibraryComponentLibraryKey, setCollapsedDefinitionComponentLibraries, setDefinitionDraftSection, setSelectedDefinitionKind } = __appScope;
     const typeKey = categoryLibraryComponentLibraryKey(categoryLibrary, componentLibrary);
-    setCollapsedDefinitionComponentLibraries((current) =>
-      current.includes(typeKey) ? current.filter((item) => item !== typeKey) : [...current, typeKey]
+    setCollapsedDefinitionComponentLibraries((current: any) =>
+      current.includes(typeKey) ? current.filter((item: any) => item !== typeKey) : [...current, typeKey]
     );
     // 选中类节点：右侧显示共有参数表格
     setDefinitionDraftSection(componentLibrary);
@@ -5794,7 +1155,7 @@ export function createUpdateDefinitionComponentLibraryCommonParamExport(__appSco
     if (!sectionKey) {
       return;
     }
-    const componentLibraryTemplates = libraryTemplates.filter((template) => {
+    const componentLibraryTemplates = libraryTemplates.filter((template: any) => {
       const templateComponentLibrary = normalizeComponentLibraryName(resolveTemplateComponentLibrary(template));
       const derivedInfo = templateDerivedComponentLibraryInfo(template);
       const derivedComponentLibrary = normalizeComponentLibraryName(derivedInfo?.derivedComponentLibrary ?? "");
@@ -5809,7 +1170,7 @@ export function createUpdateDefinitionComponentLibraryCommonParamExport(__appSco
       ...(typeof patch.exportName === "string" ? { exportName: patch.exportName.trim() } : {})
     });
     // 内置元件：批量写 override（与 saveDeviceDefinitionDraft 同模式）
-    setDeviceDefinitionOverrides((current) => {
+    setDeviceDefinitionOverrides((current: any) => {
       const next = { ...current };
       for (const template of componentLibraryTemplates) {
         const definitionKey = deviceDefinitionSharedKeyForTemplate(template);
@@ -5837,8 +1198,8 @@ export function createUpdateDefinitionComponentLibraryCommonParamExport(__appSco
 export function createToggleElementTreeGroup(__appScope: Record<string, any>) {
   return (typeKey: string) => {
   const { setCollapsedElementTreeGroups } = __appScope;
-    setCollapsedElementTreeGroups((current) =>
-      current.includes(typeKey) ? current.filter((item) => item !== typeKey) : [...current, typeKey]
+    setCollapsedElementTreeGroups((current: any) =>
+      current.includes(typeKey) ? current.filter((item: any) => item !== typeKey) : [...current, typeKey]
     );
   };
 }
@@ -5846,8 +1207,8 @@ export function createToggleElementTreeGroup(__appScope: Record<string, any>) {
 export function createToggleElementTreeDeviceGroup(__appScope: Record<string, any>) {
   return (deviceKey: string) => {
   const { setCollapsedElementTreeDeviceGroups } = __appScope;
-    setCollapsedElementTreeDeviceGroups((current) =>
-      current.includes(deviceKey) ? current.filter((item) => item !== deviceKey) : [...current, deviceKey]
+    setCollapsedElementTreeDeviceGroups((current: any) =>
+      current.includes(deviceKey) ? current.filter((item: any) => item !== deviceKey) : [...current, deviceKey]
     );
   };
 }
@@ -5856,7 +1217,7 @@ export function createUpdateDefinitionDraftRow(__appScope: Record<string, any>) 
   return (rowId: string, patch: Partial<DeviceDefinitionDraftRow>) => {
   const { definitionDeleteAllParametersRequestedRef, setDefinitionDraftError, setDefinitionDraftRows } = __appScope;
     if (definitionDeleteAllParametersRequestedRef) definitionDeleteAllParametersRequestedRef.current = false;
-    setDefinitionDraftRows((current) => current.map((row) => (row.id === rowId ? { ...row, ...patch } : row)));
+    setDefinitionDraftRows((current: any) => current.map((row: any) => (row.id === rowId ? { ...row, ...patch } : row)));
     setDefinitionDraftError("");
   };
 }
@@ -5866,7 +1227,7 @@ export function createAddDefinitionDraftRow(__appScope: Record<string, any>) {
   const { definitionDeleteAllParametersRequestedRef, definitionParameterSelectionAnchorRef, deviceDefinitionRowId, setDefinitionDraftError, setDefinitionDraftRows, setSelectedDefinitionParameterRowIds } = __appScope;
     if (definitionDeleteAllParametersRequestedRef) definitionDeleteAllParametersRequestedRef.current = false;
     const rowId = deviceDefinitionRowId();
-    setDefinitionDraftRows((current) => [
+    setDefinitionDraftRows((current: any) => [
       ...current,
       {
         id: rowId,
@@ -5888,7 +1249,7 @@ export function createDeleteDefinitionDraftRow(__appScope: Record<string, any>) 
   return (rowId: string) => {
   const { definitionDeleteAllParametersRequestedRef, setDefinitionDraftError, setDefinitionDraftRows } = __appScope;
     if (definitionDeleteAllParametersRequestedRef) definitionDeleteAllParametersRequestedRef.current = false;
-    setDefinitionDraftRows((current) => current.filter((row) => row.id !== rowId || row.readonly));
+    setDefinitionDraftRows((current: any) => current.filter((row: any) => row.id !== rowId || row.readonly));
     setDefinitionDraftError("");
   };
 }
@@ -5896,13 +1257,13 @@ export function createDeleteDefinitionDraftRow(__appScope: Record<string, any>) 
 export function createUpdateDefinitionStateDraftRow(__appScope: Record<string, any>) {
   return (rowId: string, patch: Partial<DeviceDefinitionStateDraftRow>) => {
   const { isDefaultStatePageId, setDefinitionDraftError, setDefinitionStateDraftRows, setDefinitionVisualDraft } = __appScope;
-    setDefinitionStateDraftRows((current) =>
+    setDefinitionStateDraftRows((current: any) =>
       isDefaultStatePageId(rowId)
         ? current
-        : current.map((row) => (row.id === rowId ? { ...row, ...patch } : row))
+        : current.map((row: any) => (row.id === rowId ? { ...row, ...patch } : row))
     );
     if (isDefaultStatePageId(rowId)) {
-      setDefinitionVisualDraft((current) =>
+      setDefinitionVisualDraft((current: any) =>
         current
           ? {
               ...current,
@@ -5939,7 +1300,7 @@ export function createAddDefinitionStateDraftRow(__appScope: Record<string, any>
     const sourceDefaultVisual = inlineDefaultStateIconPatch
       ? { ...defaultVisual, ...inlineDefaultStateIconPatch }
       : defaultVisual;
-    setDefinitionStateDraftRows((current) => {
+    setDefinitionStateDraftRows((current: any) => {
       const sourceRows = current;
       const nextIndex = nextNonDefaultStateIndex(sourceRows);
       const row = {
@@ -5959,7 +1320,7 @@ export function createAddDefinitionStateDraftRow(__appScope: Record<string, any>
 export function createDeleteDefinitionStateDraftRow(__appScope: Record<string, any>) {
   return (rowId: string) => {
   const { setDefinitionDraftError, setDefinitionStateDraftRows } = __appScope;
-    setDefinitionStateDraftRows((current) => current.filter((row) => row.id !== rowId));
+    setDefinitionStateDraftRows((current: any) => current.filter((row: any) => row.id !== rowId));
     setDefinitionDraftError("");
   };
 }
@@ -5986,8 +1347,8 @@ export function createUpdateSelectedDefinitionResizePermission(__appScope: Recor
     const nextAllowed = value === "1";
     const targetKind = selectedDefinitionTemplate.kind;
     if (selectedDefinitionTemplate.custom) {
-      setCustomDeviceTemplates((current) =>
-        current.map((template) =>
+      setCustomDeviceTemplates((current: any) =>
+        current.map((template: any) =>
           template.kind === targetKind
             ? {
                 ...template,
@@ -5997,7 +1358,7 @@ export function createUpdateSelectedDefinitionResizePermission(__appScope: Recor
         )
       );
     } else {
-      setDeviceDefinitionOverrides((current) => {
+      setDeviceDefinitionOverrides((current: any) => {
         const existingOverride = current[targetKind];
         return {
           ...current,
@@ -6029,8 +1390,8 @@ export function createSaveDeviceDefinitionStateVisualDraft(__appScope: Record<st
     const stateDefinitions = stateValidation.states;
     const activeStateValue = activeStateDraftRow(definitionStateDraftRows, definitionStatePageId)?.value.trim() ?? "";
     if (selectedDefinitionTemplate.custom) {
-      setCustomDeviceTemplates((current) =>
-        current.map((template) => {
+      setCustomDeviceTemplates((current: any) =>
+        current.map((template: any) => {
           if (template.kind !== selectedDefinitionTemplate.kind) {
             return template;
           }
@@ -6044,7 +1405,7 @@ export function createSaveDeviceDefinitionStateVisualDraft(__appScope: Record<st
         })
       );
     } else {
-      setDeviceDefinitionOverrides((current) => {
+      setDeviceDefinitionOverrides((current: any) => {
         const existingOverride = current[selectedDefinitionTemplate.kind];
         return {
           ...current,
@@ -6064,11 +1425,11 @@ export function createSaveDeviceDefinitionStateVisualDraft(__appScope: Record<st
         stateDefinitions
       },
       resolveEffectiveTemplateParameterDefinitions(selectedDefinitionTemplate, __appScope.libraryTemplates),
-      (node) => node.kind === selectedDefinitionTemplate.kind
+      (node: any) => node.kind === selectedDefinitionTemplate.kind
     );
-    const nextStateRows = stateDefinitions.map((definition) => createStateDraftRow(definition));
+    const nextStateRows = stateDefinitions.map((definition: any) => createStateDraftRow(definition));
     setDefinitionStateDraftRows(nextStateRows);
-    setDefinitionStatePageId(nextStateRows.find((row) => row.value === activeStateValue)?.id ?? DEFAULT_STATE_PAGE_ID);
+    setDefinitionStatePageId(nextStateRows.find((row: any) => row.value === activeStateValue)?.id ?? DEFAULT_STATE_PAGE_ID);
     setDefinitionDraftError("");
     writeOperationLog(`保存状态样式：${selectedDefinitionTemplate.label}`);
   };
@@ -6083,7 +1444,7 @@ export function createSaveDeviceDefinitionVisualDraft(__appScope: Record<string,
     if (hasOverlappingCustomDeviceTerminalAnchors(definitionVisualTerminalAnchors)) {
       const message = "不同端子位置不能重叠，请调整端子位置后再保存。";
       showGlobalMessage(message);
-      setDefinitionVisualDraft((current) => current ? { ...current, error: message } : current);
+      setDefinitionVisualDraft((current: any) => current ? { ...current, error: message } : current);
       return;
     }
     const stateValidation = validateStateDraftRows(definitionStateDraftRows);
@@ -6094,11 +1455,11 @@ export function createSaveDeviceDefinitionVisualDraft(__appScope: Record<string,
     const stateDefinitions = stateValidation.states;
     const activeStateValue = activeStateDraftRow(definitionStateDraftRows, definitionStatePageId)?.value.trim() ?? "";
     const terminalTypes = definitionVisualDraft.terminalTypes.slice(0, definitionVisualDraft.terminalCount);
-    const terminalLabels = definitionVisualDraft.terminalLabels.slice(0, definitionVisualDraft.terminalCount).map((label, index) => {
+    const terminalLabels = definitionVisualDraft.terminalLabels.slice(0, definitionVisualDraft.terminalCount).map((label: any, index: any) => {
       const type = terminalTypes[index] ?? selectedDefinitionTemplate.terminalType;
       return label.trim() || `${TERMINAL_TYPE_LIBRARY_LABELS[type] ?? type}端${index + 1}`;
     });
-    const terminalAnchors = definitionVisualTerminalAnchors.slice(0, definitionVisualDraft.terminalCount).map((anchor) => ({ ...anchor }));
+    const terminalAnchors = definitionVisualTerminalAnchors.slice(0, definitionVisualDraft.terminalCount).map((anchor: any) => ({ ...anchor }));
     const size = {
       width: Math.max(1, Math.round(definitionVisualDraft.size.width || selectedDefinitionTemplate.size.width || 104)),
       height: Math.max(1, Math.round(definitionVisualDraft.size.height || selectedDefinitionTemplate.size.height || 64))
@@ -6119,8 +1480,8 @@ export function createSaveDeviceDefinitionVisualDraft(__appScope: Record<string,
     };
     const parameterDefinitions = resolveEffectiveTemplateParameterDefinitions(selectedDefinitionTemplate, __appScope.libraryTemplates);
     if (selectedDefinitionTemplate.custom) {
-      setCustomDeviceTemplates((current) =>
-        current.map((template) => {
+      setCustomDeviceTemplates((current: any) =>
+        current.map((template: any) => {
           if (template.kind !== selectedDefinitionTemplate.kind) {
             return template;
           }
@@ -6143,7 +1504,7 @@ export function createSaveDeviceDefinitionVisualDraft(__appScope: Record<string,
         })
       );
     } else {
-      setDeviceDefinitionOverrides((current) => {
+      setDeviceDefinitionOverrides((current: any) => {
         const existingExactOverride = current[selectedDefinitionTemplate.kind];
         return {
           ...current,
@@ -6186,12 +1547,12 @@ export function createSaveDeviceDefinitionVisualDraft(__appScope: Record<string,
         stateDefinitions
       },
       parameterDefinitions,
-      (node) => node.kind === selectedDefinitionTemplate.kind
+      (node: any) => node.kind === selectedDefinitionTemplate.kind
     );
-    const nextStateRows = stateDefinitions.map((definition) => createStateDraftRow(definition));
-    setDefinitionVisualDraft((current) => current ? { ...current, size, terminalLabels, terminalAnchors, ...backgroundParams, error: "" } : current);
+    const nextStateRows = stateDefinitions.map((definition: any) => createStateDraftRow(definition));
+    setDefinitionVisualDraft((current: any) => current ? { ...current, size, terminalLabels, terminalAnchors, ...backgroundParams, error: "" } : current);
     setDefinitionStateDraftRows(nextStateRows);
-    setDefinitionStatePageId(nextStateRows.find((row) => row.value === activeStateValue)?.id ?? DEFAULT_STATE_PAGE_ID);
+    setDefinitionStatePageId(nextStateRows.find((row: any) => row.value === activeStateValue)?.id ?? DEFAULT_STATE_PAGE_ID);
     setDefinitionTerminalAnchorDragIndex(null);
     setDefinitionDraftError("");
     writeOperationLog(`修改元件图标和端子：${selectedDefinitionTemplate.label}`);
@@ -6260,7 +1621,7 @@ export function createSaveDeviceDefinitionDraft(__appScope: Record<string, any>)
     }
     const definitionKey = normalizeComponentLibraryName(definitionDraftSection) || deviceDefinitionKeyForTemplate(selectedDefinitionTemplate);
     const overrideKey = deviceDefinitionSharedKeyForTemplate(selectedDefinitionTemplate);
-    const paramsSeed = derivedInfo
+    const paramsSeed: Record<string, string> = derivedInfo
       ? {
           component_type: derivedInfo.componentLibrary || derivedInfo.baseComponentLibrary,
           derived_from_component_type: derivedInfo.baseComponentLibrary,
@@ -6314,19 +1675,19 @@ export function createSaveDeviceDefinitionDraft(__appScope: Record<string, any>)
     syncExistingNodesWithTemplateDefinitions(
       { parameterDefinitions: completedRows },
       previousDefinitions,
-      (node) => {
-        const nodeTemplate = libraryTemplates.find((template) => template.kind === node.kind);
+      (node: any) => {
+        const nodeTemplate = libraryTemplates.find((template: any) => template.kind === node.kind);
         return Boolean(nodeTemplate && deviceTemplatesShareParameterDefinitions(selectedDefinitionTemplate, nodeTemplate));
       }
     );
-    setDeviceDefinitionOverrides((current) => {
+    setDeviceDefinitionOverrides((current: any) => {
       const next = appendAssociatedMeasurementFieldsToOverrides({ ...current }, materializedFields.additions, {
         libraryTemplates,
         deviceDefinitionOverrideForTemplate,
         getTemplateParameterDefinitions
       });
       const existingOverride = current[overrideKey];
-      for (const peer of libraryTemplates.filter((template) => deviceTemplatesShareParameterDefinitions(selectedDefinitionTemplate, template))) {
+      for (const peer of libraryTemplates.filter((template: any) => deviceTemplatesShareParameterDefinitions(selectedDefinitionTemplate, template))) {
         if (!next[peer.kind] || peer.kind === overrideKey) continue;
         const peerOverride = { ...next[peer.kind] };
         delete peerOverride.parameterDefinitions;
@@ -6370,7 +1731,7 @@ export function createResetDeviceDefinitionDraft(__appScope: Record<string, any>
     }
     loadDefinitionTemplateDraft(selectedDefinitionBaseTemplate);
     const definitionKey = deviceDefinitionSharedKeyForTemplate(selectedDefinitionBaseTemplate);
-    setDeviceDefinitionOverrides((current) => {
+    setDeviceDefinitionOverrides((current: any) => {
       const next = { ...current };
       delete next[definitionKey];
       for (const peer of (__appScope.libraryTemplates ?? []).filter((template: DeviceTemplate) => (
@@ -6394,7 +1755,7 @@ export function createUpdateCustomDraftTerminalCount(__appScope: Record<string, 
     if (count === 0) {
       setCustomDeviceDialogView("icon");
     }
-    setCustomDeviceDraft((current) => {
+    setCustomDeviceDraft((current: any) => {
       const fallback = current.categoryLibraryName.includes("直流")
         ? "dc"
         : current.categoryLibraryName.includes("氢")
@@ -6445,13 +1806,13 @@ export function createChooseCustomDeviceBackground(__appScope: Record<string, an
       try {
         const uploadedAsset = await uploadBackendImage(file.name, imageData, activeImageFolderId);
         asset = uploadedAsset;
-        setImageAssetList((current) => [uploadedAsset, ...current.filter((item) => item.id !== uploadedAsset.id)]);
-        setImageAssets((current) => ({ ...current, [uploadedAsset.id]: uploadedAsset.url }));
+        setImageAssetList((current: any) => [uploadedAsset, ...current.filter((item: any) => item.id !== uploadedAsset.id)]);
+        setImageAssets((current: any) => ({ ...current, [uploadedAsset.id]: uploadedAsset.url }));
         void refreshImageFolders();
       } catch (error) {
         showGlobalMessage(error instanceof Error ? error.message : "上传元件图标到后台失败，将仅保留当前本地预览。");
       }
-      setCustomDeviceDraft((current) => ({
+      setCustomDeviceDraft((current: any) => ({
         ...current,
         backgroundImage: asset?.url ?? imageData,
         backgroundImageAssetId: asset?.id ?? "",
@@ -6479,13 +1840,13 @@ export function createChooseDefinitionTemplateIcon(__appScope: Record<string, an
       try {
         const uploadedAsset = await uploadBackendImage(file.name, imageData, activeImageFolderId);
         asset = uploadedAsset;
-        setImageAssetList((current) => [uploadedAsset, ...current.filter((item) => item.id !== uploadedAsset.id)]);
-        setImageAssets((current) => ({ ...current, [uploadedAsset.id]: uploadedAsset.url }));
+        setImageAssetList((current: any) => [uploadedAsset, ...current.filter((item: any) => item.id !== uploadedAsset.id)]);
+        setImageAssets((current: any) => ({ ...current, [uploadedAsset.id]: uploadedAsset.url }));
         void refreshImageFolders();
       } catch (error) {
         showGlobalMessage(error instanceof Error ? error.message : "上传元件图标到后台失败，将仅保留当前本地预览。");
       }
-      setDefinitionVisualDraft((current) =>
+      setDefinitionVisualDraft((current: any) =>
         current
           ? {
               ...current,
@@ -6518,8 +1879,8 @@ export function createChooseStateVisualImage(__appScope: Record<string, any>) {
       try {
         const uploadedAsset = await uploadBackendImage(file.name, imageData, activeImageFolderId);
         asset = uploadedAsset;
-        setImageAssetList((current) => [uploadedAsset, ...current.filter((item) => item.id !== uploadedAsset.id)]);
-        setImageAssets((current) => ({ ...current, [uploadedAsset.id]: uploadedAsset.url }));
+        setImageAssetList((current: any) => [uploadedAsset, ...current.filter((item: any) => item.id !== uploadedAsset.id)]);
+        setImageAssets((current: any) => ({ ...current, [uploadedAsset.id]: uploadedAsset.url }));
         void refreshImageFolders();
       } catch (error) {
         showGlobalMessage(error instanceof Error ? error.message : "上传状态图形到后台失败，将仅保留当前本地预览。");
@@ -6543,717 +1904,18 @@ export function createChooseStateVisualImage(__appScope: Record<string, any>) {
   };
 }
 
-export function createChooseStateIconDrawingImport(__appScope: Record<string, any>) {
-  return (event: ChangeEvent<HTMLInputElement>) => {
-  const { activeImageFolderId, createEditableStateIconElementsFromSvgSource, createImportedStateIconElement, refreshImageFolders, setImageAssetList, setImageAssets, setStateIconDrawingDialog, stateIconDrawingHistoryRef, stateIconDrawingImportMode, uploadBackendImage } = __appScope;
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) {
-      return;
-    }
-    const isSvg = stateIconDrawingImportMode === "svg" || file.type === "image/svg+xml" || file.name.toLowerCase().endsWith(".svg");
-    const appendImportedElements = (importedElements: StateIconDrawingElement[]) => {
-      const selectedElementId = importedElements[0]?.id ?? "";
-      setStateIconDrawingDialog((current) =>
-        current
-          ? (pushStateIconDrawingHistorySnapshot(stateIconDrawingHistoryRef, current.elements), {
-              ...current,
-              elements: [...current.elements, ...importedElements],
-              selectedElementId,
-              selectedElementIds: selectedElementId ? [selectedElementId] : [],
-              pendingElementKind: undefined,
-              pendingStaticTemplate: undefined,
-              drawingDraft: undefined
-            })
-          : current
-      );
-    };
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const source = String(reader.result ?? "");
-      if (isSvg) {
-        appendImportedElements(createEditableStateIconElementsFromSvgSource(source, file.name, { preserveImportedSvg: true }));
-        return;
-      }
-      // 位图：上传到图片库并引用 /webgrp/images，避免把 base64 位图内联进状态图标 SVG（library.json 膨胀根因）。
-      let href = source;
-      try {
-        const uploadedAsset = await uploadBackendImage(file.name, source, activeImageFolderId);
-        href = uploadedAsset.url;
-        setImageAssetList((current) => [uploadedAsset, ...current.filter((item) => item.id !== uploadedAsset.id)]);
-        setImageAssets((current) => ({ ...current, [uploadedAsset.id]: uploadedAsset.url }));
-        void refreshImageFolders();
-      } catch (error) {
-        showGlobalMessage(error instanceof Error ? error.message : "上传图片到后台失败，将以本地预览嵌入。");
-      }
-      appendImportedElements([createImportedStateIconElement("image", href, file.name)]);
-    };
-    if (isSvg) {
-      reader.readAsText(file);
-    } else {
-      reader.readAsDataURL(file);
-    }
-  };
-}
-
-export function createUpdateStateIconDrawingElement(__appScope: Record<string, any>) {
-  return (elementId: string, patch: Partial<StateIconDrawingElement>) => {
-  const { setStateIconDrawingDialog, stateIconDrawingHistoryRef } = __appScope;
-    const explicitPatch = {
-      ...patch,
-      ...(Object.prototype.hasOwnProperty.call(patch, "strokeWidth") ? { strokeWidthEdited: true } : {}),
-      ...(Object.prototype.hasOwnProperty.call(patch, "strokeColor") ? { strokeColorEdited: true } : {}),
-      ...(Object.prototype.hasOwnProperty.call(patch, "strokeStyle") ? { strokeStyleEdited: true } : {}),
-      ...(Object.prototype.hasOwnProperty.call(patch, "fillColor") ? { fillColorEdited: true } : {})
-    };
-    setStateIconDrawingDialog((current) =>
-      current
-        ? (pushStateIconDrawingHistorySnapshot(stateIconDrawingHistoryRef, current.elements), {
-            ...current,
-            elements: current.elements.map((element) => (element.id === elementId ? { ...element, ...explicitPatch } : element))
-          })
-        : current
-    );
-  };
-}
-
-export function createUpdateStateIconDrawingElements(__appScope: Record<string, any>) {
-  return (elementIds: readonly string[], updater: (element: StateIconDrawingElement) => StateIconDrawingElement, options: { recordHistory?: boolean } = {}) => {
-  const { setStateIconDrawingDialog, stateIconDrawingHistoryRef } = __appScope;
-    const idSet = new Set(elementIds);
-    setStateIconDrawingDialog((current) =>
-      current
-        ? (options.recordHistory ? pushStateIconDrawingHistorySnapshot(stateIconDrawingHistoryRef, current.elements) : undefined, {
-            ...current,
-            elements: current.elements.map((element) => (idSet.has(element.id) ? updater(element) : element))
-          })
-        : current
-    );
-  };
-}
-
-export function createStateIconDrawingPointer(__appScope: Record<string, any>) {
-  let cachedSvg: SVGSVGElement | null = null;
-  let cachedPoint: SVGPoint | null = null;
-  let cachedInverse: DOMMatrix | null = null;
-  return (event: PointerEvent<SVGElement>): Point => {
-  const { stateIconDrawingSvgRef } = __appScope;
-    const svg = stateIconDrawingSvgRef.current;
-    if (!svg) {
-      return { x: 0, y: 0 };
-    }
-    if (svg !== cachedSvg) {
-      cachedSvg = svg;
-      cachedPoint = svg.createSVGPoint();
-      cachedInverse = null;
-    }
-    cachedPoint.x = event.clientX;
-    cachedPoint.y = event.clientY;
-    const ctm = svg.getScreenCTM();
-    if (!ctm) {
-      return { x: 0, y: 0 };
-    }
-    if (!cachedInverse) {
-      cachedInverse = ctm.inverse();
-    }
-    const transformed = cachedPoint.matrixTransform(cachedInverse);
-    return { x: transformed.x, y: transformed.y };
-  };
-}
-
-export function createStateIconDrawingSelection(__appScope: Record<string, any>) {
-  return (elementId: string, append: boolean) => {
-  const { setStateIconDrawingDialog } = __appScope;
-    setStateIconDrawingDialog((current) => {
-      if (!current) {
-        return current;
-      }
-      const currentIds = current.selectedElementIds.length > 0 ? current.selectedElementIds : [current.selectedElementId].filter(Boolean);
-      const selectedElementIds = toggleStateIconDrawingElementSelection(current.elements, currentIds, elementId, append);
-      return {
-        ...current,
-        selectedElementId: selectedElementIds[selectedElementIds.length - 1] ?? "",
-        selectedElementIds
-      };
-    });
-  };
-}
-
-export function createStartStateIconDrawingDrag(__appScope: Record<string, any>) {
-  return (event: PointerEvent<SVGElement>, elementId: string, mode: StateIconDrawingDragMode, handleOffset?: Point) => {
-  const { setStateIconDrawingContextMenu, setStateIconDrawingDialog, stateIconDrawingDialog, stateIconDrawingDragRef, stateIconDrawingPointer } = __appScope;
-    if (event.button !== 0) {
-      return;
-    }
-    event.preventDefault();
-    event.stopPropagation();
-    setStateIconDrawingContextMenu(null);
-    (event.currentTarget.closest(".state-icon-drawing-inline") as HTMLElement | null)?.focus();
-    if (!stateIconDrawingDialog) {
-      return;
-    }
-    const append = event.shiftKey || event.ctrlKey || event.metaKey;
-    const existingSelection = stateIconDrawingSelectedIds(stateIconDrawingDialog);
-    const clickedSelection = expandStateIconDrawingElementIds(stateIconDrawingDialog.elements, [elementId]);
-    const selectedElementIds = append
-      ? Array.from(new Set([...existingSelection, ...clickedSelection]))
-      : clickedSelection.every((id) => existingSelection.includes(id))
-        ? existingSelection
-        : clickedSelection;
-    const startElements = stateIconDrawingDialog.elements
-      .filter((element) => selectedElementIds.includes(element.id))
-      .map(cloneStateIconDrawingElementSnapshot);
-    if (startElements.length === 0) {
-      return;
-    }
-    const allStartElements = stateIconDrawingDialog.elements.map(cloneStateIconDrawingElementSnapshot);
-    const selectionBounds = stateIconDrawingSelectionBounds(startElements);
-    const center = selectionBounds
-      ? { x: selectionBounds.centerX, y: selectionBounds.centerY }
-      : { x: 0, y: 0 };
-    const movementFrame = stateIconDrawingMovementFrameForDialog(__appScope, stateIconDrawingDialog);
-    const movementVisibleFrames = stateIconDrawingMovementVisibleFrames(__appScope);
-    const start = stateIconDrawingPointer(event);
-    setStateIconDrawingDialog((current) => current ? {
-      ...current,
-      selectedElementId: selectedElementIds[selectedElementIds.length - 1] ?? "",
-      selectedElementIds,
-      smartAlignmentGuides: []
-    } : current);
-    stateIconDrawingDragRef.current = {
-      mode,
-      elementIds: selectedElementIds,
-      start,
-      center,
-      startElements,
-      allStartElements,
-      movementFrame,
-      movementVisibleFrames,
-      handleOffset
-    };
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-  };
-}
-
-export function createDragStateIconDrawingSelection(__appScope: Record<string, any>) {
-  let rafId: number | null = null;
-  let pendingEvent: PointerEvent<SVGSVGElement> | null = null;
-
-  const processDrag = (event: PointerEvent<SVGSVGElement>) => {
-  const { computeStateIconDrawingSmartAlignmentSnap, setStateIconDrawingDialog, stateIconDrawingDragDeltaRef, stateIconDrawingDragRef, stateIconDrawingPointer } = __appScope;
-    const drag = stateIconDrawingDragRef.current;
-    if (!drag) {
-      return;
-    }
-    event.preventDefault();
-    const point = stateIconDrawingPointer(event);
-    const dx = point.x - drag.start.x;
-    const dy = point.y - drag.start.y;
-    if (drag.mode === "move") {
-      const snap = computeStateIconDrawingSmartAlignmentSnap
-        ? computeStateIconDrawingSmartAlignmentSnap({
-            elements: drag.allStartElements ?? drag.startElements,
-            selectedIds: drag.elementIds,
-            startElements: drag.startElements,
-            delta: { x: dx, y: dy }
-          })
-        : { delta: { x: dx, y: dy }, guides: [] };
-      const boundedDelta = clampStateIconDrawingMovementDelta(
-        drag.startElements,
-        snap.delta,
-        drag.movementFrame ?? stateIconDrawingFrameRect(false),
-        drag.movementVisibleFrames
-      );
-      const movementWasClamped = boundedDelta.x !== snap.delta.x || boundedDelta.y !== snap.delta.y;
-      const overrides: Record<string, { x: number; y: number }> = {};
-      for (const startElement of drag.startElements) {
-        overrides[startElement.id] = { x: startElement.x + boundedDelta.x, y: startElement.y + boundedDelta.y };
-      }
-      stateIconDrawingDragDeltaRef.current = { overrides, guides: movementWasClamped ? [] : snap.guides };
-      setStateIconDrawingDialog((current) => current ? { ...current, _dragTick: (current._dragTick ?? 0) + 1 } : current);
-      return;
-    }
-    if (drag.mode === "resize" || drag.mode === "resize-top" || drag.mode === "resize-bottom" || drag.mode === "resize-left" || drag.mode === "resize-right") {
-      const overrides: Record<string, { x: number; y: number; width: number; height: number }> = {};
-      for (const startElement of drag.startElements) {
-        if (drag.mode === "resize") {
-          const startDistance = Math.hypot(drag.start.x - drag.center.x, drag.start.y - drag.center.y) || 1;
-          const currentDistance = Math.hypot(point.x - drag.center.x, point.y - drag.center.y) || 1;
-          const scale = Math.max(0.05, currentDistance / startDistance);
-          overrides[startElement.id] = {
-            x: drag.center.x + (startElement.x - drag.center.x) * scale,
-            y: drag.center.y + (startElement.y - drag.center.y) * scale,
-            width: Math.max(1, startElement.width * scale),
-            height: Math.max(1, startElement.height * scale)
-          };
-          continue;
-        }
-        const rad = -(startElement.rotation * Math.PI) / 180;
-        const localDx = dx * Math.cos(rad) - dy * Math.sin(rad);
-        const localDy = dx * Math.sin(rad) + dy * Math.cos(rad);
-        const fullWidth = Math.max(1, startElement.width);
-        const fullHeight = Math.max(1, startElement.height);
-        let newWidth = fullWidth;
-        let newHeight = fullHeight;
-        let localCenterShiftX = 0;
-        let localCenterShiftY = 0;
-        const wHandle = Math.abs(drag.handleOffset?.x ?? fullWidth / 2) || fullWidth / 2;
-        const hHandle = Math.abs(drag.handleOffset?.y ?? fullHeight / 2) || fullHeight / 2;
-        switch (drag.mode) {
-          case "resize-right":
-            newWidth = Math.max(1, fullWidth + fullWidth * localDx / (2 * wHandle));
-            localCenterShiftX = localDx / 2;
-            break;
-          case "resize-left":
-            newWidth = Math.max(1, fullWidth - fullWidth * localDx / (2 * wHandle));
-            localCenterShiftX = localDx / 2;
-            break;
-          case "resize-bottom":
-            newHeight = Math.max(1, fullHeight + fullHeight * localDy / (2 * hHandle));
-            localCenterShiftY = localDy / 2;
-            break;
-          case "resize-top":
-            newHeight = Math.max(1, fullHeight - fullHeight * localDy / (2 * hHandle));
-            localCenterShiftY = localDy / 2;
-            break;
-        }
-        const fwdRad = (startElement.rotation * Math.PI) / 180;
-        const centerShiftX = localCenterShiftX * Math.cos(fwdRad) - localCenterShiftY * Math.sin(fwdRad);
-        const centerShiftY = localCenterShiftX * Math.sin(fwdRad) + localCenterShiftY * Math.cos(fwdRad);
-        overrides[startElement.id] = {
-          x: startElement.x + centerShiftX,
-          y: startElement.y + centerShiftY,
-          width: newWidth,
-          height: newHeight
-        };
-      }
-      stateIconDrawingDragDeltaRef.current = { overrides };
-      setStateIconDrawingDialog((current) => current ? { ...current, _dragTick: (current._dragTick ?? 0) + 1 } : current);
-      return;
-    }
-    const startAngle = Math.atan2(drag.start.y - drag.center.y, drag.start.x - drag.center.x);
-    const currentAngle = Math.atan2(point.y - drag.center.y, point.x - drag.center.x);
-    const deltaAngle = ((currentAngle - startAngle) * 180) / Math.PI;
-    const overrides: Record<string, { x: number; y: number; rotation: number }> = {};
-    const rotationRad = (deltaAngle * Math.PI) / 180;
-    for (const startElement of drag.startElements) {
-      const relativeX = startElement.x - drag.center.x;
-      const relativeY = startElement.y - drag.center.y;
-      overrides[startElement.id] = {
-        x: drag.center.x + relativeX * Math.cos(rotationRad) - relativeY * Math.sin(rotationRad),
-        y: drag.center.y + relativeX * Math.sin(rotationRad) + relativeY * Math.cos(rotationRad),
-        rotation: startElement.rotation + deltaAngle
-      };
-    }
-    stateIconDrawingDragDeltaRef.current = { overrides };
-    setStateIconDrawingDialog((current) => current ? { ...current, _dragTick: (current._dragTick ?? 0) + 1 } : current);
-  };
-
-  return (event: PointerEvent<SVGSVGElement>) => {
-    pendingEvent = event;
-    if (!rafId) {
-      rafId = requestAnimationFrame(() => {
-        rafId = null;
-        if (pendingEvent) {
-          const e = pendingEvent;
-          pendingEvent = null;
-          processDrag(e);
-        }
-      });
-    }
-  };
-}
-
-export function createStopStateIconDrawingDrag(__appScope: Record<string, any>) {
-  return (event: PointerEvent<SVGSVGElement>) => {
-  const { setStateIconDrawingDialog, stateIconDrawingDragDeltaRef, stateIconDrawingDragRef, stateIconDrawingHistoryRef } = __appScope;
-    const delta = stateIconDrawingDragDeltaRef.current;
-    stateIconDrawingDragRef.current = null;
-    stateIconDrawingDragDeltaRef.current = null;
-    if (delta?.overrides) {
-      const overrides = delta.overrides;
-      setStateIconDrawingDialog((current: any) => {
-        if (!current) return current;
-        pushStateIconDrawingHistorySnapshot(stateIconDrawingHistoryRef, current.elements);
-        return {
-          ...current,
-          smartAlignmentGuides: [],
-          elements: current.elements.map((element: any) => {
-            const ovr = overrides[element.id];
-            return ovr ? { ...element, ...ovr } : element;
-          })
-        };
-      });
-    } else {
-      setStateIconDrawingDialog?.((current: any) => current ? { ...current, smartAlignmentGuides: [] } : current);
-    }
-    event.currentTarget.releasePointerCapture?.(event.pointerId);
-  };
-}
-
-export function createDeleteSelectedStateIconDrawingElements(__appScope: Record<string, any>) {
-  return () => {
-  const { setStateIconDrawingContextMenu, setStateIconDrawingDialog, stateIconDrawingHistoryRef } = __appScope;
-    setStateIconDrawingContextMenu(null);
-    setStateIconDrawingDialog((current) => {
-      if (!current) {
-        return current;
-      }
-      const selectedIds = stateIconDrawingSelectedIds(current);
-      if (selectedIds.length === 0) {
-        return current;
-      }
-      pushStateIconDrawingHistorySnapshot(stateIconDrawingHistoryRef, current.elements);
-      const selectedSet = new Set(selectedIds);
-      const elements = current.elements.filter((element) => !selectedSet.has(element.id));
-      return {
-        ...current,
-        elements,
-        selectedElementId: elements[0]?.id ?? "",
-        selectedElementIds: elements[0]?.id ? [elements[0].id] : []
-      };
-    });
-  };
-}
-
-export function createStateIconDrawingKeyDown(__appScope: Record<string, any>) {
-  return (event: ReactKeyboardEvent<HTMLElement>) => {
-  const { deleteSelectedStateIconDrawingElements, setStateIconDrawingContextMenu, setStateIconDrawingDialog, stateIconDrawingClipboardRef, stateIconDrawingDialog, stateIconDrawingElementId, stateIconDrawingHistoryRef } = __appScope;
-    const target = event.target as HTMLElement | null;
-    if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) {
-      return;
-    }
-    const arrowDelta = ({
-      ArrowLeft: { x: -1, y: 0 },
-      ArrowRight: { x: 1, y: 0 },
-      ArrowUp: { x: 0, y: -1 },
-      ArrowDown: { x: 0, y: 1 }
-    } as Record<string, Point>)[event.key];
-    if (arrowDelta) {
-      event.preventDefault();
-      setStateIconDrawingContextMenu(null);
-      const step = event.shiftKey ? 10 : 1;
-      const dx = arrowDelta.x * step;
-      const dy = arrowDelta.y * step;
-      setStateIconDrawingDialog((current) => {
-        if (!current) {
-          return current;
-        }
-        const selectedElementIds = stateIconDrawingSelectedIds(current);
-        if (selectedElementIds.length === 0) {
-          return current;
-        }
-        const selectedSet = new Set(selectedElementIds);
-        const selectedElements = current.elements.filter((element) => selectedSet.has(element.id));
-        const boundedDelta = clampStateIconDrawingMovementDelta(
-          selectedElements,
-          { x: dx, y: dy },
-          stateIconDrawingMovementFrameForDialog(__appScope, current),
-          stateIconDrawingMovementVisibleFrames(__appScope)
-        );
-        if (boundedDelta.x === 0 && boundedDelta.y === 0) {
-          return current.smartAlignmentGuides?.length
-            ? { ...current, smartAlignmentGuides: [] }
-            : current;
-        }
-        pushStateIconDrawingHistorySnapshot(stateIconDrawingHistoryRef, current.elements);
-        return {
-          ...current,
-          elements: current.elements.map((element) => selectedSet.has(element.id)
-            ? { ...element, x: element.x + boundedDelta.x, y: element.y + boundedDelta.y }
-            : element),
-          selectedElementIds,
-          smartAlignmentGuides: []
-        };
-      });
-      return;
-    }
-    if (event.key === "Enter" && stateIconDrawingDialog?.drawingDraft) {
-      event.preventDefault();
-      setStateIconDrawingContextMenu(null);
-      setStateIconDrawingDialog((current) => finishStateIconDrawingDraft(current, stateIconDrawingHistoryRef));
-      return;
-    }
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
-      event.preventDefault();
-      setStateIconDrawingContextMenu(null);
-      setStateIconDrawingDialog((current) => {
-        if (!current) {
-          return current;
-        }
-        if (current.drawingDraft) {
-          if (current.drawingDraft.kind === "polyline") {
-            const draftPoints = current.drawingDraft.points?.length
-              ? current.drawingDraft.points
-              : [current.drawingDraft.start];
-            if (draftPoints.length > 1) {
-              const previousPoints = draftPoints.slice(0, -1);
-              const previousPoint = previousPoints[previousPoints.length - 1] ?? current.drawingDraft.start;
-              return {
-                ...current,
-                drawingDraft: {
-                  ...current.drawingDraft,
-                  points: previousPoints,
-                  current: previousPoint,
-                  element: stateIconDrawingPolylineElementFromPoints(current.drawingDraft.element, previousPoints)
-                },
-                smartAlignmentGuides: []
-              };
-            }
-          }
-          return {
-            ...current,
-            drawingDraft: undefined,
-            smartAlignmentGuides: []
-          };
-        }
-        if (!stateIconDrawingHistoryRef.current?.length) {
-          return current;
-        }
-        const previous = stateIconDrawingHistoryRef.current[stateIconDrawingHistoryRef.current.length - 1];
-        stateIconDrawingHistoryRef.current = stateIconDrawingHistoryRef.current.slice(0, -1);
-        const selectedElementId = previous.some((element) => element.id === current.selectedElementId) ? current.selectedElementId : previous[0]?.id ?? "";
-        const previousElements = previous.map(cloneStateIconDrawingElementSnapshot);
-        const retainedSelectionIds = current.selectedElementIds.filter((id) => previousElements.some((element) => element.id === id));
-        const selectedElementIds = expandStateIconDrawingElementIds(
-          previousElements,
-          retainedSelectionIds.length > 0 ? retainedSelectionIds : [selectedElementId].filter(Boolean)
-        );
-        return {
-          ...current,
-          elements: previousElements,
-          selectedElementId,
-          selectedElementIds
-        };
-      });
-      return;
-    }
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "g") {
-      event.preventDefault();
-      setStateIconDrawingContextMenu(null);
-      setStateIconDrawingDialog((current) => event.shiftKey
-        ? ungroupStateIconDrawingSelection(current, stateIconDrawingHistoryRef)
-        : groupStateIconDrawingSelection(current, stateIconDrawingHistoryRef));
-      return;
-    }
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "c") {
-      event.preventDefault();
-      setStateIconDrawingDialog((current) => {
-        if (!current) {
-          return current;
-        }
-        const selectedSet = new Set(stateIconDrawingSelectedIds(current));
-        stateIconDrawingClipboardRef.current = current.elements.filter((element) => selectedSet.has(element.id)).map(cloneStateIconDrawingElementSnapshot);
-        return current;
-      });
-      return;
-    }
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "x") {
-      event.preventDefault();
-      setStateIconDrawingContextMenu(null);
-      setStateIconDrawingDialog((current) => cutStateIconDrawingSelection(current, stateIconDrawingClipboardRef, stateIconDrawingHistoryRef));
-      return;
-    }
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v") {
-      event.preventDefault();
-      setStateIconDrawingContextMenu(null);
-      setStateIconDrawingDialog((current) => {
-        const clipboard = stateIconDrawingClipboardRef.current ?? [];
-        if (!current || clipboard.length === 0) {
-          return current;
-        }
-        pushStateIconDrawingHistorySnapshot(stateIconDrawingHistoryRef, current.elements);
-        const pasted = cloneStateIconDrawingElements(clipboard, stateIconDrawingElementId);
-        return {
-          ...current,
-          elements: [...current.elements, ...pasted],
-          selectedElementId: pasted[pasted.length - 1]?.id ?? "",
-          selectedElementIds: pasted.map((element) => element.id)
-        };
-      });
-      return;
-    }
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a") {
-      event.preventDefault();
-      setStateIconDrawingContextMenu(null);
-      setStateIconDrawingDialog((current) => current ? {
-        ...current,
-        selectedElementId: current.elements[current.elements.length - 1]?.id ?? "",
-        selectedElementIds: current.elements.map((element) => element.id)
-      } : current);
-      return;
-    }
-    if (event.key === "Delete" || event.key === "Backspace") {
-      event.preventDefault();
-      deleteSelectedStateIconDrawingElements();
-    }
-  };
-}
-
-export function createAddStateIconDrawingElement(__appScope: Record<string, any>) {
-  return (kind: StateVisualShapeKind) => {
-  const { setStateIconDrawingContextMenu, setStateIconDrawingDialog } = __appScope;
-    setStateIconDrawingContextMenu(null);
-    setStateIconDrawingDialog((current) => {
-      if (!current) {
-        return current;
-      }
-      return {
-        ...current,
-        elementLibraryTab: "basic",
-        pendingElementKind: kind,
-        pendingStaticTemplate: undefined,
-        drawingDraft: undefined,
-        selectedElementId: "",
-        selectedElementIds: []
-      };
-    });
-  };
-}
-
-export function createDeleteStateIconDrawingElement(__appScope: Record<string, any>) {
-  return (elementId: string) => {
-  const { setStateIconDrawingContextMenu, setStateIconDrawingDialog, stateIconDrawingHistoryRef } = __appScope;
-    setStateIconDrawingContextMenu(null);
-    setStateIconDrawingDialog((current) => {
-      if (!current) {
-        return current;
-      }
-      const deleteIds = expandStateIconDrawingElementIds(current.elements, [elementId]);
-      if (deleteIds.length === 0) {
-        return current;
-      }
-      pushStateIconDrawingHistorySnapshot(stateIconDrawingHistoryRef, current.elements);
-      const deleteSet = new Set(deleteIds);
-      const elements = current.elements.filter((element) => !deleteSet.has(element.id));
-      return {
-        ...current,
-        elements,
-        selectedElementId: elements.some((element) => element.id === current.selectedElementId) ? current.selectedElementId : elements[0]?.id ?? "",
-        selectedElementIds: current.selectedElementIds.filter((id) => elements.some((element) => element.id === id))
-      };
-    });
-  };
-}
-
-export function createOpenStateIconDrawingDialog(__appScope: Record<string, any>) {
-  return (target: StateIconDrawingTarget) => {
-  const { createStateIconDrawingInitialElements, customDeviceDraft, definitionStateDraftRows, imageAssets, setStateIconDrawingContextMenu, setStateIconDrawingDialog, stateIconDrawingHistoryRef, stateIconDrawingInitialFrame } = __appScope;
-    const row =
-      target.scope === "definition"
-        ? definitionStateDraftRows.find((item) => item.id === target.rowId)
-        : customDeviceDraft.stateDefinitions.find((item) => item.id === target.rowId);
-    const initial = createStateIconDrawingInitialElements(row, imageAssets);
-    const frame = typeof stateIconDrawingInitialFrame === "function"
-      ? stateIconDrawingInitialFrame(row, imageAssets, STATE_ICON_DRAFT_FRAME)
-      : { ...STATE_ICON_DRAFT_FRAME };
-    stateIconDrawingHistoryRef.current = [];
-    setStateIconDrawingContextMenu(null);
-    setStateIconDrawingDialog({
-      target,
-      elements: initial,
-      selectedElementId: initial[0]?.id ?? "",
-      selectedElementIds: initial[0]?.id ? [initial[0].id] : [],
-      frame
-    });
-  };
-}
-
-export function createApplyStateIconDrawingDialog(__appScope: Record<string, any>) {
-  return async () => {
-  const { backendImageIdFromHref, customDeviceDraft, customDraftTerminalTypes, definitionVisualDraft, definitionVisualTerminalTypes, fetchBackendImageDataUrl, imageAssetList, imageAssets, isDefaultStatePageId, isImageDataUrl, setDefinitionVisualDraft, setStateIconDrawingDialog, stateIconDrawingDialog, stateIconDrawingToImage, updateCustomDeviceStateDraftRow, updateDefinitionStateDraftRow } = __appScope;
-    if (!stateIconDrawingDialog) {
-      return;
-    }
-    const assetById = new Map((imageAssetList ?? []).map((asset: ImageAsset) => [asset.id, asset]));
-    const resolvedHrefByRawHref = new Map<string, string>();
-    await Promise.all(stateIconDrawingDialog.elements.map(async (element: any) => {
-      const rawHref = String(element?.kind === "image" ? element.imageHref ?? "" : "").trim();
-      if (!rawHref || isImageDataUrl(rawHref)) {
-        return;
-      }
-      const id = backendImageIdFromHref(rawHref);
-      if (!id) {
-        return;
-      }
-      const cachedHref = imageAssets?.[id] ?? "";
-      if (isImageDataUrl(cachedHref)) {
-        resolvedHrefByRawHref.set(rawHref, cachedHref);
-        return;
-      }
-      if (typeof fetchBackendImageDataUrl !== "function") {
-        return;
-      }
-      const asset = { ...(assetById.get(id) ?? { id, name: id, url: rawHref }) };
-      asset.url = asset.url || rawHref;
-      try {
-        const dataUrl = await fetchBackendImageDataUrl(asset);
-        if (isImageDataUrl(dataUrl)) {
-          resolvedHrefByRawHref.set(rawHref, dataUrl);
-        }
-      } catch {
-        // 单张后台图片读取失败时保留原始 href，避免阻断元件定义保存。
-      }
-    }));
-    const resolveImageHref = (href: string) => resolvedHrefByRawHref.get(href) || href;
-    const frameHasTerminals = stateIconDrawingDialog.target.scope === "definition"
-      ? (Number(definitionVisualDraft?.terminalCount) || (Array.isArray(definitionVisualTerminalTypes) ? definitionVisualTerminalTypes.length : 0)) > 0
-      : (Number(customDeviceDraft?.terminalCount) || (Array.isArray(customDraftTerminalTypes) ? customDraftTerminalTypes.length : 0)) > 0;
-    const shouldPersistImage = stateIconDrawingDialog.elements.length > 0 ||
-      stateIconDrawingFrameHasPersistedContent(stateIconDrawingDialog.frame);
-    const image = shouldPersistImage
-      ? stateIconDrawingToImage(stateIconDrawingDialog.elements, {
-          resolveImageHref,
-          frame: stateIconDrawingDialog.frame,
-          frameHasTerminals
-        })
-      : "";
-    const patch: Partial<DeviceDefinitionStateDraftRow> = {
-      image,
-      imageAssetId: "",
-      imageFit: "fixed",
-      backgroundImage: "",
-      backgroundImageAssetId: "",
-      backgroundImageFit: "fixed",
-      imageCleared: image ? "" : "1"
-    };
-    if (isDefaultStatePageId(stateIconDrawingDialog.target.rowId) && stateIconDrawingDialog.target.scope === "definition") {
-      setDefinitionVisualDraft((current) =>
-        current
-          ? {
-              ...current,
-              backgroundImage: image,
-              backgroundImageAssetId: "",
-              backgroundImageFit: "fixed",
-              backgroundImageCleared: patch.imageCleared ?? "",
-              error: ""
-            }
-          : current
-      );
-      setStateIconDrawingDialog(null);
-      return;
-    }
-    if (stateIconDrawingDialog.target.scope === "definition") {
-      updateDefinitionStateDraftRow(stateIconDrawingDialog.target.rowId, patch);
-    } else {
-      updateCustomDeviceStateDraftRow(stateIconDrawingDialog.target.rowId, patch);
-    }
-    setStateIconDrawingDialog(null);
-  };
-}
-
 export function createEnsureCustomComponentTreeExpanded(__appScope: Record<string, any>) {
   return (categoryLibraryName: string, componentLibrary?: string) => {
   const { customComponentTreeTypeKey, normalizeCategoryLibraryName, setCollapsedCustomComponentTreeLibraries, setCollapsedCustomComponentTreeTypes } = __appScope;
     const normalizedLibrary = normalizeCategoryLibraryName(categoryLibraryName);
-    setCollapsedCustomComponentTreeLibraries((current) => {
+    setCollapsedCustomComponentTreeLibraries((current: any) => {
       const next = new Set(current);
       next.delete(normalizedLibrary);
       return next;
     });
     if (componentLibrary) {
       const typeKey = customComponentTreeTypeKey(normalizedLibrary, componentLibrary);
-      setCollapsedCustomComponentTreeTypes((current) => {
+      setCollapsedCustomComponentTreeTypes((current: any) => {
         const next = new Set(current);
         next.delete(typeKey);
         return next;
@@ -7482,8 +2144,7 @@ function customDeviceDraftPatchForComponentLibrarySelection(
   const matchingTemplates = (libraryTemplates ?? []).filter((template: any) => {
     const derivedInfo = templateDerivedComponentLibraryInfo(template);
     if (classMetadataPatch?.isDerivedComponentLibrary) {
-      return Boolean(derivedInfo) &&
-        normalizeComponentLibraryName(derivedInfo.derivedComponentLibrary) === section;
+      return Boolean(derivedInfo && normalizeComponentLibraryName(derivedInfo.derivedComponentLibrary) === section);
     }
     return !derivedInfo && normalizeComponentLibraryName(
       typeof resolveTemplateComponentLibrary === "function"
@@ -8312,7 +2973,7 @@ export function createConfirmCustomLibraryCreateDialog(__appScope: Record<string
 export function createNextCustomCategoryLibraryName(__appScope: Record<string, any>) {
   return () => {
     const { categoryLibraries } = __appScope;
-    const existingGroups = new Set(categoryLibraries.map((group) => group.toLowerCase()));
+    const existingGroups = new Set(categoryLibraries.map((group: any) => group.toLowerCase()));
     for (let index = 1; index <= 999; index += 1) {
       const candidate = `类别库${index}`;
       if (!existingGroups.has(candidate.toLowerCase())) {
@@ -8349,7 +3010,7 @@ export function createDeleteCustomCategoryLibrary(__appScope: Record<string, any
       showGlobalMessage("默认类别库无法删除。");
       return;
     }
-    const templatesInGroup = customDeviceTemplates.filter((template) => normalizeCategoryLibraryName(template.categoryLibrary) === categoryLibraryName);
+    const templatesInGroup = customDeviceTemplates.filter((template: any) => normalizeCategoryLibraryName(template.categoryLibrary) === categoryLibraryName);
     const confirmed = await showGlobalConfirm(
       templatesInGroup.length > 0
         ? `类别库“${categoryLibraryName}”中共有 ${templatesInGroup.length} 个元件，删除类别库会同时删除这些元件及其自定义类，是否继续？`
@@ -8358,33 +3019,33 @@ export function createDeleteCustomCategoryLibrary(__appScope: Record<string, any
     if (!confirmed) {
       return;
     }
-    const deletedKinds = new Set(templatesInGroup.map((template) => template.kind));
+    const deletedKinds = new Set(templatesInGroup.map((template: any) => template.kind));
     const deletedComponentLibraryKeys = new Set(
       [
         ...templatesInGroup.map(resolveTemplateComponentLibrary),
         ...customComponentLibraries
-          .filter((componentLibrary) => normalizeCategoryLibraryName(componentLibrary.categoryLibraryName) === categoryLibraryName)
-          .map((componentLibrary) => componentLibrary.name)
+          .filter((componentLibrary: any) => normalizeCategoryLibraryName(componentLibrary.categoryLibraryName) === categoryLibraryName)
+          .map((componentLibrary: any) => componentLibrary.name)
       ]
         .filter((section) => section && !isBuiltInComponentLibrary(section))
         .map((section) => section.toLowerCase())
     );
-    setCustomDeviceTemplates((current) => current.filter((template) => normalizeCategoryLibraryName(template.categoryLibrary) !== categoryLibraryName));
+    setCustomDeviceTemplates((current: any) => current.filter((template: any) => normalizeCategoryLibraryName(template.categoryLibrary) !== categoryLibraryName));
     if (deletedComponentLibraryKeys.size > 0) {
-      setCustomComponentLibraries((current) => current.filter((componentLibrary) => !deletedComponentLibraryKeys.has(componentLibrary.name.toLowerCase())));
-      setDefinitionDraftSection((current) =>
+      setCustomComponentLibraries((current: any) => current.filter((componentLibrary: any) => !deletedComponentLibraryKeys.has(componentLibrary.name.toLowerCase())));
+      setDefinitionDraftSection((current: any) =>
         deletedComponentLibraryKeys.has(current.toLowerCase()) ? defaultComponentLibraryForCategoryLibrary("交流设备") : current
       );
     }
-    setCustomCategoryLibraries((current) => current.filter((group) => normalizeCategoryLibraryName(group) !== categoryLibraryName));
-    setExpandedCategoryLibraries((current) => current.filter((group) => normalizeCategoryLibraryName(group) !== categoryLibraryName));
-    setExpandedDefinitionGroups((current) => current.filter((group) => normalizeCategoryLibraryName(group) !== categoryLibraryName));
-    setCollapsedCustomComponentTreeLibraries((current) => {
+    setCustomCategoryLibraries((current: any) => current.filter((group: any) => normalizeCategoryLibraryName(group) !== categoryLibraryName));
+    setExpandedCategoryLibraries((current: any) => current.filter((group: any) => normalizeCategoryLibraryName(group) !== categoryLibraryName));
+    setExpandedDefinitionGroups((current: any) => current.filter((group: any) => normalizeCategoryLibraryName(group) !== categoryLibraryName));
+    setCollapsedCustomComponentTreeLibraries((current: any) => {
       const next = new Set(current);
       next.delete(categoryLibraryName);
       return next;
     });
-    setCollapsedCustomComponentTreeTypes((current) => {
+    setCollapsedCustomComponentTreeTypes((current: any) => {
       const next = new Set(current);
       for (const key of current) {
         if (key.startsWith(`${categoryLibraryName}::`)) {
@@ -8393,18 +3054,18 @@ export function createDeleteCustomCategoryLibrary(__appScope: Record<string, any
       }
       return next;
     });
-    setSelectedDefinitionKind((current) => (deletedKinds.has(current) ? "" : current));
+    setSelectedDefinitionKind((current: any) => (deletedKinds.has(current) ? "" : current));
     setCustomComponentTreeSelection({ kind: "categoryLibrary", categoryLibraryName: "交流设备" });
     setEditingCustomDeviceKind("");
     if (deletedKinds.size > 0 || deletedComponentLibraryKeys.size > 0) {
-      setDeviceDefinitionOverrides((current) => {
+      setDeviceDefinitionOverrides((current: any) => {
         const retainedOverrides = { ...current };
         for (const componentLibrary of customComponentLibraries.filter(
           (definition: any) => normalizeCategoryLibraryName(definition.categoryLibraryName) === categoryLibraryName
         )) {
           delete retainedOverrides[componentLibraryDefinitionOverrideKey(componentLibrary.name)];
         }
-        const retainedCustomTemplates = customDeviceTemplates.filter((template) => !deletedKinds.has(template.kind));
+        const retainedCustomTemplates = customDeviceTemplates.filter((template: any) => !deletedKinds.has(template.kind));
         return removeDeviceTemplateDefinitionOverrides(
           retainedOverrides,
           templatesInGroup,
@@ -8412,7 +3073,7 @@ export function createDeleteCustomCategoryLibrary(__appScope: Record<string, any
         );
       });
     }
-    setCustomDeviceDraft((current) => ({
+    setCustomDeviceDraft((current: any) => ({
       ...current,
       categoryLibraryName: "交流设备",
       componentLibrary: defaultComponentLibraryForCategoryLibrary("交流设备"),
@@ -8428,7 +3089,7 @@ export function createDeleteCustomCategoryLibrary(__appScope: Record<string, any
 export function createNextCustomComponentLibraryName(__appScope: Record<string, any>) {
   return () => {
   const { componentLibraryOptions } = __appScope;
-    const existingTypes = new Set(componentLibraryOptions.map((componentLibrary) => componentLibrary.toLowerCase()));
+    const existingTypes = new Set(componentLibraryOptions.map((componentLibrary: any) => componentLibrary.toLowerCase()));
     for (let index = 1; index <= 999; index += 1) {
       const candidate = `CustomDevice${index}`;
       if (!existingTypes.has(candidate.toLowerCase())) {
@@ -8486,7 +3147,7 @@ export function createDeleteCustomComponentLibrary(__appScope: Record<string, an
       targetSection = customDeviceDraft.componentLibrary;
     }
     const componentLibrary = normalizeComponentLibraryName(targetSection);
-    if (!componentLibrary || E_SECTION_OPTIONS.some((section) => section.toLowerCase() === componentLibrary.toLowerCase())) {
+    if (!componentLibrary || E_SECTION_OPTIONS.some((section: any) => section.toLowerCase() === componentLibrary.toLowerCase())) {
       showGlobalMessage("内置类无法删除。");
       return;
     }
@@ -8499,7 +3160,7 @@ export function createDeleteCustomComponentLibrary(__appScope: Record<string, an
       showGlobalMessage(`类“${componentLibrary}”仍被派生类 ${names} 使用，请先删除这些派生类。`);
       return;
     }
-    const templatesWithType = libraryTemplates.filter((template) => {
+    const templatesWithType = libraryTemplates.filter((template: any) => {
       if (!template.custom) return false;
       const className = templateDerivedComponentLibraryInfo(template)?.derivedComponentLibrary || resolveTemplateComponentLibrary(template);
       return normalizeComponentLibraryName(className).toLowerCase() === componentLibrary.toLowerCase();
@@ -8512,12 +3173,12 @@ export function createDeleteCustomComponentLibrary(__appScope: Record<string, an
     if (!confirmed) {
       return;
     }
-    const deletedKinds = new Set(templatesWithType.map((template) => template.kind));
-    setCustomComponentLibraries((current) => current.filter((item) => item.name.toLowerCase() !== componentLibrary.toLowerCase()));
-    setCustomDeviceTemplates((current) => current.filter((template) => !deletedKinds.has(template.kind)));
-    setSelectedDefinitionKind((current) => (deletedKinds.has(current) ? "" : current));
-    setEditingCustomDeviceKind((current) => (deletedKinds.has(current) ? "" : current));
-    setCollapsedCustomComponentTreeTypes((current) => {
+    const deletedKinds = new Set(templatesWithType.map((template: any) => template.kind));
+    setCustomComponentLibraries((current: any) => current.filter((item: any) => item.name.toLowerCase() !== componentLibrary.toLowerCase()));
+    setCustomDeviceTemplates((current: any) => current.filter((template: any) => !deletedKinds.has(template.kind)));
+    setSelectedDefinitionKind((current: any) => (deletedKinds.has(current) ? "" : current));
+    setEditingCustomDeviceKind((current: any) => (deletedKinds.has(current) ? "" : current));
+    setCollapsedCustomComponentTreeTypes((current: any) => {
       const next = new Set(current);
       for (const key of current) {
         if (key.endsWith(`::${componentLibrary}`)) {
@@ -8526,19 +3187,19 @@ export function createDeleteCustomComponentLibrary(__appScope: Record<string, an
       }
       return next;
     });
-    setDeviceDefinitionOverrides((current) => {
+    setDeviceDefinitionOverrides((current: any) => {
       const retainedOverrides = { ...current };
       delete retainedOverrides[componentLibraryDefinitionOverrideKey(componentLibrary)];
       return removeDeviceTemplateDefinitionOverrides(
         retainedOverrides,
         templatesWithType,
-        libraryTemplates.filter((template) => !deletedKinds.has(template.kind))
+        libraryTemplates.filter((template: any) => !deletedKinds.has(template.kind))
       );
     });
     const fallbackCategoryLibraryName = customComponentTreeSelection.kind === "componentLibrary" ? customComponentTreeSelection.categoryLibraryName : customDeviceDraft.categoryLibraryName;
     const fallbackSection = defaultComponentLibraryForCategoryLibrary(fallbackCategoryLibraryName);
     setCustomComponentTreeSelection({ kind: "componentLibrary", categoryLibraryName: normalizeCategoryLibraryName(fallbackCategoryLibraryName), section: fallbackSection });
-    setCustomDeviceDraft((current) => ({
+    setCustomDeviceDraft((current: any) => ({
       ...current,
       componentLibrary: fallbackSection,
       isDerivedComponentLibrary: false,
@@ -8547,7 +3208,7 @@ export function createDeleteCustomComponentLibrary(__appScope: Record<string, an
       derivedComponentLibraryLabel: "",
       error: ""
     }));
-    setDefinitionDraftSection((current) => (current.toLowerCase() === componentLibrary.toLowerCase() ? fallbackSection : current));
+    setDefinitionDraftSection((current: any) => (current.toLowerCase() === componentLibrary.toLowerCase() ? fallbackSection : current));
   };
 }
 
@@ -8569,16 +3230,16 @@ export function createRenameSelectedCustomDeviceTreeItem(__appScope: Record<stri
         showGlobalMessage("类别库名称不能为空。");
         return;
       }
-      if (categoryLibraries.some((group) => normalizeCategoryLibraryName(group).toLowerCase() === newCategoryLibraryName.toLowerCase() && normalizeCategoryLibraryName(group) !== oldCategoryLibraryName)) {
+      if (categoryLibraries.some((group: any) => normalizeCategoryLibraryName(group).toLowerCase() === newCategoryLibraryName.toLowerCase() && normalizeCategoryLibraryName(group) !== oldCategoryLibraryName)) {
         showGlobalMessage("类别库名称已存在，无法重命名。");
         return;
       }
-      setCustomCategoryLibraries((current) => current.map((group) => normalizeCategoryLibraryName(group) === oldCategoryLibraryName ? newCategoryLibraryName : group));
-      setCustomComponentLibraries((current) => current.map((componentLibrary) => normalizeCategoryLibraryName(componentLibrary.categoryLibraryName) === oldCategoryLibraryName ? { ...componentLibrary, categoryLibraryName: newCategoryLibraryName } : componentLibrary));
-      setCustomDeviceTemplates((current) => current.map((template) => normalizeCategoryLibraryName(template.categoryLibrary) === oldCategoryLibraryName ? { ...template, categoryLibrary: newCategoryLibraryName } : template));
-      setExpandedCategoryLibraries((current) => current.map((group) => normalizeCategoryLibraryName(group) === oldCategoryLibraryName ? newCategoryLibraryName : group));
-      setExpandedDefinitionGroups((current) => current.map((group) => normalizeCategoryLibraryName(group) === oldCategoryLibraryName ? newCategoryLibraryName : group));
-      setCollapsedCustomComponentTreeLibraries((current) => {
+      setCustomCategoryLibraries((current: any) => current.map((group: any) => normalizeCategoryLibraryName(group) === oldCategoryLibraryName ? newCategoryLibraryName : group));
+      setCustomComponentLibraries((current: any) => current.map((componentLibrary: any) => normalizeCategoryLibraryName(componentLibrary.categoryLibraryName) === oldCategoryLibraryName ? { ...componentLibrary, categoryLibraryName: newCategoryLibraryName } : componentLibrary));
+      setCustomDeviceTemplates((current: any) => current.map((template: any) => normalizeCategoryLibraryName(template.categoryLibrary) === oldCategoryLibraryName ? { ...template, categoryLibrary: newCategoryLibraryName } : template));
+      setExpandedCategoryLibraries((current: any) => current.map((group: any) => normalizeCategoryLibraryName(group) === oldCategoryLibraryName ? newCategoryLibraryName : group));
+      setExpandedDefinitionGroups((current: any) => current.map((group: any) => normalizeCategoryLibraryName(group) === oldCategoryLibraryName ? newCategoryLibraryName : group));
+      setCollapsedCustomComponentTreeLibraries((current: any) => {
       const next = new Set(current);
       if (next.has(oldCategoryLibraryName)) {
         next.delete(oldCategoryLibraryName);
@@ -8586,7 +3247,7 @@ export function createRenameSelectedCustomDeviceTreeItem(__appScope: Record<stri
       }
       return next;
     });
-    setCollapsedCustomComponentTreeTypes((current) => {
+    setCollapsedCustomComponentTreeTypes((current: any) => {
       const next = new Set(current);
       for (const key of current) {
         if (key.startsWith(`${oldCategoryLibraryName}::`)) {
@@ -8597,7 +3258,7 @@ export function createRenameSelectedCustomDeviceTreeItem(__appScope: Record<stri
       return next;
     });
       setCustomComponentTreeSelection({ kind: "categoryLibrary", categoryLibraryName: newCategoryLibraryName });
-      setCustomDeviceDraft((current) => ({
+      setCustomDeviceDraft((current: any) => ({
         ...current,
         categoryLibraryName: normalizeCategoryLibraryName(current.categoryLibraryName) === oldCategoryLibraryName ? newCategoryLibraryName : current.categoryLibraryName,
         error: ""
@@ -8622,8 +3283,8 @@ export function createRenameSelectedCustomDeviceTreeItem(__appScope: Record<stri
       showGlobalMessage("元件名称不能为空。");
       return;
     }
-    setCustomDeviceTemplates((current) => current.map((item) => item.kind === template.kind ? { ...item, label: newLabel } : item));
-    setCustomDeviceDraft((current) => ({
+    setCustomDeviceTemplates((current: any) => current.map((item: any) => item.kind === template.kind ? { ...item, label: newLabel } : item));
+    setCustomDeviceDraft((current: any) => ({
       ...current,
       componentName: current.componentName === template.label ? newLabel : current.componentName,
       error: ""
@@ -8651,17 +3312,17 @@ export function createDeleteSelectedCustomDeviceTreeItem(__appScope: Record<stri
     if (!confirmed) {
       return;
     }
-    setCustomDeviceTemplates((current) => current.filter((item) => item.kind !== template.kind));
-    setDeviceDefinitionOverrides((current) => {
+    setCustomDeviceTemplates((current: any) => current.filter((item: any) => item.kind !== template.kind));
+    setDeviceDefinitionOverrides((current: any) => {
       return removeDeviceTemplateDefinitionOverrides(
         current,
         [template],
-        libraryTemplates.filter((item) => item.kind !== template.kind)
+        libraryTemplates.filter((item: any) => item.kind !== template.kind)
       );
     });
-    setEditingCustomDeviceKind((current) => current === template.kind ? "" : current);
+    setEditingCustomDeviceKind((current: any) => current === template.kind ? "" : current);
     setCustomComponentTreeSelection({ kind: "componentLibrary", categoryLibraryName: customComponentTreeSelection.categoryLibraryName, section: customComponentTreeSelection.section });
-    setCustomDeviceDraft((current) => ({
+    setCustomDeviceDraft((current: any) => ({
       ...current,
       componentName: "",
       error: ""
@@ -8673,7 +3334,7 @@ export function createNextCustomTemplateKind(__appScope: Record<string, any>) {
   return (componentLibrary: string) => {
   const { libraryTemplates } = __appScope;
     const safeType = componentLibrary.replace(/[^A-Za-z0-9_]+/g, "_") || "CustomDevice";
-    const existingKinds = new Set(libraryTemplates.map((template) => template.kind.toLowerCase()));
+    const existingKinds = new Set(libraryTemplates.map((template: any) => template.kind.toLowerCase()));
     const base = `custom-${safeType}`;
     if (!existingKinds.has(base.toLowerCase())) {
       return base;
@@ -8714,7 +3375,7 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
       libraryTemplates
     );
     if (!classMetadata) {
-      setCustomDeviceDraft((current) => ({ ...current, error: "所属类不存在，请重新执行新建元件并选择已有类。" }));
+      setCustomDeviceDraft((current: any) => ({ ...current, error: "所属类不存在，请重新执行新建元件并选择已有类。" }));
       return false;
     }
     const categoryLibraryName = normalizeCategoryLibraryName(classMetadata.categoryLibraryName || requestedCategoryLibraryName);
@@ -8727,42 +3388,42 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
     const componentLabel = String(sourceDraft.componentName ?? "").trim();
     const isContainerComponent = classMetadata.isContainer;
     if (!componentLabel) {
-      setCustomDeviceDraft((current) => ({ ...current, error: "元件中文名称不能为空。" }));
+      setCustomDeviceDraft((current: any) => ({ ...current, error: "元件中文名称不能为空。" }));
       return false;
     }
     if (!baseComponentLibrary) {
-      setCustomDeviceDraft((current) => ({ ...current, error: "请选择类。" }));
+      setCustomDeviceDraft((current: any) => ({ ...current, error: "请选择类。" }));
       return false;
     }
     if (!isValidComponentLibraryName(baseComponentLibrary)) {
-      setCustomDeviceDraft((current) => ({ ...current, error: "类英文名称只能包含英文字母、数字、下划线和中划线，并且必须以英文字母开头。" }));
+      setCustomDeviceDraft((current: any) => ({ ...current, error: "类英文名称只能包含英文字母、数字、下划线和中划线，并且必须以英文字母开头。" }));
       return false;
     }
     if (derivedRequested) {
       if (!derivedFromComponentLibrary) {
-        setCustomDeviceDraft((current) => ({ ...current, error: "请选择派生基类。" }));
+        setCustomDeviceDraft((current: any) => ({ ...current, error: "请选择派生基类。" }));
         return false;
       }
       if (!derivedComponentLibrary) {
-        setCustomDeviceDraft((current) => ({ ...current, error: "请输入或选择派生类英文名称。" }));
+        setCustomDeviceDraft((current: any) => ({ ...current, error: "请输入或选择派生类英文名称。" }));
         return false;
       }
       if (!isValidComponentLibraryName(derivedComponentLibrary)) {
-        setCustomDeviceDraft((current) => ({ ...current, error: "派生类英文名称只能包含英文字母、数字、下划线和中划线，并且必须以英文字母开头。" }));
+        setCustomDeviceDraft((current: any) => ({ ...current, error: "派生类英文名称只能包含英文字母、数字、下划线和中划线，并且必须以英文字母开头。" }));
         return false;
       }
       if (derivedComponentLibrary.toLowerCase() === derivedFromComponentLibrary.toLowerCase()) {
-        setCustomDeviceDraft((current) => ({ ...current, error: "派生类英文名称不能与基类相同。" }));
+        setCustomDeviceDraft((current: any) => ({ ...current, error: "派生类英文名称不能与基类相同。" }));
         return false;
       }
     }
     const requestedEnglishName = normalizeComponentLibraryName(String(sourceDraft.componentKind ?? ""));
     if (!requestedEnglishName) {
-      setCustomDeviceDraft((current) => ({ ...current, error: "元件英文名称不能为空。" }));
+      setCustomDeviceDraft((current: any) => ({ ...current, error: "元件英文名称不能为空。" }));
       return false;
     }
     if (!CUSTOM_DEVICE_KIND_NAME_PATTERN.test(requestedEnglishName)) {
-      setCustomDeviceDraft((current) => ({ ...current, error: "元件英文名称只能包含英文字母、数字、下划线和短横线，并且必须以英文字母开头。" }));
+      setCustomDeviceDraft((current: any) => ({ ...current, error: "元件英文名称只能包含英文字母、数字、下划线和短横线，并且必须以英文字母开头。" }));
       return false;
     }
     const existingTemplates = [...(libraryTemplates ?? []), ...(customDeviceTemplates ?? [])];
@@ -8773,7 +3434,7 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
       !isCurrentTemplate(template) && String(template.label ?? "").trim() === componentLabel
     ));
     if (duplicateChineseName) {
-      setCustomDeviceDraft((current) => ({ ...current, error: "元件中文名称已存在，无法保存同名元件。" }));
+      setCustomDeviceDraft((current: any) => ({ ...current, error: "元件中文名称已存在，无法保存同名元件。" }));
       return false;
     }
     const normalizedRequestedEnglishName = requestedEnglishName.toLowerCase();
@@ -8784,7 +3445,7 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
       )
     ));
     if (duplicateEnglishName) {
-      setCustomDeviceDraft((current) => ({ ...current, error: "元件英文名称已存在，无法保存同名元件。" }));
+      setCustomDeviceDraft((current: any) => ({ ...current, error: "元件英文名称已存在，无法保存同名元件。" }));
       return false;
     }
     const terminalTypes = [...classMetadata.terminalTypes];
@@ -8797,22 +3458,22 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
       const terminalAssociationValidation = validateContainerTerminalAssociations(terminalTypes, terminalAssociations);
       if (!terminalAssociationValidation.valid) {
         showGlobalMessage(terminalAssociationValidation.message);
-        setCustomDeviceDraft((current) => ({ ...current, terminalAssociations, error: terminalAssociationValidation.message }));
+        setCustomDeviceDraft((current: any) => ({ ...current, terminalAssociations, error: terminalAssociationValidation.message }));
         return false;
       }
     }
     if (hasOverlappingCustomDeviceTerminalAnchors(sourceTerminalAnchors)) {
       const message = "不同端子位置不能重叠，请调整端子位置后再保存。";
       showGlobalMessage(message);
-      setCustomDeviceDraft((current) => ({ ...current, error: message }));
+      setCustomDeviceDraft((current: any) => ({ ...current, error: message }));
       return false;
     }
     const stateValidation = validateStateDraftRows(sourceDraft.stateDefinitions);
     if (stateValidation.error) {
-      setCustomDeviceDraft((current) => ({ ...current, error: stateValidation.error }));
+      setCustomDeviceDraft((current: any) => ({ ...current, error: stateValidation.error }));
       return false;
     }
-    const terminalAnchors = sourceTerminalAnchors.slice(0, terminalTypes.length).map((anchor) => ({ ...anchor }));
+    const terminalAnchors = sourceTerminalAnchors.slice(0, terminalTypes.length).map((anchor: any) => ({ ...anchor }));
     const inlineBackgroundPatch = options.skipInlineDrawingPatch
       ? null
       : inlineDefaultIconBackgroundPatch(__appScope, "custom");
@@ -8885,8 +3546,8 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
       custom: true,
       stateDefinitions,
     };
-    const nextTemplates = sourceEditingCustomDeviceKind && customDeviceTemplates.some((item) => item.kind === sourceEditingCustomDeviceKind)
-      ? customDeviceTemplates.map((item) => item.kind === sourceEditingCustomDeviceKind ? template : item)
+    const nextTemplates = sourceEditingCustomDeviceKind && customDeviceTemplates.some((item: any) => item.kind === sourceEditingCustomDeviceKind)
+      ? customDeviceTemplates.map((item: any) => item.kind === sourceEditingCustomDeviceKind ? template : item)
       : [...customDeviceTemplates, template];
     setCustomDeviceTemplates(nextTemplates);
     persistDeviceLibraryChange({
@@ -8895,7 +3556,7 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
       success: `自定义元件已保存到后台：${componentLabel}`,
       failure: `自定义元件已保存到本地，后台保存失败：${componentLabel}`
     });
-    setExpandedCategoryLibraries((current) => Array.from(new Set([...current, categoryLibraryName])));
+    setExpandedCategoryLibraries((current: any) => Array.from(new Set([...current, categoryLibraryName])));
     const componentTreeSection = derivedRequested ? derivedComponentLibrary : componentLibrary;
     ensureCustomComponentTreeExpanded(categoryLibraryName, componentTreeSection);
     setCustomComponentTreeSelection({ kind: "component", categoryLibraryName, section: componentTreeSection, templateKind: customKind });
@@ -8923,7 +3584,7 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
       backgroundImageCleared: draftBackgroundImageCleared,
       error: ""
     };
-    setCustomDeviceDraft((current) => ({ ...current, ...cleanDraft }));
+    setCustomDeviceDraft((current: any) => ({ ...current, ...cleanDraft }));
     setCustomDeviceDraftCleanBaseline(cleanDraft, terminalAnchors);
     setCustomDeviceSaveMessage("");
     const toastMessage = `自定义元件已保存：${componentLabel}`;
@@ -8948,16 +3609,16 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
     setCustomDeviceSaveMessage("");
     const componentLibrary = normalizeComponentLibraryName(customDeviceDraft.componentLibrary);
     if (!componentLibrary) {
-      setCustomDeviceDraft((current) => ({ ...current, error: "请选择类。" }));
+      setCustomDeviceDraft((current: any) => ({ ...current, error: "请选择类。" }));
       return false;
     }
     if (!isValidComponentLibraryName(componentLibrary)) {
-      setCustomDeviceDraft((current) => ({ ...current, error: "类英文名称只能包含英文字母、数字、下划线和中划线，并且必须以英文字母开头。" }));
+      setCustomDeviceDraft((current: any) => ({ ...current, error: "类英文名称只能包含英文字母、数字、下划线和中划线，并且必须以英文字母开头。" }));
       return false;
     }
     const componentLabel = String(customDeviceDraft.componentName ?? "").trim();
     if (!componentLabel) {
-      setCustomDeviceDraft((current) => ({ ...current, error: "元件中文名称不能为空。" }));
+      setCustomDeviceDraft((current: any) => ({ ...current, error: "元件中文名称不能为空。" }));
       return false;
     }
     const componentEnglishName = normalizeComponentLibraryName(String(
@@ -8966,11 +3627,11 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
         : customDeviceDraft.componentKind
     ));
     if (!componentEnglishName) {
-      setCustomDeviceDraft((current) => ({ ...current, error: "元件英文名称不能为空。" }));
+      setCustomDeviceDraft((current: any) => ({ ...current, error: "元件英文名称不能为空。" }));
       return false;
     }
     if (!CUSTOM_DEVICE_KIND_NAME_PATTERN.test(componentEnglishName)) {
-      setCustomDeviceDraft((current) => ({ ...current, error: "元件英文名称只能包含英文字母、数字、下划线和短横线，并且必须以英文字母开头。" }));
+      setCustomDeviceDraft((current: any) => ({ ...current, error: "元件英文名称只能包含英文字母、数字、下划线和短横线，并且必须以英文字母开头。" }));
       return false;
     }
     const duplicateEnglishName = libraryTemplates.some((candidate: DeviceTemplate) => (
@@ -8978,7 +3639,7 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
       String(candidate.englishName ?? candidate.kind).trim().toLowerCase() === componentEnglishName.toLowerCase()
     ));
     if (duplicateEnglishName) {
-      setCustomDeviceDraft((current) => ({ ...current, error: "元件英文名称已存在，无法保存同名元件。" }));
+      setCustomDeviceDraft((current: any) => ({ ...current, error: "元件英文名称已存在，无法保存同名元件。" }));
       return false;
     }
     const derivedRequested = Boolean(customDeviceDraft.isDerivedComponentLibrary);
@@ -8987,19 +3648,19 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
     const derivedComponentLibraryLabel = String(customDeviceDraft.derivedComponentLibraryLabel ?? "").trim();
     if (derivedRequested) {
       if (!derivedFromComponentLibrary) {
-        setCustomDeviceDraft((current) => ({ ...current, error: "请选择派生类关联的基类。" }));
+        setCustomDeviceDraft((current: any) => ({ ...current, error: "请选择派生类关联的基类。" }));
         return false;
       }
       if (!derivedComponentLibrary) {
-        setCustomDeviceDraft((current) => ({ ...current, error: "请输入或选择派生类英文名称。" }));
+        setCustomDeviceDraft((current: any) => ({ ...current, error: "请输入或选择派生类英文名称。" }));
         return false;
       }
       if (!isValidComponentLibraryName(derivedComponentLibrary)) {
-        setCustomDeviceDraft((current) => ({ ...current, error: "派生类英文名称只能包含英文字母、数字、下划线和中划线，并且必须以英文字母开头。" }));
+        setCustomDeviceDraft((current: any) => ({ ...current, error: "派生类英文名称只能包含英文字母、数字、下划线和中划线，并且必须以英文字母开头。" }));
         return false;
       }
       if (derivedComponentLibrary.toLowerCase() === derivedFromComponentLibrary.toLowerCase()) {
-        setCustomDeviceDraft((current) => ({ ...current, error: "派生类英文名称不能与基类相同。" }));
+        setCustomDeviceDraft((current: any) => ({ ...current, error: "派生类英文名称不能与基类相同。" }));
         return false;
       }
     }
@@ -9029,14 +3690,14 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
       const terminalAssociationValidation = validateContainerTerminalAssociations(terminalTypes, terminalAssociations);
       if (!terminalAssociationValidation.valid) {
         showGlobalMessage(terminalAssociationValidation.message);
-        setCustomDeviceDraft((current) => ({ ...current, terminalAssociations, error: terminalAssociationValidation.message }));
+        setCustomDeviceDraft((current: any) => ({ ...current, terminalAssociations, error: terminalAssociationValidation.message }));
         return false;
       }
     }
     if (hasOverlappingCustomDeviceTerminalAnchors(customDeviceTerminalAnchors)) {
       const message = "不同端子位置不能重叠，请调整端子位置后再保存。";
       showGlobalMessage(message);
-      setCustomDeviceDraft((current) => ({ ...current, error: message }));
+      setCustomDeviceDraft((current: any) => ({ ...current, error: message }));
       return false;
     }
     const draftRows = normalizeCustomDeviceDraftParamRows(customDeviceDraft.params, normalizeDefinitionRowEnumFields);
@@ -9091,16 +3752,16 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
     const parameterDefinitionsMatchBuiltIn = deviceParameterDefinitionListsEqual(definitions, builtInDefinitions);
     const definitionsComplianceMessage = deviceParameterDefinitionsComplianceMessage(definitions);
     if (definitionsComplianceMessage) {
-      setCustomDeviceDraft((current) => ({ ...current, error: definitionsComplianceMessage }));
+      setCustomDeviceDraft((current: any) => ({ ...current, error: definitionsComplianceMessage }));
       return false;
     }
     if (customRows.some((row) => !row.cnName || !row.enName)) {
-      setCustomDeviceDraft((current) => ({ ...current, error: "属性行的中文名称和英文名称不能为空。" }));
+      setCustomDeviceDraft((current: any) => ({ ...current, error: "属性行的中文名称和英文名称不能为空。" }));
       return false;
     }
     const reservedCustomRow = customRows.find((row) => isReservedDeviceDefinitionParamName(row.enName));
     if (reservedCustomRow) {
-      setCustomDeviceDraft((current) => ({
+      setCustomDeviceDraft((current: any) => ({
         ...current,
         error: reservedCustomRow.enName === ALLOW_RESIZE_TRANSFORM_PARAM ? "是否允许变形是元件属性，不能在参数定义表中新增。" : "是否容器是元件属性，不能在参数定义表中新增。"
       }));
@@ -9110,7 +3771,7 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
       (definition, index) => definitions.findIndex((item) => item.enName.toLowerCase() === definition.enName.toLowerCase()) !== index
     );
     if (duplicateDefinition) {
-      setCustomDeviceDraft((current) => ({ ...current, error: `属性英文名称重复：${duplicateDefinition.enName}` }));
+      setCustomDeviceDraft((current: any) => ({ ...current, error: `属性英文名称重复：${duplicateDefinition.enName}` }));
       return false;
     }
     const currentMeasurementConfig = measurementConfigDraftRef?.current ?? measurementConfigDraft ?? measurementConfig;
@@ -9145,15 +3806,15 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
       targetLabel: componentLabel
     });
     if (measurementProfileMessage) {
-      setCustomDeviceDraft((current) => ({ ...current, error: measurementProfileMessage }));
+      setCustomDeviceDraft((current: any) => ({ ...current, error: measurementProfileMessage }));
       return false;
     }
     const stateValidation = validateStateDraftRows(customDeviceDraft.stateDefinitions);
     if (stateValidation.error) {
-      setCustomDeviceDraft((current) => ({ ...current, error: stateValidation.error }));
+      setCustomDeviceDraft((current: any) => ({ ...current, error: stateValidation.error }));
       return false;
     }
-    const terminalAnchors = customDeviceTerminalAnchors.slice(0, terminalTypes.length).map((anchor) => ({ ...anchor }));
+    const terminalAnchors = customDeviceTerminalAnchors.slice(0, terminalTypes.length).map((anchor: any) => ({ ...anchor }));
     const inlineBackgroundPatch = inlineDefaultIconBackgroundPatch(__appScope, "custom");
     const draftBackgroundImage = inlineBackgroundPatch?.backgroundImage ?? customDeviceDraft.backgroundImage;
     const draftBackgroundImageAssetId = inlineBackgroundPatch?.backgroundImageAssetId ?? customDeviceDraft.backgroundImageAssetId;
@@ -9184,7 +3845,7 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
       height: Math.max(1, Math.round(customDeviceDraft.size.height || template.size.height || 64))
     };
     const terminalLabels = customDeviceDraft.terminalLabels.slice(0, terminalTypes.length).map(
-      (label, index) => label.trim() || `${TERMINAL_TYPE_LIBRARY_LABELS[terminalTypes[index]] ?? terminalTypes[index]}端${index + 1}`
+      (label: any, index: any) => label.trim() || `${TERMINAL_TYPE_LIBRARY_LABELS[terminalTypes[index]] ?? terminalTypes[index]}端${index + 1}`
     );
     const previousDefinitions = resolveEffectiveTemplateParameterDefinitions(template, libraryTemplates);
     syncExistingNodesWithTemplateDefinitions(
@@ -9208,8 +3869,8 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
         stateDefinitions
       },
       previousDefinitions,
-      (node) => {
-        const nodeTemplate = libraryTemplates.find((candidate) => candidate.kind === node.kind);
+      (node: any) => {
+        const nodeTemplate = libraryTemplates.find((candidate: any) => candidate.kind === node.kind);
         const nodeBaseTemplate = canonicalLibraryTemplates.find((candidate) => candidate.kind === node.kind) ?? nodeTemplate;
         return Boolean(nodeBaseTemplate && deviceTemplatesShareParameterDefinitions(baseTemplate, nodeBaseTemplate));
       }
@@ -9293,7 +3954,7 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
     const finishPersistedSave = (persisted: unknown) => {
       if (persisted === false) {
         const persistenceError = "内置图元尚未写入后台，请检查服务状态后重试保存。";
-        setCustomDeviceDraft((current) => ({ ...current, error: persistenceError }));
+        setCustomDeviceDraft((current: any) => ({ ...current, error: persistenceError }));
         showGlobalMessage(persistenceError);
         return false;
       }
@@ -9314,7 +3975,7 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
         measurementDefinitions: cloneDeviceMeasurementDefinitions(profileItems) ?? [],
         error: ""
       };
-      setCustomDeviceDraft((current) => ({
+      setCustomDeviceDraft((current: any) => ({
         ...current,
         componentName: componentLabel,
         componentKind: componentEnglishName,
@@ -9641,8 +4302,3 @@ export function createSaveCustomDeviceDefinitionDialog(__appScope: Record<string
       : saveResult === true;
   };
 }
-
-function textFileEncodingLabel(encoding: TextFileEncoding) {
-  return encoding === "gbk" ? "GBK" : "UTF-8";
-}
-

@@ -13,11 +13,9 @@ const repoRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const srcRoot = join(repoRoot, "src");
 
 /**
- * 历史遗留允许保留 `// @ts-nocheck` 的唯一白名单（只允许删减，禁止新增）。
+ * 历史遗留允许保留 `// @ts-nocheck` 的白名单（已彻底清零，永久禁止新增）。
  */
-const ALLOWED_TS_NOCHECK_FILES = [
-  "src/appExtracted/appDeviceDefinitionFactories.tsx"
-].sort();
+const ALLOWED_TS_NOCHECK_FILES = [];
 
 function collectTsFiles(dir, acc = []) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {

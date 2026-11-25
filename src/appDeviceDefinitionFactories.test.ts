@@ -497,7 +497,7 @@ describe("createCommitImportedModelRecord", () => {
       writeOperationLog: vi.fn()
     });
 
-    commitImportedModelRecord(targetScheme, importedRecord);
+    commitImportedModelRecord(targetScheme as any, importedRecord as any);
     expect(currentSchemes[0].projects[0].project.idx).toBeUndefined();
 
     await Promise.resolve();
@@ -4589,14 +4589,14 @@ describe("device definition persistence, library and export factories", () => {
   });
 
   test("computes state icon drawing smart alignment guides for moved elements", () => {
-    const moving = {
+    const moving: any = {
       id: "moving",
       x: 48,
       y: 40,
       width: 20,
       height: 12
     };
-    const anchor = {
+    const anchor: any = {
       id: "anchor",
       x: 120,
       y: 80,
@@ -4623,7 +4623,7 @@ describe("device definition persistence, library and export factories", () => {
   });
 
   test("computes state icon drawing smart alignment guides from frame ratio lines", () => {
-    const moving = {
+    const moving: any = {
       id: "moving",
       x: 48,
       y: 40,
@@ -4664,7 +4664,7 @@ describe("device definition persistence, library and export factories", () => {
   });
 
   test("computes state icon drawing smart alignment guides from terminal anchors", () => {
-    const moving = {
+    const moving: any = {
       id: "moving",
       x: 62,
       y: 42,

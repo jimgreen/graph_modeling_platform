@@ -430,7 +430,7 @@ describe("模型库方案树：只有把手能拖（行本体不可拖）", () =
     // 契约：行本体可拖会把把手的拖动顶掉（浏览器从可拖祖先发起拖拽），
     // 且用户要求「只有拖把手才响应拖动」。
     const source = readFileSync(
-      new URL("./appDeviceDefinitionFactories.tsx", import.meta.url),
+      new URL("./appProjectTreeFactories.tsx", import.meta.url),
       "utf8"
     );
     expect(source).toContain("draggable={false}");
@@ -441,7 +441,7 @@ describe("模型库方案树：只有把手能拖（行本体不可拖）", () =
 
   test("方案行的 drop 通道同时接收模型拖拽 MIME", () => {
     const source = readFileSync(
-      new URL("./appDeviceDefinitionFactories.tsx", import.meta.url),
+      new URL("./appProjectTreeFactories.tsx", import.meta.url),
       "utf8"
     );
     const schemeDropStart = source.indexOf("const sortSchemeId = event.dataTransfer.getData(PROJECT_TREE_DRAG_TYPE_SCHEME)");
