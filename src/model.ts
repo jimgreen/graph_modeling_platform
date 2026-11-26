@@ -4936,7 +4936,26 @@ export function normalizeColorPalette(value?: Partial<ColorPalette> | null): Col
  *
  * 解析顺序：内置该主题值 → 用户改过的值覆盖。
  */
+const THEMED_PALETTE_CACHE = new WeakMap<
+  ColorPalette,
+  {
+    energyRef: ColorPalette["energy"];
+    voltageRef: ColorPalette["voltage"];
+    light?: ColorPalette;
+    dark?: ColorPalette;
+  }
+>();
+
 export function resolveThemedPalette(palette: ColorPalette = DEFAULT_COLOR_PALETTE, theme: ColorThemeMode = "light"): ColorPalette {
+  const cachedEntry = THEMED_PALETTE_CACHE.get(palette);
+  if (
+    cachedEntry &&
+    cachedEntry.energyRef === palette.energy &&
+    cachedEntry.voltageRef === palette.voltage &&
+    cachedEntry[theme]
+  ) {
+    return cachedEntry[theme]!;
+  }
   const pick = (custom: string | undefined, pair: ThemeColorPair): string => {
     const trimmed = typeof custom === "string" ? custom.trim() : "";
     if (!trimmed) return theme === "dark" ? pair.dark : pair.light;
@@ -4959,7 +4978,14 @@ export function resolveThemedPalette(palette: ColorPalette = DEFAULT_COLOR_PALET
     h2: pick(palette.energy.h2, ENERGY_THEME_COLORS.h2),
     heat: pick(palette.energy.heat, ENERGY_THEME_COLORS.heat)
   } as Record<TerminalType, string>;
-  return { energy: energyEntries, voltage: voltageEntries };
+  const resolved: ColorPalette = { energy: energyEntries, voltage: voltageEntries };
+  const nextEntry =
+    cachedEntry && cachedEntry.energyRef === palette.energy && cachedEntry.voltageRef === palette.voltage
+      ? cachedEntry
+      : { energyRef: palette.energy, voltageRef: palette.voltage };
+  nextEntry[theme] = resolved;
+  THEMED_PALETTE_CACHE.set(palette, nextEntry);
+  return resolved;
 }
 
 export function terminalTypeColor(type?: TerminalType, palette: ColorPalette = DEFAULT_COLOR_PALETTE): string {

@@ -1809,11 +1809,12 @@ export function createConfirmFilterSelectionDialog(__appScope: SelectionDragScop
 
 export function createFinishMarqueeSelection(__appScope: SelectionDragScope) {
   return () => {
-  const { finishMarqueeSelectionFromPoints, marquee } = __appScope;
-    if (!marquee) {
+  const { finishMarqueeSelectionFromPoints, marquee, marqueeCurrentRef } = __appScope;
+    const activeMarquee = marqueeCurrentRef?.current ?? marquee;
+    if (!activeMarquee) {
       return;
     }
-    finishMarqueeSelectionFromPoints(marquee.start, marquee.current);
+    finishMarqueeSelectionFromPoints(activeMarquee.start, activeMarquee.current);
   };
 }
 

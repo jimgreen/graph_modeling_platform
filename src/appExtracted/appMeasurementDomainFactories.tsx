@@ -2718,7 +2718,7 @@ export function createCurrentViewBoxFromCanvasFrameScroll(__appScope: GraphMeasu
 
 export function createScheduleCanvasVisibleViewBoxUpdate(__appScope: GraphMeasurementScope) {
   return () => {
-  const { canvasBoundsRef, canvasFrameRef, canvasFrameUserScrollRef, canvasFullViewBoxRef, canvasScrollbarsActiveRef, canvasVisibleViewBoxFrameRef, currentViewBoxFromCanvasFrameScroll, normalizeViewBoxToCanvas, renderedCanvasFullyFitsFrame, sameCanvasViewBox, setCanvasVisibleViewBox, setViewBox, skipNextCanvasScrollSyncRef, svgRef, visibleCanvasViewBoxFromRects } = __appScope;
+  const { canvasBoundsRef, canvasFrameRef, canvasFrameUserScrollRef, canvasFullViewBoxRef, canvasScrollbarsActiveRef, canvasVisibleViewBoxFrameRef, currentViewBoxFromCanvasFrameScroll, normalizeViewBoxToCanvas, renderedCanvasFullyFitsFrame, sameCanvasViewBox, setCanvasVisibleViewBox, setViewBox, skipNextCanvasScrollSyncRef, svgRef, visibleCanvasViewBoxFromRects, wheelZoomCommitTimerRef } = __appScope;
     if (canvasVisibleViewBoxFrameRef.current !== null) {
       return;
     }
@@ -2736,7 +2736,24 @@ export function createScheduleCanvasVisibleViewBoxUpdate(__appScope: GraphMeasur
       const fullViewBox = canvasFullViewBoxRef.current;
       const canvasFullyVisible = !canvasScrollbarsActiveRef.current && renderedCanvasFullyFitsFrame(frameRect, svgRect);
       const next = canvasFullyVisible ? fullViewBox : visibleCanvasViewBoxFromRects(frameRect, svgRect, fullViewBox);
-      setCanvasVisibleViewBox((current: any) => (sameCanvasViewBox(current, next) ? current : next));
+      const wheelZoomSettling = Boolean(wheelZoomCommitTimerRef?.current !== null && wheelZoomCommitTimerRef?.current !== undefined);
+      setCanvasVisibleViewBox((current: any) => {
+        if (sameCanvasViewBox(current, next)) {
+          return current;
+        }
+        // 连续滚轮期间，若新可见区完全位于当前已渲染区内部（如持续放大或轻微偏移），
+        // 跳过本次视口重裁剪以彻底避免 16k SVG 节点重渲染，待滚轮停手 120ms 后自动精确同步。
+        if (
+          wheelZoomSettling &&
+          next.x >= current.x &&
+          next.y >= current.y &&
+          next.x + next.width <= current.x + current.width &&
+          next.y + next.height <= current.y + current.height
+        ) {
+          return current;
+        }
+        return next;
+      });
       if (canvasFullyVisible || !frameScrollWasUserDriven) {
         return;
       }

@@ -2,6 +2,11 @@
 
 import type { ProjectCanvasScope } from "./appScopeTypes";
 import { createRafLatestScheduler, sharedElementRectCache, type RafLatestScheduler } from "../lib/rafCoalescer";
+import { applyImperativeMarqueeRect } from "./imperativeMarquee";
+
+// 滚轮连续缩放时的视口裁剪静默窗口（ms）：避免在 16k SVG 上施加 CSS transform 引发重光栅化，
+// 同时在连续缩放期间抑制视口子集裁剪重渲染，停手后补一次精确 canvasVisibleViewBox 同步
+const WHEEL_ZOOM_SETTLE_DELAY_MS = 120;
 
 // 按 setMarquee / setViewBox 实例缓存单帧 rAF 合批调度器，避免高刷鼠标每帧多次触发 React 重渲染
 type MarqueeRect = { start: Point; current: Point };
@@ -934,7 +939,7 @@ export function createHandleRoutableLineNodePathPointerDown(__appScope: ProjectC
 
 export function createHandlePointerMove(__appScope: ProjectCanvasScope) {
   return (event: ReactPointerEvent<SVGSVGElement>) => {
-  const { CANVAS_SELECTION_DRAG_THRESHOLD, MOVE_BOUNDARY_GUARD, applyCanvasPanningVisualOffset, buildGroupTransformNodeUpdates, buildRoutableLineEndpointPreviewNodeUpdates, cancelPendingBlankCanvasDeselectOnMove, canvasBounds, canvasFrameRef, canvasFrameUserScrollRef, canvasNoScrollOffsetRef, clampCanvasNoScrollOffsetPoint, clampNumber, clampPointToCanvas, clampViewBoxToCanvas, connectSource, contextMarqueeSelectionRef, draggingRef, getNodeScaleX, getNodeScaleY, graphStore, isBusNode, isGroupTransformDrag, isLineSegmentBusNode, isRoutableLineDeviceKind, lastCanvasClientPointerRef, lastCanvasPointerRef, lastRawCanvasPointerRef, latestGraphStoreRef, libraryPlacement, manualPathDrag, marquee, modelGeometryInsideCanvasBounds, modifierSelectionPressRef, moveOrthogonalRouteSegment, moveRoutableLineDeviceSegment, nodeById, nodeLabelDrag, nodeLabelRotateDrag, nodeLabelRotationFromPoint, normalizeNodeLabelRotation, normalizeRotationDegrees, panning, panningRef, patchGraphNodes, patchSingleTerminalAnchorFromPoint, pendingCanvasNoScrollOffsetRef, proportionalSignedScaleFromHandleDelta, proportionalSignedScaleFromUprightHandleDelta, pushUndoSnapshot, resizeLineSegmentBusGeometryFromHandleDrag, resolveConnectPreviewPoint, resolveRoutableLinePreviewPoint, rewiring, rotationDeltaBetweenTransformPoints, routableLineDeviceCanvasPoints, routableLineEndpointDrag, routableLinePlacement, sameOptionalPoint, sameOptionalPointList, scheduleConnectPreviewPoint, scheduleNodeDragMove, scheduleRewirePreviewPoint, scheduleRoutableLinePreviewPoint, screenToSvgPoint, setManualPathDrag, setMarquee, setModifierSelectionPress, setNodeLabelDrag, setNodeLabelRotateDrag, setRoutableLineDeviceCanvasPoints, setTerminalPress, setTransformDrag, setViewBox, signedScaleFromRotatedHandleDelta, signedScaleFromUprightHandleDelta, singleTransformBaseNode, skipNextCanvasScrollSyncRef, staticButtonPointerRef, staticDrawing, svgRef, terminalPress, transformDrag, transformDragChangedRef, updateGraphNodeById, updateInteractiveStaticDrawingPreview, updateLibraryPlacementPreview, updateMeasurementDrag, updateMouseStatus, updateRoutableLineEndpointDrag } = __appScope;
+  const { CANVAS_SELECTION_DRAG_THRESHOLD, MOVE_BOUNDARY_GUARD, applyCanvasPanningVisualOffset, buildGroupTransformNodeUpdates, buildRoutableLineEndpointPreviewNodeUpdates, cancelPendingBlankCanvasDeselectOnMove, canvasBounds, canvasFrameRef, canvasFrameUserScrollRef, canvasNoScrollOffsetRef, clampCanvasNoScrollOffsetPoint, clampNumber, clampPointToCanvas, clampViewBoxToCanvas, connectSource, contextMarqueeSelectionRef, draggingRef, getNodeScaleX, getNodeScaleY, graphStore, imperativeMarqueeRectRef, isBusNode, isGroupTransformDrag, isLineSegmentBusNode, isRoutableLineDeviceKind, lastCanvasClientPointerRef, lastCanvasPointerRef, lastRawCanvasPointerRef, latestGraphStoreRef, libraryPlacement, manualPathDrag, marquee, marqueeCurrentRef, modelGeometryInsideCanvasBounds, modifierSelectionPressRef, moveOrthogonalRouteSegment, moveRoutableLineDeviceSegment, nodeById, nodeLabelDrag, nodeLabelRotateDrag, nodeLabelRotationFromPoint, normalizeNodeLabelRotation, normalizeRotationDegrees, panning, panningRef, patchGraphNodes, patchSingleTerminalAnchorFromPoint, pendingCanvasNoScrollOffsetRef, proportionalSignedScaleFromHandleDelta, proportionalSignedScaleFromUprightHandleDelta, pushUndoSnapshot, resizeLineSegmentBusGeometryFromHandleDrag, resolveConnectPreviewPoint, resolveRoutableLinePreviewPoint, rewiring, rotationDeltaBetweenTransformPoints, routableLineDeviceCanvasPoints, routableLineEndpointDrag, routableLinePlacement, sameOptionalPoint, sameOptionalPointList, scheduleConnectPreviewPoint, scheduleNodeDragMove, scheduleRewirePreviewPoint, scheduleRoutableLinePreviewPoint, screenToSvgPoint, setManualPathDrag, setMarquee, setModifierSelectionPress, setNodeLabelDrag, setNodeLabelRotateDrag, setRoutableLineDeviceCanvasPoints, setTerminalPress, setTransformDrag, setViewBox, signedScaleFromRotatedHandleDelta, signedScaleFromUprightHandleDelta, singleTransformBaseNode, skipNextCanvasScrollSyncRef, staticButtonPointerRef, staticDrawing, svgRef, terminalPress, transformDrag, transformDragChangedRef, updateGraphNodeById, updateInteractiveStaticDrawingPreview, updateLibraryPlacementPreview, updateMeasurementDrag, updateMouseStatus, updateRoutableLineEndpointDrag } = __appScope;
     const staticButtonPointer = staticButtonPointerRef.current;
     if (
       staticButtonPointer &&
@@ -1013,7 +1018,13 @@ export function createHandlePointerMove(__appScope: ProjectCanvasScope) {
       }
       const activeContextMarqueeSelection = contextMarqueeSelectionRef.current;
       if (activeContextMarqueeSelection) {
-        scheduleMarqueeUpdate(setMarquee, { start: activeContextMarqueeSelection.start, current: pointer });
+        const nextMarquee = { start: activeContextMarqueeSelection.start, current: pointer };
+        if (imperativeMarqueeRectRef?.current && marqueeCurrentRef) {
+          marqueeCurrentRef.current = nextMarquee;
+          applyImperativeMarqueeRect(imperativeMarqueeRectRef.current, nextMarquee);
+        } else {
+          scheduleMarqueeUpdate(setMarquee, nextMarquee);
+        }
         event.preventDefault();
         event.stopPropagation();
         return;
@@ -1042,12 +1053,26 @@ export function createHandlePointerMove(__appScope: ProjectCanvasScope) {
         ? modifierPress
         : { ...modifierPress, currentPoint, moved };
       if (nextPress !== modifierPress) {
-        setModifierSelectionPress(nextPress);
+        modifierSelectionPressRef.current = nextPress;
+        if (!moved) {
+          setModifierSelectionPress(nextPress);
+        }
       }
       if (moved) {
-        scheduleMarqueeUpdate(setMarquee, { start: modifierPress.startPoint, current: currentPoint });
+        const nextMarquee = { start: modifierPress.startPoint, current: currentPoint };
+        if (imperativeMarqueeRectRef?.current && marqueeCurrentRef) {
+          marqueeCurrentRef.current = nextMarquee;
+          applyImperativeMarqueeRect(imperativeMarqueeRectRef.current, nextMarquee);
+        } else {
+          scheduleMarqueeUpdate(setMarquee, nextMarquee);
+        }
       } else {
-        scheduleMarqueeUpdate(setMarquee, null);
+        if (imperativeMarqueeRectRef?.current && marqueeCurrentRef) {
+          marqueeCurrentRef.current = null;
+          applyImperativeMarqueeRect(imperativeMarqueeRectRef.current, null);
+        } else {
+          scheduleMarqueeUpdate(setMarquee, null);
+        }
       }
       event.preventDefault();
       event.stopPropagation();
@@ -1188,10 +1213,18 @@ export function createHandlePointerMove(__appScope: ProjectCanvasScope) {
       scheduleRewirePreviewPoint(previewPoint, rewiring, event.ctrlKey);
       return;
     }
-    if (marquee && svgRef.current) {
+    const activeMarquee = marqueeCurrentRef?.current ?? marquee;
+    if (activeMarquee && svgRef.current) {
       const currentPoint = lastCanvasPointerRef.current ?? clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
-      if (!sameOptionalPoint(marquee.current, currentPoint)) {
-        scheduleMarqueeUpdate(setMarquee, { start: marquee.start, current: currentPoint });
+      if (!sameOptionalPoint(activeMarquee.current, currentPoint)) {
+        const nextMarquee = { start: activeMarquee.start, current: currentPoint };
+        if (imperativeMarqueeRectRef?.current && marqueeCurrentRef) {
+          // 拖动框选全程直接操作 SVG <rect> 属性：0 次 React 重渲染
+          marqueeCurrentRef.current = nextMarquee;
+          applyImperativeMarqueeRect(imperativeMarqueeRectRef.current, nextMarquee);
+        } else {
+          scheduleMarqueeUpdate(setMarquee, nextMarquee);
+        }
       }
       return;
     }
@@ -1383,7 +1416,10 @@ export function createFinishCanvasPanning(__appScope: ProjectCanvasScope) {
 
 export function createStartCanvasPanning(__appScope: ProjectCanvasScope) {
   return (event: ReactPointerEvent<Element>) => {
-  const { activateInspectorFromCanvas, canvasFrameHasHorizontalScrollableRange, canvasFrameHasVerticalScrollableRange, canvasFrameRef, canvasHorizontalScrollbarsActiveRef, canvasInteractionRef, canvasNoScrollOffsetRef, canvasVerticalScrollbarsActiveRef, clampPointToCanvas, currentViewBoxFromCanvasFrameScroll, lastCanvasPointerRef, lastRawCanvasPointerRef, pendingCanvasNoScrollOffsetRef, projectListPointerInsideRef, resetConnectPreviewState, screenToSvgPoint, setCanvasPanning, setConnectSource, setContextMenu, setProjectMenu, setRewiring, svgRef, updateMouseStatus } = __appScope;
+  const { activateInspectorFromCanvas, canvasFrameHasHorizontalScrollableRange, canvasFrameHasVerticalScrollableRange, canvasFrameRef, canvasHorizontalScrollbarsActiveRef, canvasInteractionRef, canvasNoScrollOffsetRef, canvasVerticalScrollbarsActiveRef, clampPointToCanvas, currentViewBoxFromCanvasFrameScroll, flushPendingWheelZoom, lastCanvasPointerRef, lastRawCanvasPointerRef, pendingCanvasNoScrollOffsetRef, pendingWheelZoomRequestRef, projectListPointerInsideRef, resetConnectPreviewState, screenToSvgPoint, setCanvasPanning, setConnectSource, setContextMenu, setProjectMenu, setRewiring, svgRef, updateMouseStatus } = __appScope;
+    if (pendingWheelZoomRequestRef?.current) {
+      flushPendingWheelZoom?.();
+    }
     const svg = svgRef.current;
     if (event.button !== 0 || !svg) {
       return false;
@@ -1456,8 +1492,18 @@ export function createClientPointInsideRenderedCanvas(__appScope: ProjectCanvasS
 
 export function createFocusCanvasKeyboardShortcutHost(__appScope: ProjectCanvasScope) {
   return (event: ReactPointerEvent<HTMLElement>) => {
-  const { canvasFrameRef, canvasInteractionRef, clampPointToCanvas, clientPointInsideRenderedCanvas, isCanvasKeyboardBlockingTarget, lastCanvasClientPointerRef, lastCanvasPointerRef, lastKeyboardShortcutClientPointerRef, lastRawCanvasPointerRef, projectListPointerInsideRef, screenToSvgPoint, svgRef, updateMouseStatus } = __appScope;
+  const { canvasFrameRef, canvasInteractionRef, clampPointToCanvas, clientPointInsideRenderedCanvas, contextMarqueeSelectionRef, draggingRef, isCanvasKeyboardBlockingTarget, lastCanvasClientPointerRef, lastCanvasPointerRef, lastKeyboardShortcutClientPointerRef, lastRawCanvasPointerRef, marqueeCurrentRef, modifierSelectionPressRef, panningRef, projectListPointerInsideRef, screenToSvgPoint, svgRef, updateMouseStatus } = __appScope;
     lastKeyboardShortcutClientPointerRef.current = { x: event.clientX, y: event.clientY };
+    // 高频平移、拖拽或框选期间由画布 <svg> 自身处理指针，避免冒泡到 .canvas-frame 重复触发 CTM/getBoundingClientRect/focus
+    if (
+      panningRef?.current ||
+      draggingRef?.current ||
+      marqueeCurrentRef?.current ||
+      contextMarqueeSelectionRef?.current ||
+      modifierSelectionPressRef?.current
+    ) {
+      return;
+    }
     if (isCanvasKeyboardBlockingTarget(event.target)) {
       return;
     }
@@ -1471,7 +1517,10 @@ export function createFocusCanvasKeyboardShortcutHost(__appScope: ProjectCanvasS
     lastCanvasPointerRef.current = pointer;
     lastCanvasClientPointerRef.current = { x: event.clientX, y: event.clientY };
     updateMouseStatus(pointer);
-    canvasFrameRef.current?.focus({ preventScroll: true });
+    const frame = canvasFrameRef.current;
+    if (frame && (typeof document === "undefined" || document.activeElement !== frame)) {
+      frame.focus({ preventScroll: true });
+    }
     canvasInteractionRef.current = true;
     projectListPointerInsideRef.current = false;
   };
@@ -1519,9 +1568,13 @@ export function createWheelZoomAnchorFromClient(__appScope: ProjectCanvasScope) 
 
 export function createFlushPendingWheelZoom(__appScope: ProjectCanvasScope) {
   return () => {
-  const { canvasBoundsRef, clampViewBoxDimensionsForZoom, height, normalizeViewBoxToCanvas, pendingWheelZoomAnchorRef, pendingWheelZoomRequestRef, setViewBox, wheelZoomFrameRef, width } = __appScope;
+  const { canvasBoundsRef, clampViewBoxDimensionsForZoom, normalizeViewBoxToCanvas, pendingWheelZoomAnchorRef, pendingWheelZoomRequestRef, setViewBox, wheelZoomFrameRef } = __appScope;
+    if (wheelZoomFrameRef.current !== null && typeof window !== "undefined") {
+      window.cancelAnimationFrame(wheelZoomFrameRef.current);
+      wheelZoomFrameRef.current = null;
+    }
+    sharedElementRectCache.invalidate();
     const request = pendingWheelZoomRequestRef.current;
-    wheelZoomFrameRef.current = null;
     if (!request) {
       return;
     }
@@ -1547,11 +1600,24 @@ export function createFlushPendingWheelZoom(__appScope: ProjectCanvasScope) {
 
 export function createScheduleWheelZoom(__appScope: ProjectCanvasScope) {
   return (anchor: WheelZoomAnchor, zoomFactor: number) => {
-  const { flushPendingWheelZoom, pendingWheelZoomRequestRef, wheelZoomFrameRef } = __appScope;
+  const { flushPendingWheelZoom, pendingWheelZoomRequestRef, scheduleCanvasVisibleViewBoxUpdate, wheelZoomCommitTimerRef, wheelZoomFrameRef } = __appScope;
     const current = pendingWheelZoomRequestRef.current;
     pendingWheelZoomRequestRef.current = current
       ? { anchor, zoomFactor: current.zoomFactor * zoomFactor }
       : { anchor, zoomFactor };
+
+    // 标记连续滚轮活跃期：期间若新视口仍在当前已渲染区域内，跳过昂贵的 16k SVG 裁剪重渲染，
+    // 停手 120ms 后再补一次精确 canvasVisibleViewBox 同步。
+    if (wheelZoomCommitTimerRef) {
+      if (wheelZoomCommitTimerRef.current !== null) {
+        clearTimeout(wheelZoomCommitTimerRef.current);
+      }
+      wheelZoomCommitTimerRef.current = setTimeout(() => {
+        wheelZoomCommitTimerRef.current = null;
+        scheduleCanvasVisibleViewBoxUpdate?.();
+      }, WHEEL_ZOOM_SETTLE_DELAY_MS);
+    }
+
     if (wheelZoomFrameRef.current !== null) {
       return;
     }

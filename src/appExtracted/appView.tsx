@@ -704,15 +704,30 @@ export function renderAppView(__appScope: Record<string, any>) {
     __appScope.setDefinitionDraftRows([]);
     __appScope.setDefinitionDraftError("已标记删除全部参数，点击保存后生效。");
   };
-  const eDeviceInterfaceDefinitionRows = buildEDeviceInterfaceDefinitionRows({
-    libraryTemplates,
-    labels: PARAM_LABELS,
-    eDeviceDefinitionLabels,
-    eDeviceDefinitionClassExportEnabled,
-    eDeviceDefinitionFieldOrder,
-    eDeviceDefinitionTemplateFields,
-    resolveDefinitionComponentLibrary: resolveTemplateComponentLibrary
-  });
+  const eDeviceInterfaceDefinitionRows = useMemo(
+    () =>
+      eDeviceDefinitionInterfaceDialogOpen
+        ? buildEDeviceInterfaceDefinitionRows({
+            libraryTemplates,
+            labels: PARAM_LABELS,
+            eDeviceDefinitionLabels,
+            eDeviceDefinitionClassExportEnabled,
+            eDeviceDefinitionFieldOrder,
+            eDeviceDefinitionTemplateFields,
+            resolveDefinitionComponentLibrary: resolveTemplateComponentLibrary
+          })
+        : [],
+    [
+      eDeviceDefinitionInterfaceDialogOpen,
+      libraryTemplates,
+      PARAM_LABELS,
+      eDeviceDefinitionLabels,
+      eDeviceDefinitionClassExportEnabled,
+      eDeviceDefinitionFieldOrder,
+      eDeviceDefinitionTemplateFields,
+      resolveTemplateComponentLibrary
+    ]
+  );
   const [selectedEDeviceInterfaceComponentLibrary, setSelectedEDeviceInterfaceComponentLibrary] = useState("");
   const [collapsedEDeviceInterfaceTreeNodes, setCollapsedEDeviceInterfaceTreeNodes] = useState<Record<string, boolean>>({});
   const [eDeviceInterfaceSelectedGroupKey, setEDeviceInterfaceSelectedGroupKey] = useState<string | null>(null);
@@ -1085,24 +1100,43 @@ export function renderAppView(__appScope: Record<string, any>) {
   const eDeviceInterfaceExportFileRef = useRef<() => void>(() => undefined);
   const eDeviceInterfaceSaveAndSwitchRef = useRef<() => void>(() => undefined);
   const eDeviceInterfaceClassSelectRef = useRef<(componentLibrary: string) => void>(() => undefined);
-  const selectedEDeviceInterfaceRow =
-    eDeviceInterfaceDefinitionRows.find((row) => row.componentLibrary === selectedEDeviceInterfaceComponentLibrary) ??
-    eDeviceInterfaceDefinitionRows[0] ??
-    null;
-  const selectedEDeviceInterfaceFields = selectedEDeviceInterfaceRow
-    ? resolveEDeviceInterfaceFieldsForDisplay(
-        selectedEDeviceInterfaceRow.componentLibrary,
-        selectedEDeviceInterfaceRow.fields,
-        eDeviceDefinitionFieldOrder[selectedEDeviceInterfaceRow.componentLibrary] ?? [],
-        selectedEDeviceInterfaceRow.isDerivedComponentLibrary
-      )
-    : [];
-  const eDeviceInterfaceClassSwitchTargetRow =
-    eDeviceInterfaceDefinitionRows.find((row) => row.componentLibrary === eDeviceInterfaceClassSwitchTarget) ??
-    null;
-  const eDeviceInterfaceDefinitionTree = useMemo(() => buildEDeviceInterfaceDefinitionTree(eDeviceInterfaceDefinitionRows, libraryTemplates), [eDeviceInterfaceDefinitionRows, libraryTemplates]);
+  const selectedEDeviceInterfaceRow = useMemo(
+    () =>
+      eDeviceDefinitionInterfaceDialogOpen
+        ? eDeviceInterfaceDefinitionRows.find((row) => row.componentLibrary === selectedEDeviceInterfaceComponentLibrary) ??
+          eDeviceInterfaceDefinitionRows[0] ??
+          null
+        : null,
+    [eDeviceDefinitionInterfaceDialogOpen, eDeviceInterfaceDefinitionRows, selectedEDeviceInterfaceComponentLibrary]
+  );
+  const selectedEDeviceInterfaceFields = useMemo(
+    () =>
+      selectedEDeviceInterfaceRow
+        ? resolveEDeviceInterfaceFieldsForDisplay(
+            selectedEDeviceInterfaceRow.componentLibrary,
+            selectedEDeviceInterfaceRow.fields,
+            eDeviceDefinitionFieldOrder[selectedEDeviceInterfaceRow.componentLibrary] ?? [],
+            selectedEDeviceInterfaceRow.isDerivedComponentLibrary
+          )
+        : [],
+    [selectedEDeviceInterfaceRow, eDeviceDefinitionFieldOrder]
+  );
+  const eDeviceInterfaceClassSwitchTargetRow = useMemo(
+    () =>
+      eDeviceDefinitionInterfaceDialogOpen && eDeviceInterfaceClassSwitchTarget
+        ? eDeviceInterfaceDefinitionRows.find((row) => row.componentLibrary === eDeviceInterfaceClassSwitchTarget) ?? null
+        : null,
+    [eDeviceDefinitionInterfaceDialogOpen, eDeviceInterfaceDefinitionRows, eDeviceInterfaceClassSwitchTarget]
+  );
+  const eDeviceInterfaceDefinitionTree = useMemo(
+    () =>
+      eDeviceDefinitionInterfaceDialogOpen
+        ? buildEDeviceInterfaceDefinitionTree(eDeviceInterfaceDefinitionRows, libraryTemplates)
+        : [],
+    [eDeviceDefinitionInterfaceDialogOpen, eDeviceInterfaceDefinitionRows, libraryTemplates]
+  );
   const eDeviceInterfaceGroupInfo = (() => {
-    if (!eDeviceInterfaceSelectedGroupKey) {
+    if (!eDeviceDefinitionInterfaceDialogOpen || !eDeviceInterfaceSelectedGroupKey) {
       return null;
     }
     const groupKey = eDeviceInterfaceSelectedGroupKey;
@@ -1135,12 +1169,19 @@ export function renderAppView(__appScope: Record<string, any>) {
     }
     return null;
   })();
-  const eDeviceInterfaceCurrentSignature = eDeviceInterfaceDefinitionSignature(eDeviceInterfaceDefinitionRows);
+  const eDeviceInterfaceCurrentSignature = useMemo(
+    () => (eDeviceDefinitionInterfaceDialogOpen ? eDeviceInterfaceDefinitionSignature(eDeviceInterfaceDefinitionRows) : ""),
+    [eDeviceDefinitionInterfaceDialogOpen, eDeviceInterfaceDefinitionRows]
+  );
   const eDeviceInterfaceHasUnsavedChanges = Boolean(
+    eDeviceDefinitionInterfaceDialogOpen &&
     eDeviceInterfaceDefinitionBaseline &&
     eDeviceInterfaceDefinitionBaseline.signature !== eDeviceInterfaceCurrentSignature
   );
-  const eDeviceInterfaceSelectedClassSignature = eDeviceInterfaceClassDefinitionSignature(selectedEDeviceInterfaceRow);
+  const eDeviceInterfaceSelectedClassSignature = useMemo(
+    () => (eDeviceDefinitionInterfaceDialogOpen ? eDeviceInterfaceClassDefinitionSignature(selectedEDeviceInterfaceRow) : ""),
+    [eDeviceDefinitionInterfaceDialogOpen, selectedEDeviceInterfaceRow]
+  );
   const eDeviceInterfaceSelectedClassHasUnsavedChanges = Boolean(
     selectedEDeviceInterfaceRow &&
     eDeviceInterfaceSelectedClassBaseline?.componentLibrary === selectedEDeviceInterfaceRow.componentLibrary &&
@@ -1422,22 +1463,31 @@ export function renderAppView(__appScope: Record<string, any>) {
     setImagePickerSourceFilter
   } = __appScope;
   const { customDevicePreviewNode } = __appScope;
-  const selectedDefinitionDerivedInfo = selectedDefinitionTemplate
-    ? templateDerivedComponentLibraryInfo(selectedDefinitionTemplate)
-    : null;
+  const selectedDefinitionDerivedInfo = useMemo(
+    () => (deviceDefinitionDialogOpen && selectedDefinitionTemplate ? templateDerivedComponentLibraryInfo(selectedDefinitionTemplate) : null),
+    [deviceDefinitionDialogOpen, selectedDefinitionTemplate]
+  );
   // 派生类主类模板：用于摘要区展示"派生主类"并支持点击跳转
-  const selectedDefinitionDerivedBaseTemplate = selectedDefinitionDerivedInfo
-    ? (Object.values(filteredDeviceDefinitionByComponentLibrary as Record<string, any[]>) as any[])
-      .flatMap((groups) => groups)
-      .flatMap((typeGroup: any) => typeGroup.templates ?? [])
-      .find((template: any) => resolveTemplateComponentLibrary(template) === selectedDefinitionDerivedInfo.baseComponentLibrary)
-    : null;
-  const definitionDraftRowsForDisplay: CustomParamDraft[] = selectedDefinitionTemplate && selectedDefinitionDerivedInfo && typeof __appScope.createDefinitionDraftRows === "function"
-    ? resolveDeviceDefinitionParameterRowsForDisplay<CustomParamDraft>(definitionDraftRows, __appScope.createDefinitionDraftRows(selectedDefinitionTemplate), {
-        baseComponentLibrary: selectedDefinitionDerivedInfo.baseComponentLibrary,
-        isDerivedComponentBaseParamName: __appScope.isDerivedComponentBaseParamName
-      })
-    : definitionDraftRows;
+  const selectedDefinitionDerivedBaseTemplate = useMemo(
+    () =>
+      deviceDefinitionDialogOpen && selectedDefinitionDerivedInfo
+        ? (Object.values(filteredDeviceDefinitionByComponentLibrary as Record<string, Array<{ templates?: DeviceTemplate[] }>>) as Array<Array<{ templates?: DeviceTemplate[] }>>)
+          .flatMap((groups) => groups)
+          .flatMap((typeGroup) => typeGroup.templates ?? [])
+          .find((template) => resolveTemplateComponentLibrary(template) === selectedDefinitionDerivedInfo.baseComponentLibrary)
+        : null,
+    [deviceDefinitionDialogOpen, selectedDefinitionDerivedInfo, filteredDeviceDefinitionByComponentLibrary, resolveTemplateComponentLibrary]
+  );
+  const definitionDraftRowsForDisplay: CustomParamDraft[] = useMemo(
+    () =>
+      deviceDefinitionDialogOpen && selectedDefinitionTemplate && selectedDefinitionDerivedInfo && typeof __appScope.createDefinitionDraftRows === "function"
+        ? resolveDeviceDefinitionParameterRowsForDisplay<CustomParamDraft>(definitionDraftRows, __appScope.createDefinitionDraftRows(selectedDefinitionTemplate), {
+            baseComponentLibrary: selectedDefinitionDerivedInfo.baseComponentLibrary,
+            isDerivedComponentBaseParamName: __appScope.isDerivedComponentBaseParamName
+          })
+        : definitionDraftRows,
+    [deviceDefinitionDialogOpen, selectedDefinitionTemplate, selectedDefinitionDerivedInfo, definitionDraftRows]
+  );
   const selectedDefinitionParameterRowIds: string[] = __appScope.selectedDefinitionParameterRowIds ?? [];
   const selectedDefinitionParameterRowIdSet = new Set<string>(selectedDefinitionParameterRowIds);
   const definitionParameterRowIds = definitionDraftRowsForDisplay.map((row) => row.id);
@@ -1687,26 +1737,37 @@ export function renderAppView(__appScope: Record<string, any>) {
   const selectedCustomEditableParameterCount = displayedVisibleCustomParams.filter(
     (row: CustomParamDraft) => selectedCustomParameterRowIdSet.has(row.id)
   ).length;
+  const customDeviceDialogMetaActive = Boolean(customDeviceDialogOpen || customLibraryCreateDialog);
   // 当前分类下所有派生元件库名称集合（小写），用于从主类选项中排除已派生的库
-  const currentCategoryDerivedComponentLibraryNameSet = new Set<string>();
-  const targetCategory = normalizeCategoryLibraryName(customDeviceDraft.categoryLibraryName || "").toLowerCase();
-  for (const item of customComponentLibraries ?? []) {
-    if (!item.isDerivedComponentLibrary) continue;
-    const categoryLibraryName = normalizeCategoryLibraryName(item.categoryLibraryName ?? "").toLowerCase();
-    if (categoryLibraryName !== targetCategory) continue;
-    const name = normalizeComponentLibraryName(item.name ?? "").toLowerCase();
-    if (name) currentCategoryDerivedComponentLibraryNameSet.add(name);
-  }
-  for (const template of libraryTemplates ?? []) {
-    const info = templateDerivedComponentLibraryInfo(template);
-    if (!info) continue;
-    const categoryLibraryName = normalizeCategoryLibraryName(info.categoryLibrary || template.categoryLibrary || "").toLowerCase();
-    if (categoryLibraryName !== targetCategory) continue;
-    currentCategoryDerivedComponentLibraryNameSet.add(normalizeComponentLibraryName(info.derivedComponentLibrary).toLowerCase());
-  }
-  const customDeviceBaseComponentLibraryOptions = customDeviceDraft.isDerivedComponentLibrary
-    ? currentCategoryLibraryComponentLibraryOptions.filter((section: string) => !currentCategoryDerivedComponentLibraryNameSet.has(normalizeComponentLibraryName(section).toLowerCase()))
-    : currentCategoryLibraryComponentLibraryOptions;
+  const currentCategoryDerivedComponentLibraryNameSet = useMemo(() => {
+    const result = new Set<string>();
+    if (!customDeviceDialogMetaActive) {
+      return result;
+    }
+    const targetCategory = normalizeCategoryLibraryName(customDeviceDraft.categoryLibraryName || "").toLowerCase();
+    for (const item of customComponentLibraries ?? []) {
+      if (!item.isDerivedComponentLibrary) continue;
+      const categoryLibraryName = normalizeCategoryLibraryName(item.categoryLibraryName ?? "").toLowerCase();
+      if (categoryLibraryName !== targetCategory) continue;
+      const name = normalizeComponentLibraryName(item.name ?? "").toLowerCase();
+      if (name) result.add(name);
+    }
+    for (const template of libraryTemplates ?? []) {
+      const info = templateDerivedComponentLibraryInfo(template);
+      if (!info) continue;
+      const categoryLibraryName = normalizeCategoryLibraryName(info.categoryLibrary || template.categoryLibrary || "").toLowerCase();
+      if (categoryLibraryName !== targetCategory) continue;
+      result.add(normalizeComponentLibraryName(info.derivedComponentLibrary).toLowerCase());
+    }
+    return result;
+  }, [customDeviceDialogMetaActive, customDeviceDraft.categoryLibraryName, customComponentLibraries, libraryTemplates, normalizeCategoryLibraryName, normalizeComponentLibraryName]);
+  const customDeviceBaseComponentLibraryOptions = useMemo(
+    () =>
+      customDeviceDialogMetaActive && customDeviceDraft.isDerivedComponentLibrary
+        ? currentCategoryLibraryComponentLibraryOptions.filter((section: string) => !currentCategoryDerivedComponentLibraryNameSet.has(normalizeComponentLibraryName(section).toLowerCase()))
+        : currentCategoryLibraryComponentLibraryOptions,
+    [customDeviceDialogMetaActive, customDeviceDraft.isDerivedComponentLibrary, currentCategoryLibraryComponentLibraryOptions, currentCategoryDerivedComponentLibraryNameSet, normalizeComponentLibraryName]
+  );
   const customLibraryCreateDialogCategoryLibraryName = normalizeCategoryLibraryName(
     customLibraryCreateDialog?.categoryLibraryName || customDeviceDraft.categoryLibraryName || ""
   );
@@ -1718,25 +1779,37 @@ export function renderAppView(__appScope: Record<string, any>) {
         customDeviceDraft.componentLibrary ||
         ""
   );
-  const customLibraryCreateDialogFamilyMetadata = resolveComponentLibraryClassFamilyMetadata(
-    selectedComponentLibraryFamilyClassName,
-    customLibraryCreateDialogCategoryLibraryName,
-    customComponentLibraries,
-    libraryTemplates
+  const customLibraryCreateDialogFamilyMetadata = useMemo(
+    () =>
+      customDeviceDialogMetaActive
+        ? resolveComponentLibraryClassFamilyMetadata(
+            selectedComponentLibraryFamilyClassName,
+            customLibraryCreateDialogCategoryLibraryName,
+            customComponentLibraries,
+            libraryTemplates
+          )
+        : [],
+    [customDeviceDialogMetaActive, selectedComponentLibraryFamilyClassName, customLibraryCreateDialogCategoryLibraryName, customComponentLibraries, libraryTemplates]
   );
-  const customLibraryCreateDialogBaseComponentLibraryOptions = customLibraryCreateDialogFamilyMetadata
-    .map((metadata) => metadata.className);
-  const customLibraryCreateDialogClassOptions: Array<{
+  const customLibraryCreateDialogBaseComponentLibraryOptions = useMemo(
+    () => customLibraryCreateDialogFamilyMetadata.map((metadata) => metadata.className),
+    [customLibraryCreateDialogFamilyMetadata]
+  );
+  const customLibraryCreateDialogClassOptions = useMemo<Array<{
     className: string;
     label: string;
     baseComponentLibrary: string;
     isDerivedComponentLibrary: boolean;
-  }> = customLibraryCreateDialogFamilyMetadata.map((metadata) => ({
-    className: metadata.className,
-    label: componentLibraryDisplayParts(metadata.className, customComponentLibraries).title,
-    baseComponentLibrary: metadata.baseComponentLibrary,
-    isDerivedComponentLibrary: metadata.isDerivedComponentLibrary
-  }));
+  }>>(
+    () =>
+      customLibraryCreateDialogFamilyMetadata.map((metadata) => ({
+        className: metadata.className,
+        label: componentLibraryDisplayParts(metadata.className, customComponentLibraries).title,
+        baseComponentLibrary: metadata.baseComponentLibrary,
+        isDerivedComponentLibrary: metadata.isDerivedComponentLibrary
+      })),
+    [customLibraryCreateDialogFamilyMetadata, customComponentLibraries, componentLibraryDisplayParts]
+  );
   const customLibraryCreateDialogSelectedClassName = normalizeComponentLibraryName(
     customLibraryCreateDialog?.componentClassName ||
     customLibraryCreateDialog?.derivedComponentLibrary ||

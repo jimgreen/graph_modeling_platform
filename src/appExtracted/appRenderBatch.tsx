@@ -2572,7 +2572,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
         ? selectedCustomComponentTemplate ?? (selectedDefinitionKind ? selectedDefinitionTemplate : undefined)
         : undefined;
   Object.assign(__appScope, { customDevicePreviewSourceTemplate });
-  const customDeviceDefaultStateVisualDraft = __s("customDeviceDefaultStateVisualDraft", createCustomDeviceDefaultStateVisualDraft); Object.assign(__appScope, { customDeviceDefaultStateVisualDraft });
+  const customDeviceDefaultStateVisualDraft = createCustomDeviceDefaultStateVisualDraft(__appScope); Object.assign(__appScope, { customDeviceDefaultStateVisualDraft });
   const customStatePreviewRow = isDefaultStatePageId(customIconStatePageId)
       ? defaultStateDraftRow(customDeviceDraft.stateDefinitions, customDeviceDefaultStateVisualDraft())
       : activeStateDraftRow(customDeviceDraft.stateDefinitions, customIconStatePageId);
@@ -2654,7 +2654,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
       ? definitionVisualDraft.terminalTypes.slice(0, definitionVisualDraft.terminalCount)
       : [];
   Object.assign(__appScope, { definitionVisualTerminalTypes });
-  const definitionDefaultStateVisualDraft = __s("definitionDefaultStateVisualDraft", createDefinitionDefaultStateVisualDraft); Object.assign(__appScope, { definitionDefaultStateVisualDraft });
+  const definitionDefaultStateVisualDraft = createDefinitionDefaultStateVisualDraft(__appScope); Object.assign(__appScope, { definitionDefaultStateVisualDraft });
   const definitionStatePreviewRow = isDefaultStatePageId(definitionStatePageId)
       ? defaultStateDraftRow(definitionStateDraftRows, definitionDefaultStateVisualDraft())
       : activeStateDraftRow(definitionStateDraftRows, definitionStatePageId);
@@ -3191,8 +3191,8 @@ export function useRenderBatch(__appScope: Record<string, any>) {
       </div>
     );
   Object.assign(__appScope, { renderTemplateLibraryPanel });
-  const renderLibraryTemplateButton = __s("renderLibraryTemplateButton", createRenderLibraryTemplateButton); Object.assign(__appScope, { renderLibraryTemplateButton });
-  const renderLibraryFlyout = __s("renderLibraryFlyout", createRenderLibraryFlyout); Object.assign(__appScope, { renderLibraryFlyout });
+  const renderLibraryTemplateButton = createRenderLibraryTemplateButton(__appScope); Object.assign(__appScope, { renderLibraryTemplateButton });
+  const renderLibraryFlyout = createRenderLibraryFlyout(__appScope); Object.assign(__appScope, { renderLibraryFlyout });
   // ── 图元库面板树拖动排序（一级类别库 / 二级类）──────────────────────────────────
   // 顺序覆盖存在 libraryTreeOrder（本机 UI 偏好，localStorage）；未拖动过的项按原始顺序垫底。
   // 拖动身份走 React 状态（libraryTreeDragKey）而非 dataTransfer.getData —— dragover 期间
@@ -3788,12 +3788,12 @@ export function useRenderBatch(__appScope: Record<string, any>) {
       bottom: canvasDisplayOffsetY + (floatingToolbarViewportCanvas.y + floatingToolbarViewportCanvas.height) * canvasScrollScale.y
     };
   Object.assign(__appScope, { floatingToolbarViewport });
-  const clampFloatingToolbarPosition = __s("clampFloatingToolbarPosition", createClampFloatingToolbarPosition); Object.assign(__appScope, { clampFloatingToolbarPosition });
-  const floatingToolbarBounds = __s("floatingToolbarBounds", createFloatingToolbarBounds);
+  const clampFloatingToolbarPosition = createClampFloatingToolbarPosition(__appScope); Object.assign(__appScope, { clampFloatingToolbarPosition });
+  const floatingToolbarBounds = createFloatingToolbarBounds(__appScope);
   Object.assign(__appScope, { floatingToolbarBounds });
-  const toolbarOverlapArea = __s("toolbarOverlapArea", createToolbarOverlapArea); Object.assign(__appScope, { toolbarOverlapArea });
-  const canvasRectToSurfaceCssRect = __s("canvasRectToSurfaceCssRect", createCanvasRectToSurfaceCssRect); Object.assign(__appScope, { canvasRectToSurfaceCssRect });
-  const rotateControlAvoidRectFromCanvasPoints = __s("rotateControlAvoidRectFromCanvasPoints", createRotateControlAvoidRectFromCanvasPoints); Object.assign(__appScope, { rotateControlAvoidRectFromCanvasPoints });
+  const toolbarOverlapArea = createToolbarOverlapArea(__appScope); Object.assign(__appScope, { toolbarOverlapArea });
+  const canvasRectToSurfaceCssRect = createCanvasRectToSurfaceCssRect(__appScope); Object.assign(__appScope, { canvasRectToSurfaceCssRect });
+  const rotateControlAvoidRectFromCanvasPoints = createRotateControlAvoidRectFromCanvasPoints(__appScope); Object.assign(__appScope, { rotateControlAvoidRectFromCanvasPoints });
   const rotateControlAvoidRectFromCanvas = createRotateControlAvoidRectFromCanvas(__appScope);
   Object.assign(__appScope, { rotateControlAvoidRectFromCanvas });
   const selectedRotateControlAvoidRects: RenderViewportBounds[] = [];
@@ -3826,7 +3826,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
         )
       : null;
   Object.assign(__appScope, { selectedFloatingToolbarAvoidRect });
-  const placeFloatingToolbar = __s("placeFloatingToolbar", createPlaceFloatingToolbar); Object.assign(__appScope, { placeFloatingToolbar });
+  const placeFloatingToolbar = createPlaceFloatingToolbar(__appScope); Object.assign(__appScope, { placeFloatingToolbar });
   const nodeFloatingToolbar =
       isEditMode && !selectedToolbarHidden && activeSelectedNodeIds.length > 0 && selectedFloatingToolbarBounds
         ? (() => {

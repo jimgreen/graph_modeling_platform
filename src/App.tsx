@@ -657,6 +657,7 @@ import { imagePickerUsesLibraryTabs, renderAppView } from "./appExtracted/appVie
 import { MemoizedCanvasArea } from "./appExtracted/appCanvasArea";
 import { useAppStateBatch } from "./appExtracted/appStateBatch";
 import { useCanvasViewportBatch } from "./appExtracted/appCanvasViewportBatch";
+import { applyImperativeMarqueeRect } from "./appExtracted/imperativeMarquee";
 import { useRenderBatch } from "./appExtracted/appRenderBatch";
 // 本文件引用了却从未 import 的类型（此前被 @ts-nocheck 全部遮住）：按真实出处补齐，
 // 均为 type-only import，编译期擦除，不新增任何运行时依赖。
@@ -1235,8 +1236,24 @@ const panningRef = useRef<CanvasPanningState>(null); Object.assign(__appScope, {
 const pendingCanvasNoScrollOffsetRef = useRef<Point | null>(null); Object.assign(__appScope, { pendingCanvasNoScrollOffsetRef });
 // 空白处按下的「待清除选中」标记：拖动平移画布时不清选，只有原地单击空白才清空（阈值见 CANVAS_SELECTION_DRAG_THRESHOLD）
 const pendingBlankCanvasDeselectRef = useRef<Point | null>(null); Object.assign(__appScope, { pendingBlankCanvasDeselectRef });
-const [marquee, setMarquee] = useState<Marquee>(null);
-Object.assign(__appScope, { marquee, setMarquee });
+const [marquee, setMarqueeState] = useState<Marquee>(null);
+const marqueeCurrentRef = useRef<Marquee>(null);
+const imperativeMarqueeRectRef = useRef<SVGRectElement | null>(null);
+const setMarquee = useCallback((next: Marquee | ((current: Marquee) => Marquee)) => {
+  if (typeof next === "function") {
+    setMarqueeState((prev) => {
+      const resolved = next(marqueeCurrentRef.current ?? prev);
+      marqueeCurrentRef.current = resolved;
+      applyImperativeMarqueeRect(imperativeMarqueeRectRef.current, resolved);
+      return resolved;
+    });
+    return;
+  }
+  marqueeCurrentRef.current = next;
+  applyImperativeMarqueeRect(imperativeMarqueeRectRef.current, next);
+  setMarqueeState(next);
+}, []);
+Object.assign(__appScope, { marquee, setMarquee, marqueeCurrentRef, imperativeMarqueeRectRef });
 const [contextMarqueeSelection, setContextMarqueeSelectionState] = useState<ContextMarqueeSelectionState>(null);
 Object.assign(__appScope, { contextMarqueeSelection, setContextMarqueeSelectionState });
 const contextMarqueeSelectionRef = useRef<ContextMarqueeSelectionState>(null); Object.assign(__appScope, { contextMarqueeSelectionRef });

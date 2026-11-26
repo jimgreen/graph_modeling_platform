@@ -1018,6 +1018,7 @@ export function useCanvasViewportBatch(__appScope: Record<string, any>) {
   const pendingWheelZoomAnchorRef = useRef<WheelZoomAnchor | null>(null); Object.assign(__appScope, { pendingWheelZoomAnchorRef });
   const pendingWheelZoomRequestRef = useRef<PendingWheelZoomRequest | null>(null); Object.assign(__appScope, { pendingWheelZoomRequestRef });
   const wheelZoomFrameRef = useRef<number | null>(null); Object.assign(__appScope, { wheelZoomFrameRef });
+  const wheelZoomCommitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null); Object.assign(__appScope, { wheelZoomCommitTimerRef });
   const pendingCanvasResizeCommitAnchorRef = useRef<CanvasResizeCommitAnchor | null>(null); Object.assign(__appScope, { pendingCanvasResizeCommitAnchorRef });
   canvasBoundsRef.current = canvasBounds;
   canvasFullViewBoxRef.current = canvasFullViewBox;

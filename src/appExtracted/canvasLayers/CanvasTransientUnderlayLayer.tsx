@@ -18,6 +18,7 @@ export const CanvasTransientUnderlayLayer = memo(function CanvasTransientUnderla
 }: CanvasScopeLayerProps) {
   const {
     marquee,
+    imperativeMarqueeRectRef,
     renderLibraryPlacementPreview,
     renderInteractiveStaticDrawingPreview,
     smartAlignmentGuides,
@@ -27,15 +28,15 @@ export const CanvasTransientUnderlayLayer = memo(function CanvasTransientUnderla
 
   return (
     <>
-      {marquee && (
-        <rect
-          className="marquee-box"
-          x={Math.min(marquee.start.x, marquee.current.x)}
-          y={Math.min(marquee.start.y, marquee.current.y)}
-          width={Math.abs(marquee.current.x - marquee.start.x)}
-          height={Math.abs(marquee.current.y - marquee.start.y)}
-        />
-      )}
+      <rect
+        ref={imperativeMarqueeRectRef}
+        className="marquee-box"
+        x={marquee ? Math.min(marquee.start.x, marquee.current.x) : 0}
+        y={marquee ? Math.min(marquee.start.y, marquee.current.y) : 0}
+        width={marquee ? Math.abs(marquee.current.x - marquee.start.x) : 0}
+        height={marquee ? Math.abs(marquee.current.y - marquee.start.y) : 0}
+        style={{ display: marquee ? undefined : "none" }}
+      />
       {renderLibraryPlacementPreview()}
       {renderInteractiveStaticDrawingPreview()}
       {smartAlignmentGuides.map((guide: SmartAlignmentGuide) => (
