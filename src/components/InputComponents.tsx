@@ -1,7 +1,7 @@
 // 缓冲输入组件 — 延迟提交的表单输入控件
 
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type ReactNode } from "react";
-import { ColorPicker, Input, Select, Button } from "antd";
+import { ColorPicker, Input, Select, Button, type ColorPickerProps } from "antd";
 
 const { TextArea } = Input;
 
@@ -42,7 +42,10 @@ export function DeferredColorInput({
   const transparent = isTransparentColorValue(value);
   const normalizedCommittedValue = transparent ? TRANSPARENT_COLOR_VALUE : normalizedValue;
   const [draft, setDraft] = useState(normalizedValue);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerColor, setPickerColor] = useState<ColorPickerProps["value"]>(normalizedValue);
   const draftRef = useRef(normalizedValue);
+  const pickerColorRef = useRef<ColorPickerProps["value"]>(normalizedValue);
   const committedRef = useRef(normalizedCommittedValue);
   const onCommitRef = useRef(onCommit);
   const previousColorRef = useRef<string | null>(null);
@@ -88,6 +91,41 @@ export function DeferredColorInput({
     }
   };
 
+  /** 弹窗内拖动/选色仅更新本地高精度草稿，不触发外部提交与画布重绘。 */
+  const handlePickerDraftChange = (color: ColorPickerProps["value"]) => {
+    if (disabled) {
+      return;
+    }
+    pickerColorRef.current = color;
+    setPickerColor(color);
+  };
+
+  const handlePickerOpenChange = (nextOpen: boolean) => {
+    if (disabled && nextOpen) {
+      return;
+    }
+    if (nextOpen) {
+      pickerColorRef.current = draftRef.current;
+      setPickerColor(draftRef.current);
+      setPickerOpen(true);
+    } else {
+      pickerColorRef.current = draftRef.current;
+      setPickerColor(draftRef.current);
+      setPickerOpen(false);
+    }
+  };
+
+  const handlePickerCancel = () => {
+    pickerColorRef.current = draftRef.current;
+    setPickerColor(draftRef.current);
+    setPickerOpen(false);
+  };
+
+  const handlePickerConfirm = () => {
+    handleColorChange(pickerColorRef.current);
+    setPickerOpen(false);
+  };
+
   useEffect(() => {
     onCommitRef.current = onCommit;
   }, [onCommit]);
@@ -96,20 +134,48 @@ export function DeferredColorInput({
     committedRef.current = normalizedCommittedValue;
     draftRef.current = normalizedValue;
     setDraft(normalizedValue);
-  }, [normalizedCommittedValue, normalizedValue]);
+    if (!pickerOpen) {
+      pickerColorRef.current = normalizedValue;
+      setPickerColor(normalizedValue);
+    }
+  }, [normalizedCommittedValue, normalizedValue, pickerOpen]);
 
   return (
     <span
-      className={`deferred-color-input ${transparent ? "transparent" : ""} ${disabled ? "disabled" : ""} ${modified ? "modified" : ""}`}
+      className={`deferred-color-input ${transparent ? "transparent" : ""} ${disabled ? "disabled" : ""} ${modified ? "modified" : ""} ${pickerOpen ? "picker-open" : ""}`}
       data-modified={modified ? "true" : undefined}
+      style={{ "--deferred-committed-color": draft } as CSSProperties}
     >
       <ColorPicker
-        value={draft}
+        value={pickerOpen ? pickerColor : draft}
+        open={pickerOpen}
         disabled={disabled}
+        disabledAlpha
         className={className}
         aria-label={ariaLabel}
-        onChange={(color) => handleColorChange(color)}
-        onChangeComplete={(color) => handleColorChange(color)}
+        onOpenChange={handlePickerOpenChange}
+        onChange={handlePickerDraftChange}
+        panelRender={(panel) => (
+          <div className="deferred-color-picker-panel">
+            {panel}
+            <div className="deferred-color-picker-footer">
+              <button
+                type="button"
+                className="deferred-color-picker-cancel"
+                onClick={handlePickerCancel}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className="deferred-color-picker-confirm"
+                onClick={handlePickerConfirm}
+              >
+                确认
+              </button>
+            </div>
+          </div>
+        )}
       />
       <button
         type="button"
@@ -387,6 +453,7 @@ export function InlineEditableValue({
         className={`${sharedClassName} editor`}
         value={normalizedValue}
         open={selectOpen}
+        popupMatchSelectWidth={false}
         autoFocus
         title={title}
         aria-label={ariaLabel}

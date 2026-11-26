@@ -1302,13 +1302,17 @@ const [leftPanelMode, setLeftPanelMode] = useState<SidePanelMode>(() => readSide
 Object.assign(__appScope, { leftPanelMode, setLeftPanelMode });
 const [rightPanelMode, setRightPanelMode] = useState<SidePanelMode>(() => readSidePanelMode(RIGHT_PANEL_MODE_STORAGE_KEY));
 Object.assign(__appScope, { rightPanelMode, setRightPanelMode });
-const [leftPanelWidth, setLeftPanelWidth] = useState(() =>
-    readStoredPanelDimension(LEFT_PANEL_WIDTH_STORAGE_KEY, LEFT_PANEL_DEFAULT_WIDTH, SIDE_PANEL_MIN_WIDTH, SIDE_PANEL_MAX_WIDTH)
-  );
+const [leftPanelWidth, setLeftPanelWidth] = useState(() => {
+    const stored = readStoredPanelDimension(LEFT_PANEL_WIDTH_STORAGE_KEY, LEFT_PANEL_DEFAULT_WIDTH, SIDE_PANEL_MIN_WIDTH, SIDE_PANEL_MAX_WIDTH);
+    // 兼容历次默认值（288/244/208）：未手工改宽过的旧缓存自动迁移到新紧凑默认宽，手工拖宽过的数值原样保留
+    return stored === 288 || stored === 244 || stored === 208 ? LEFT_PANEL_DEFAULT_WIDTH : stored;
+  });
 Object.assign(__appScope, { leftPanelWidth, setLeftPanelWidth });
-const [rightPanelWidth, setRightPanelWidth] = useState(() =>
-    readStoredPanelDimension(RIGHT_PANEL_WIDTH_STORAGE_KEY, RIGHT_PANEL_DEFAULT_WIDTH, SIDE_PANEL_MIN_WIDTH, SIDE_PANEL_MAX_WIDTH)
-  );
+const [rightPanelWidth, setRightPanelWidth] = useState(() => {
+    const stored = readStoredPanelDimension(RIGHT_PANEL_WIDTH_STORAGE_KEY, RIGHT_PANEL_DEFAULT_WIDTH, SIDE_PANEL_MIN_WIDTH, SIDE_PANEL_MAX_WIDTH);
+    // 兼容历次默认值（320/264/228）：未手工改宽过的旧缓存自动迁移到新紧凑默认宽，手工拖宽过的数值原样保留
+    return stored === 320 || stored === 264 || stored === 228 ? RIGHT_PANEL_DEFAULT_WIDTH : stored;
+  });
 Object.assign(__appScope, { rightPanelWidth, setRightPanelWidth });
 const [statusbarHeight, setStatusbarHeight] = useState(() =>
     readStoredPanelDimension(STATUSBAR_HEIGHT_STORAGE_KEY, STATUSBAR_DEFAULT_HEIGHT, STATUSBAR_MIN_HEIGHT, STATUSBAR_MAX_HEIGHT)

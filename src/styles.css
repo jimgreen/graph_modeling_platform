@@ -60,14 +60,57 @@ button:not(.ant-btn):disabled {
 }
 
 .ant-select-dropdown {
-  font-size: 14px;
-  max-width: 60vw;
+  font-size: 11.5px !important;
+  width: auto !important;
+  max-width: min(360px, 60vw);
+  padding: 3px !important;
+}
+
+.ant-select-dropdown .ant-select-item {
+  min-height: 24px !important;
+  padding: 3px 8px !important;
+  font-size: 11.5px !important;
+  line-height: 18px !important;
+}
+
+.ant-select-dropdown .ant-select-item-group {
+  min-height: 22px !important;
+  padding: 2px 8px !important;
+  font-size: 11px !important;
+  line-height: 18px !important;
 }
 
 .ant-select-dropdown .ant-select-item-option-content {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 11.5px !important;
+  line-height: 18px !important;
+}
+
+.ant-dropdown .ant-dropdown-menu {
+  padding: 3px !important;
+}
+
+.ant-dropdown .ant-dropdown-menu .ant-dropdown-menu-item,
+.ant-dropdown .ant-dropdown-menu .ant-dropdown-menu-submenu-title {
+  padding: 3px 8px !important;
+  font-size: 11.5px !important;
+  line-height: 18px !important;
+}
+
+.ant-cascader-dropdown .ant-cascader-menu-item {
+  padding: 3px 8px !important;
+  font-size: 11.5px !important;
+  line-height: 18px !important;
+}
+
+.ant-popover .ant-popover-title {
+  font-size: 12px !important;
+}
+
+.ant-popover .ant-popover-inner-content {
+  font-size: 11.5px !important;
 }
 
 .ant-input-number {
@@ -84,13 +127,27 @@ button:not(.ant-btn):disabled {
   border-radius: 8px;
 }
 
+.ant-modal .ant-modal-title {
+  font-size: 14px !important;
+  line-height: 1.35 !important;
+}
+
+.ant-modal .ant-modal-body {
+  font-size: 12px !important;
+}
+
+.ant-modal .ant-modal-footer .ant-btn {
+  font-size: 12px !important;
+}
+
 .space-bootstrap-error {
   margin-bottom: 16px;
 }
 
 .ant-message-notice-content {
   border-radius: 6px;
-  padding: 8px 16px;
+  padding: 6px 12px;
+  font-size: 12px;
 }
 
 .app-shell {
@@ -100,8 +157,8 @@ button:not(.ant-btn):disabled {
   height: 100%;
   min-height: 720px;
   overflow: hidden;
-  --left-panel-width: 288px;
-  --right-panel-width: 320px;
+  --left-panel-width: 204px;
+  --right-panel-width: 224px;
   --statusbar-height: 36px;
 }
 
@@ -129,7 +186,7 @@ button:not(.ant-btn):disabled {
   flex-direction: column;
   min-height: 0;
   width: var(--right-panel-width);
-  padding: 20px;
+  padding: 8px 10px;
   overflow: hidden;
 }
 
@@ -215,8 +272,8 @@ button:not(.ant-btn):disabled {
 }
 
 .library-panel.floating-side-panel {
-  left: 12px;
-  transform: translateX(calc(-100% - 24px));
+  left: 6px;
+  transform: translateX(calc(-100% - 16px));
 }
 
 .library-panel.floating-side-panel.visible {
@@ -226,8 +283,8 @@ button:not(.ant-btn):disabled {
 }
 
 .inspector-panel.floating-side-panel {
-  right: 12px;
-  transform: translateX(calc(100% + 24px));
+  right: 6px;
+  transform: translateX(calc(100% + 16px));
 }
 
 .inspector-panel.floating-side-panel.visible {
@@ -243,21 +300,21 @@ button:not(.ant-btn):disabled {
 
 .side-panel-mode-controls {
   display: inline-grid;
-  grid-template-columns: repeat(3, 32px);
-  gap: 6px;
+  grid-template-columns: repeat(3, 28px);
+  gap: 5px;
   align-items: center;
 }
 
 .library-panel > .side-panel-mode-controls {
-  margin: 16px 18px 12px;
+  margin: 8px 8px 8px;
 }
 
 .side-panel-mode-controls button {
   display: grid;
   place-items: center;
-  min-height: 32px;
+  min-height: 28px;
   border: 1px solid #cbd5e1;
-  border-radius: 8px;
+  border-radius: 6px;
   color: #475569;
   background: #ffffff;
   transition:
@@ -567,7 +624,7 @@ button:not(.ant-btn):disabled {
 
 .project-model-type-filter {
   display: flex;
-  gap: 4px;
+  gap: 3px;
   min-inline-size: 0;
   justify-content: space-between;
   margin: 0 0 8px;
@@ -578,12 +635,12 @@ button:not(.ant-btn):disabled {
   min-width: 0;
   min-inline-size: 0;
   inline-size: auto;
-  padding: 2px 2px;
+  padding: 2px 1px;
   border: 1px solid var(--model-type-color, #94a3b8);
   border-radius: 4px;
   background: #ffffff;
   color: var(--model-type-color, #94a3b8);
-  font-size: 13px;
+  font-size: 10.5px;
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
@@ -601,7 +658,7 @@ button:not(.ant-btn):disabled {
   color: #ffffff;
 }
 
-@container project-panel (inline-size <= 220px) {
+@container project-panel (inline-size <= 176px) {
   .project-model-type-filter {
     gap: 6px;
     justify-content: space-between;
@@ -626,8 +683,8 @@ button:not(.ant-btn):disabled {
 .left-panel-tabs {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-  padding: 0 18px 12px;
+  gap: 4px;
+  padding: 0 8px 8px;
 }
 
 .left-panel-embedded-content {
@@ -650,12 +707,13 @@ button:not(.ant-btn):disabled {
 }
 
 .left-panel-tabs button {
-  min-height: 34px;
+  min-height: 28px;
   border: 1px solid #cbd5e1;
-  border-radius: 8px;
+  border-radius: 6px;
   color: #334155;
   background: #ffffff;
-  font-size: 13px;
+  font-size: 11.5px;
+  padding: 0 2px;
 }
 
 .left-panel-tabs button:hover,
@@ -857,7 +915,7 @@ button:not(.ant-btn):disabled {
   flex: 1 1 auto;
   flex-direction: column;
   min-height: 0;
-  padding: 10px 10px;
+  padding: 6px 5px;
   border-top: 1px solid #e2e8f0;
   border-bottom: 0;
   container: project-panel / inline-size;
@@ -932,7 +990,7 @@ button:not(.ant-btn):disabled {
   padding: 2px 0 8px;
   color: #0f172a;
   background: transparent;
-  font-size: 12.5px;
+  font-size: 11.5px;
 }
 
 .project-tree-antd .ant-tree-list,
@@ -943,28 +1001,47 @@ button:not(.ant-btn):disabled {
 
 .project-tree-antd.ant-tree .ant-tree-treenode {
   width: 100%;
-  min-height: 32px;
+  min-height: 24px;
   padding: 0;
   align-items: center;
 }
 
 .project-tree-antd .ant-tree-indent-unit {
-  width: 16px;
+  width: 10px;
+}
+
+.project-tree-antd .ant-tree-indent-unit::before {
+  inset-inline-end: 5px;
+  border-color: #d7dee8;
 }
 
 .project-tree-antd .ant-tree-switcher {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex: 0 0 22px;
-  width: 22px;
-  height: 32px;
+  flex: 0 0 14px;
+  width: 14px;
+  height: 24px;
+  line-height: 24px;
   margin: 0;
   color: #64748b;
 }
 
-.project-tree-antd .ant-tree-switcher-leaf-line::before,
+/* 叶子节点（模型行）无展开箭头，收紧 noop 占位并对齐连接线至 24px 行高中心 */
+.project-tree-antd .ant-tree-switcher-noop {
+  flex: 0 0 10px;
+  width: 10px;
+}
+
+.project-tree-antd .ant-tree-switcher-leaf-line::before {
+  right: 5px;
+  inset-inline-end: 5px;
+  border-color: #d7dee8;
+}
+
 .project-tree-antd .ant-tree-switcher-leaf-line::after {
+  width: 5px;
+  height: 12px;
   border-color: #d7dee8;
 }
 
@@ -973,8 +1050,8 @@ button:not(.ant-btn):disabled {
   align-items: center;
   flex: 1 1 auto;
   min-width: 0;
-  min-height: 32px;
-  padding: 0 8px 0 4px;
+  min-height: 24px;
+  padding: 0 4px 0 2px;
   border-radius: 0;
   color: inherit;
   background: transparent;
@@ -1001,12 +1078,21 @@ button:not(.ant-btn):disabled {
   min-width: 0;
 }
 
-/* 只修正原生 holder 的布局位置，保留 Ant Design 自己的尺寸、颜色和图标。 */
+/* 紧凑化 Ant Design 拖动手柄宽度（默认 24px 过宽），保留拖拽排序体验 */
 .project-tree-antd .ant-tree-draggable-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex: 0 0 12px;
+  width: 12px;
+  min-width: 12px;
+  font-size: 11px;
   line-height: 1;
+  opacity: 0.45;
+}
+
+.project-tree-antd .ant-tree-treenode:hover .ant-tree-draggable-icon {
+  opacity: 0.85;
 }
 
 .project-tree-antd .project-tree-node-title {
@@ -1014,8 +1100,8 @@ button:not(.ant-btn):disabled {
   align-items: center;
   width: 100%;
   min-width: 0;
-  min-height: 32px;
-  gap: 8px;
+  min-height: 24px;
+  gap: 4px;
   user-select: none;
 }
 
@@ -1052,7 +1138,9 @@ button:not(.ant-btn):disabled {
 .project-tree-antd .project-model-type-tag {
   position: static;
   flex: 0 0 auto;
-  margin-left: 6px;
+  margin-left: 3px;
+  padding: 0 5px;
+  line-height: 16px;
 }
 
 .project-tree-antd .ant-tree-treenode-disabled > .ant-tree-node-content-wrapper {
@@ -1219,33 +1307,33 @@ button:not(.ant-btn):disabled {
 .project-tree-name {
   flex: 1 1 auto;
   min-width: 0;
-  max-width: calc(100% - var(--scheme-depth, 0) * 16px);
+  max-width: calc(100% - var(--scheme-depth, 0) * 14px);
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12.5px;
+  font-size: 11.5px;
   font-weight: 700;
 }
 
 .scheme-option .project-tree-name {
   color: #0f172a;
-  font-size: 13.5px;
-  font-weight: 850;
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .scheme-model-count {
   margin-left: auto;
   flex-shrink: 0;
-  min-width: 20px;
-  height: 20px;
-  padding: 0 6px;
-  border-radius: 10px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
   background: #e2e8f0;
   color: #475569;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
-  line-height: 20px;
+  line-height: 18px;
   text-align: center;
 }
 
@@ -1261,12 +1349,12 @@ button:not(.ant-btn):disabled {
 
 .project-model-type-tag {
   position: absolute;
-  right: 5px;
+  right: 4px;
   margin-left: auto;
-  padding: 1px 8px;
-  border-radius: 10px;
+  padding: 1px 6px;
+  border-radius: 9px;
   color: #ffffff;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   white-space: nowrap;
   flex-shrink: 0;
@@ -1455,15 +1543,15 @@ button:not(.ant-btn):disabled {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
   width: 100%;
-  min-height: 38px;
+  min-height: 32px;
   border: 0;
-  padding: 4px 6px;
-  border-radius: 7px;
+  padding: 3px 5px;
+  border-radius: 6px;
   color: #475569;
   background: #f8fafc;
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 800;
   text-align: left;
   cursor: pointer;
@@ -1502,23 +1590,23 @@ button:not(.ant-btn):disabled {
 
 .component-library-name-cn {
   color: inherit;
-  font-size: 12px;
-  font-weight: 850;
+  font-size: 11.5px;
+  font-weight: 800;
 }
 
 .component-library-name-en {
   color: #64748b;
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 700;
 }
 
 .category-library-component-library-header strong {
-  min-width: 22px;
-  padding: 1px 6px;
+  min-width: 20px;
+  padding: 1px 5px;
   border-radius: 999px;
   color: #475569;
   background: #e2e8f0;
-  font-size: 11px;
+  font-size: 10px;
   text-align: center;
 }
 
@@ -1554,15 +1642,15 @@ button:not(.ant-btn):disabled {
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  gap: 7px;
+  gap: 6px;
   width: 100%;
-  min-height: 34px;
-  margin-top: 10px;
+  min-height: 30px;
+  margin-top: 8px;
   border: 1px solid #cbd5e1;
-  border-radius: 8px;
+  border-radius: 7px;
   color: #334155;
   background: #ffffff;
-  font-size: 13px;
+  font-size: 11.5px;
   font-weight: 800;
 }
 
@@ -4164,7 +4252,7 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 
 .form-stack {
   display: grid;
-  gap: 12px;
+  gap: 6px;
   align-content: start;
   flex: 1 1 auto;
   min-height: 0;
@@ -4184,14 +4272,18 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .graph-info-toolbar {
+  position: sticky;
+  top: 33px;
+  z-index: 5;
   display: flex;
   gap: 3px;
   align-items: center;
-  padding: 0 0 8px 12px;
+  padding: 3px 0 6px 8px;
+  background: #ffffff;
 }
 
 .graph-info-toolbar button {
@@ -4204,7 +4296,7 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   padding: 0 8px;
   color: #334155;
   background: #f8fafc;
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 600;
   line-height: 1;
   white-space: nowrap;
@@ -4239,10 +4331,19 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 }
 
 .device-info-tabs {
+  position: sticky;
+  top: 33px;
+  z-index: 5;
   display: flex;
   gap: 3px;
   align-items: center;
-  padding: 0 0 8px 12px;
+  padding: 3px 0 6px 8px;
+  background: #ffffff;
+}
+
+.embedded-inspector-panel .graph-info-toolbar,
+.embedded-inspector-panel .device-info-tabs {
+  top: 0;
 }
 
 .device-info-tabs button {
@@ -4255,7 +4356,7 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   padding: 0 8px;
   color: #334155;
   background: #f8fafc;
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 600;
   line-height: 1;
   white-space: nowrap;
@@ -4424,11 +4525,12 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 
 .context-menu button {
   justify-content: flex-start;
-  min-height: 30px;
-  padding: 0 9px;
+  min-height: 26px;
+  padding: 0 8px;
   border: 0;
   border-radius: 6px;
   background: transparent;
+  font-size: 11.5px;
   transition:
     background-color 120ms ease,
     color 120ms ease,
@@ -5148,7 +5250,7 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 /* 配置门控层包住模式按钮后，复现原本直接子元素选择器提供的间距。 */
 .library-panel > [data-ui-content="module.leftPanel.modeControls"] {
   flex: 0 0 auto;
-  margin: 16px 18px 12px;
+  margin: 8px 8px 8px;
 }
 
 .interface-customization-intro {
@@ -11558,18 +11660,18 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 
 .deferred-color-input.modified {
   border-radius: 5px;
-  background: #fff7ed;
-  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.35), inset 0 0 0 1px #f59e0b;
+  background: #f0f9ff;
+  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.55);
 }
 
 .deferred-color-input.modified .ant-color-picker-trigger {
-  box-shadow: 0 0 0 2px rgba(234, 88, 12, 0.24) !important;
+  box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.35) !important;
 }
 
 .deferred-color-input.modified .deferred-color-transparent-button {
-  border-color: #f59e0b !important;
-  color: #9a3412 !important;
-  background: #ffedd5 !important;
+  border-color: #7dd3fc !important;
+  color: #0369a1 !important;
+  background: #e0f2fe !important;
 }
 
 .deferred-color-input input[type="color"] {
@@ -11593,6 +11695,59 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 
 .deferred-color-input.transparent input[type="color"] {
   opacity: 0.55 !important;
+}
+
+/* 取色弹窗打开且未点击「确认」前，保持外部控件色块显示已提交颜色 */
+.deferred-color-input.picker-open .ant-color-picker-color-block-inner {
+  background: var(--deferred-committed-color) !important;
+}
+
+.deferred-color-picker-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.deferred-color-picker-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.deferred-color-picker-footer button {
+  min-height: 24px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 4px;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.deferred-color-picker-cancel {
+  border: 1px solid #cbd5e1;
+  color: #334155;
+  background: #ffffff;
+}
+
+.deferred-color-picker-cancel:hover {
+  border-color: #94a3b8;
+  background: #f8fafc;
+}
+
+.deferred-color-picker-confirm {
+  border: 1px solid #2563eb;
+  color: #ffffff;
+  background: #2563eb;
+}
+
+.deferred-color-picker-confirm:hover {
+  border-color: #1d4ed8;
+  background: #1d4ed8;
 }
 
 .deferred-color-transparent-button,
@@ -12533,18 +12688,20 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   z-index: 6;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-  padding: 0 0 8px;
+  gap: 4px;
+  padding: 0 0 6px;
   background: #ffffff;
 }
 
 .inspector-tabs button {
-  min-height: 34px;
+  height: 28px;
+  min-height: 28px;
   border: 1px solid #cbd5e1;
-  border-radius: 8px;
+  border-radius: 6px;
   color: #334155;
   background: #ffffff;
-  font-size: 13px;
+  font-size: 11.5px;
+  padding: 0 2px;
 }
 
 .inspector-tabs button.active {
@@ -12555,7 +12712,7 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 }
 
 .element-tree {
-  --element-tree-indent: 14px;
+  --element-tree-indent: 10px;
   --element-tree-guide: #d8dee8;
   --element-tree-row-hover: #f5f7fa;
   --element-tree-selected-bg: #eff6ff;
@@ -12632,13 +12789,13 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  min-height: 30px;
+  min-height: 26px;
   border: 0;
-  padding: 0 7px;
-  border-radius: 6px;
+  padding: 0 5px;
+  border-radius: 5px;
   color: #0f172a;
   background: transparent;
-  font-size: 13px;
+  font-size: 11.5px;
   font-weight: 800;
   text-align: left;
 }
@@ -12691,21 +12848,21 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 }
 
 .element-tree-type .element-tree-bilingual > span {
-  font-size: 13px;
-  font-weight: 880;
+  font-size: 11.5px;
+  font-weight: 800;
 }
 
 .element-tree-type .element-tree-bilingual small {
-  font-size: 10.5px;
+  font-size: 9.5px;
 }
 
 .element-tree-device-type .element-tree-bilingual > span {
-  font-size: 12px;
-  font-weight: 820;
+  font-size: 11px;
+  font-weight: 780;
 }
 
 .element-tree-device-type .element-tree-bilingual small {
-  font-size: 9.5px;
+  font-size: 9px;
 }
 
 .element-tree-type strong,
@@ -13076,8 +13233,8 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 }
 
 .param-table {
-  --param-table-row-height: 40px;
-  --param-table-control-height: 24px;
+  --param-table-row-height: 32px;
+  --param-table-control-height: 22px;
   width: 100%;
   border-collapse: collapse;
   border: 1px solid #e2e8f0;
@@ -13235,22 +13392,22 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 .param-table td {
   height: var(--param-table-row-height);
   border-bottom: 1px solid #e2e8f0;
-  padding: 3px 7px;
+  padding: 2px 5px;
   vertical-align: middle;
   box-sizing: border-box;
 }
 
 .param-table th {
-  width: 42%;
+  width: 39%;
   background: #f8fafc;
   text-align: left;
   font-weight: 700;
-  font-size: 14px;
+  font-size: 11.5px;
   color: black;
 }
 
 .selected-node-measurement-table th {
-  width: 80px;
+  width: 72px;
 }
 
 .selected-node-measurement-table select,
@@ -13258,13 +13415,14 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 .selected-node-measurement-table input[type="text"] {
   border: 1px solid #cbd5e1;
   border-radius: 4px;
-  padding: 2px 6px;
+  padding: 2px 5px;
+  font-size: 11.5px;
 }
 
 .param-header-bilingual {
   display: grid;
   min-width: 0;
-  line-height: 1.15;
+  line-height: 1.12;
 }
 
 .param-header-bilingual > span,
@@ -13274,20 +13432,32 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 14px;
+  font-size: 11.5px;
   color: black;
 }
 
 .param-header-bilingual small {
-  margin-top: 2px;
+  margin-top: 1px;
   color: #64748b;
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 700;
 }
 
 .param-table td {
   background: #ffffff;
-  font-size: 14px;
+  font-size: 11.5px;
+}
+
+.inspector-panel .param-table td :is(button, input, select, .ant-select, .ant-select-selection-item, .ant-select-selection-placeholder, .ant-input, .ant-input-number-input) {
+  font-size: 11.5px;
+}
+
+.inspector-panel .inline-property-value.editor.ant-select .ant-select-selector {
+  padding: 0 4px !important;
+}
+
+.library-panel .project-search :is(input, .ant-input) {
+  font-size: 11.5px;
 }
 
 /* 属性值默认以无边框文本呈现，点击后才切换到同样无边框的编辑控件。 */
@@ -13300,7 +13470,7 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   box-sizing: border-box;
   border: 0 !important;
   border-radius: 0;
-  padding: 0 7px;
+  padding: 0 5px;
   overflow: hidden;
   background: transparent !important;
   color: #0f172a;
@@ -13407,16 +13577,16 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 }
 
 .param-table .inline-property-value.modified {
-  background: #fff7ed !important;
-  color: #9a3412;
-  box-shadow: inset 3px 0 0 #f59e0b !important;
-  font-weight: 650;
+  background: #f0f9ff !important;
+  color: #0f172a;
+  box-shadow: inset 2px 0 0 #38bdf8 !important;
+  font-weight: 600;
 }
 
 .param-table button.inline-property-value.modified:hover,
 .param-table button.inline-property-value.modified:focus-visible {
-  background: #ffedd5 !important;
-  color: #7c2d12;
+  background: #e0f2fe !important;
+  color: #0f172a;
 }
 
 .param-table .inline-property-value.modified.editor,
@@ -13424,23 +13594,23 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 .param-table .inline-property-value.modified.editor.ant-input-affix-wrapper,
 .param-table .inline-property-value.modified.editor.ant-input-number,
 .param-table .inline-property-value.modified.editor.ant-select .ant-select-selector {
-  background: #ffedd5 !important;
-  color: #9a3412;
-  box-shadow: inset 3px 0 0 #f59e0b, inset 0 -2px 0 #f97316 !important;
+  background: #e0f2fe !important;
+  color: #0f172a;
+  box-shadow: inset 2px 0 0 #38bdf8, inset 0 -1.5px 0 #0284c7 !important;
 }
 
 .param-table .inline-property-value.modified.editor:focus,
 .param-table .inline-property-value.modified.editor:focus-visible,
 .param-table .inline-property-value.modified.editor.ant-select-focused {
-  background: #fed7aa !important;
-  color: #7c2d12;
-  box-shadow: inset 3px 0 0 #ea580c, inset 0 -2px 0 #ea580c, 0 0 0 2px rgba(234, 88, 12, 0.2) !important;
+  background: #e0f2fe !important;
+  color: #0f172a;
+  box-shadow: inset 2px 0 0 #2563eb, inset 0 -1.5px 0 #2563eb, 0 0 0 2px rgba(37, 99, 235, 0.16) !important;
 }
 
 .param-table .inline-property-value.modified.editor.ant-select.ant-select-focused .ant-select-selector {
-  background: #fed7aa !important;
-  color: #7c2d12;
-  box-shadow: inset 3px 0 0 #ea580c, inset 0 -2px 0 #ea580c, 0 0 0 2px rgba(234, 88, 12, 0.2) !important;
+  background: #e0f2fe !important;
+  color: #0f172a;
+  box-shadow: inset 2px 0 0 #2563eb, inset 0 -1.5px 0 #2563eb, 0 0 0 2px rgba(37, 99, 235, 0.16) !important;
 }
 
 .param-table td > .ant-select {
@@ -13734,15 +13904,15 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 
 .param-table button.visibility-toggle-button.modified,
 .param-table button.visibility-delete-button.modified {
-  color: #c2410c;
-  background: #ffedd5;
-  box-shadow: inset 3px 0 0 #f59e0b;
+  color: #0369a1;
+  background: #f0f9ff;
+  box-shadow: inset 2px 0 0 #38bdf8;
 }
 
 .param-table button.visibility-toggle-button.modified:hover:not(:disabled),
 .param-table button.visibility-delete-button.modified:hover:not(:disabled) {
-  color: #9a3412;
-  background: #fed7aa;
+  color: #075985;
+  background: #e0f2fe;
 }
 
 .param-table button.visibility-toggle-button svg,
@@ -14564,12 +14734,12 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 
 .measurement-config-dialog {
   position: relative;
-  width: min(980px, calc(100vw - 48px));
-  max-height: calc(100vh - 64px);
+  width: min(940px, calc(100vw - 48px));
+  max-height: min(540px, calc(100vh - 136px));
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
-  gap: 10px;
-  padding: 16px;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 6px;
+  padding: 10px 14px;
   border: 1px solid rgba(148, 163, 184, 0.54);
   border-radius: 8px;
   background: #ffffff;
@@ -14581,18 +14751,18 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
 }
 
 .measurement-config-dialog h2 {
-  margin: 0 0 4px;
-  font-size: 16px;
+  margin: 0 0 2px;
+  font-size: 14px;
 }
 
 .measurement-config-dialog p {
   margin: 0;
   color: #64748b;
-  font-size: 12px;
+  font-size: 11.5px;
 }
 
 .measurement-editor-dialog {
@@ -14796,46 +14966,47 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 .measurement-config-panel {
   min-height: 0;
   display: grid;
-  gap: 10px;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 6px;
 }
 
 .measurement-group-defaults {
   display: grid;
-  grid-template-columns: minmax(190px, 0.75fr) minmax(0, 2.25fr);
-  gap: 16px;
-  align-items: end;
-  padding: 10px 0;
+  grid-template-columns: minmax(176px, 0.72fr) minmax(0, 2.28fr);
+  gap: 10px;
+  align-items: center;
+  padding: 6px 0;
   border-top: 1px solid #e2e8f0;
   border-bottom: 1px solid #e2e8f0;
 }
 
 .measurement-group-defaults-heading {
   display: grid;
-  gap: 4px;
+  gap: 2px;
   align-self: center;
 }
 
 .measurement-group-defaults-heading strong {
-  font-size: 13px;
+  font-size: 12px;
   color: #1e293b;
 }
 
 .measurement-group-defaults-heading span {
   font-size: 11px;
-  line-height: 1.45;
+  line-height: 1.3;
   color: #64748b;
 }
 
 .measurement-group-defaults-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(118px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(4, minmax(110px, 1fr));
+  gap: 8px;
   min-width: 0;
 }
 
 .measurement-group-defaults-grid label {
   display: grid;
-  gap: 5px;
+  gap: 2px;
   min-width: 0;
 }
 
@@ -14849,6 +15020,10 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 .measurement-group-defaults-grid select {
   width: 100%;
   min-width: 0;
+}
+
+.measurement-group-defaults-grid :is(.ant-input, .ant-input-number, .ant-input-number-input, .ant-select, .ant-select-selector, .ant-select-selection-item) {
+  font-size: 11.5px;
 }
 
 @media (max-width: 900px) {
@@ -14866,16 +15041,16 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
-  padding-top: 8px;
+  gap: 6px;
+  padding-top: 6px;
   border-top: 1px solid rgba(226, 232, 240, 0.9);
 }
 
 .measurement-config-actions button {
-  min-height: 28px;
+  min-height: 24px;
   border-radius: 5px;
-  padding: 3px 10px;
-  font-size: 12px;
+  padding: 2px 10px;
+  font-size: 11.5px;
 }
 
 .measurement-config-actions button.primary {
@@ -14895,7 +15070,7 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 .measurement-config-status {
   margin-right: auto;
   color: #64748b;
-  font-size: 12px;
+  font-size: 11.5px;
 }
 
 .measurement-config-status.error {
@@ -14912,12 +15087,12 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 .measurement-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: 11.5px;
 }
 
 .measurement-table th,
 .measurement-table td {
-  padding: 5px 6px;
+  padding: 2px 5px;
   border-bottom: 1px solid rgba(226, 232, 240, 0.85);
   text-align: left;
   white-space: nowrap;
@@ -14927,6 +15102,27 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   color: #475569;
   background: #f8fafc;
   font-weight: 700;
+}
+
+.measurement-config-dialog .measurement-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 4px 5px;
+}
+
+.measurement-config-dialog .measurement-config-toolbar .ant-btn,
+.measurement-config-dialog .measurement-table :is(.ant-input, .ant-input-number, .ant-input-number-input, .ant-select, .ant-select-selector, .ant-select-selection-item, .ant-btn) {
+  font-size: 11.5px;
+}
+
+.measurement-config-dialog .measurement-table :is(.ant-input, .ant-input-number, .ant-btn) {
+  min-height: 22px;
+}
+
+.measurement-config-dialog .measurement-table .ant-btn {
+  height: 22px;
+  padding: 0 7px;
 }
 
 .measurement-table input,
@@ -15280,8 +15476,8 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 
 @media (max-width: 1180px) {
   .app-shell {
-    --left-panel-width: 250px;
-    --right-panel-width: min(320px, calc(100vw - 24px));
+    --left-panel-width: 196px;
+    --right-panel-width: min(224px, calc(100vw - 24px));
   }
 
   .device-definition-default-toolbar {
@@ -15296,8 +15492,8 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 
 @media (max-width: 760px) {
   .app-shell {
-    --left-panel-width: min(288px, calc(100vw - 24px));
-    --right-panel-width: min(320px, calc(100vw - 24px));
+    --left-panel-width: min(204px, calc(100vw - 24px));
+    --right-panel-width: min(224px, calc(100vw - 24px));
   }
 
   .library-panel {

@@ -54,15 +54,17 @@ describe("DeviceGlyph static nodes", () => {
 
     const markup = renderToStaticMarkup(<svg><DeviceGlyph node={styledNode} /></svg>);
 
-    // 填充一律透明（两种主题都如此）：图元只靠描边和文字表达，底色交给画布。
-    expect(markup).toContain('fill="transparent"');
-    expect(markup).not.toContain('fill="#e91616"');
+    // 文字图元显式配置 fillColor 时必须按该背景色填充，默认透明时不绘制底框。
+    expect(markup).toContain('fill="#e91616"');
     expect(markup).toContain('stroke="#176ee8"');
     expect(markup).toContain('stroke-width="2"');
     expect(markup).toContain('stroke-dasharray="2 6"');
     expect(markup).toContain('rx="8"');
     expect(markup).toContain('stroke="#2563eb"');
     expect(markup).toContain('fill="#161127"');
+
+    const defaultMarkup = renderToStaticMarkup(<svg><DeviceGlyph node={node} /></svg>);
+    expect(defaultMarkup).not.toContain("<rect");
   });
 
   it("renders static rect text and rounded border style params", () => {

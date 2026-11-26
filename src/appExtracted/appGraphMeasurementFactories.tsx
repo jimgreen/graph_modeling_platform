@@ -2340,7 +2340,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: GraphMeasur
     const isMeasurementGroupModified = (group: MeasurementGroup, key: string) => {
       if (!hasPersistedMeasurementBaseline) return false;
       const savedGroup = persistedGroupById.get(group.id) as MeasurementGroup | undefined;
-      return !savedGroup || !valuesEqual(effectiveGroupValue(group, key), effectiveGroupValue(savedGroup, key));
+      return Boolean(savedGroup) && !valuesEqual(effectiveGroupValue(group, key), effectiveGroupValue(savedGroup!, key));
     };
     const isCommonMeasurementGroupModified = (key: string) =>
       selectedMeasurementGroups.some((group: any) => isMeasurementGroupModified(group, key));
@@ -2366,7 +2366,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: GraphMeasur
       if (!hasPersistedMeasurementBaseline) return false;
       const savedGroup = persistedGroupById.get(group.id) as MeasurementGroup | undefined;
       const savedItem = savedGroup?.items?.find((candidate: MeasurementItemBinding) => candidate.id === item.id);
-      return !savedGroup || !savedItem || !valuesEqual(effectiveItemValue(group, item, key), effectiveItemValue(savedGroup, savedItem, key));
+      return Boolean(savedGroup && savedItem) && !valuesEqual(effectiveItemValue(group, item, key), effectiveItemValue(savedGroup!, savedItem!, key));
     };
     const selectedMeasurementGroupCommonDraft = selectedMeasurementGroups[0];
     const renderCommonMeasurementGroupRows = () => {

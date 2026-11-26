@@ -314,6 +314,11 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
     if (isStaticGlyph) {
     const staticStroke = themeGlyphColor(node.params.strokeColor, themeMode, "stroke") || deviceStroke;
     const staticFill = themeGlyphColor(node.params.fillColor, themeMode, "fill") || "transparent";
+    // 文字图元默认 fillColor 为 transparent；用户显式配置背景色时直接按配置着色，不被主题透明化吞掉。
+    const rawStaticFill = typeof node.params.fillColor === "string" ? node.params.fillColor.trim() : "";
+    const staticTextFill = rawStaticFill && rawStaticFill.toLowerCase() !== "transparent" && rawStaticFill.toLowerCase() !== "none"
+      ? rawStaticFill
+      : "transparent";
     const lineWidth = Number(node.params.lineWidth || 2);
     const dashArray = svgStrokeDashArray(node.params.strokeStyle);
     const cornerRadius = staticNumericParam(node, "cornerRadius", 8, 0);
@@ -329,14 +334,14 @@ export function DeviceGlyph({ node, miniature = false, mode = "full", colorDispl
       : null;
     const renderStaticTextBoxFrame = (width: number, height: number) => {
       const hasVisibleBox =
-        staticPaintVisible(staticFill) ||
+        staticPaintVisible(staticTextFill) ||
         (lineWidth > 0 && staticPaintVisible(staticStroke)) ||
         simpleAccentVisible;
       if (!hasVisibleBox) {
         return null;
       }
       return (
-        createElement("g", null, createElement("rect", { x: -width / 2, y: -height / 2, width, height, rx: cornerRadius, fill: staticFill, stroke: lineWidth > 0 ? staticStroke : "transparent", strokeWidth: lineWidth, strokeDasharray: dashArray }), renderSimpleAccentRule(width, height))
+        createElement("g", null, createElement("rect", { x: -width / 2, y: -height / 2, width, height, rx: cornerRadius, fill: staticTextFill, stroke: lineWidth > 0 ? staticStroke : "transparent", strokeWidth: lineWidth, strokeDasharray: dashArray }), renderSimpleAccentRule(width, height))
       );
     };
     if (staticRenderKind === "static-text") {

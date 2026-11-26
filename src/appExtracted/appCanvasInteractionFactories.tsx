@@ -879,6 +879,18 @@ export function createContextMenuClassName(__appScope: CanvasInteractionScope) {
 
 export function createStopSidePanelEventPropagation(__appScope: CanvasInteractionScope) {
   return (event: ReactPointerEvent<HTMLElement> | ReactMouseEvent<HTMLElement> | ReactKeyboardEvent<HTMLElement>) => {
+    // 经 React Portal 挂在 document.body 下的弹层（如 ColorPicker 取色板）不在侧栏 DOM 树内，
+    // 放行其事件，避免捕获/冒泡阶段 stopPropagation 截断原生 mousemove 导致无法连续拖动取色。
+    const target = event.target;
+    const currentTarget = event.currentTarget;
+    if (
+      typeof Node !== "undefined" &&
+      target instanceof Node &&
+      currentTarget instanceof Node &&
+      !currentTarget.contains(target)
+    ) {
+      return;
+    }
     event.stopPropagation();
   };
 }
