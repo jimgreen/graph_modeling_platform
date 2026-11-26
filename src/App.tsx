@@ -1664,6 +1664,7 @@ Object.assign(__appScope, { pendingSchemeImportConflict, setPendingSchemeImportC
 const [pendingRecordPasteConflict, setPendingRecordPasteConflict] = useState<PendingRecordPasteConflict>(null);
 Object.assign(__appScope, { pendingRecordPasteConflict, setPendingRecordPasteConflict });
 const mousePositionTextRef = useRef<HTMLSpanElement | null>(null); Object.assign(__appScope, { mousePositionTextRef });
+const zoomPercentButtonRef = useRef<HTMLButtonElement | null>(null); Object.assign(__appScope, { zoomPercentButtonRef });
 const operationLogRef = useRef("就绪"); Object.assign(__appScope, { operationLogRef });
 const operationLogStatusRef = useRef<HTMLSpanElement | null>(null); Object.assign(__appScope, { operationLogStatusRef });
 const [selectedProjectId, setSelectedProjectId] = useState<string>("");

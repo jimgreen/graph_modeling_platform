@@ -18,10 +18,12 @@ export function applyImperativeMarqueeRect(
   marquee: ImperativeMarqueeState
 ): void {
   if (!rectEl) return;
+  const ownerSvg = rectEl.ownerSVGElement;
   if (!marquee) {
     rectEl.style.display = "none";
     rectEl.setAttribute("width", "0");
     rectEl.setAttribute("height", "0");
+    ownerSvg?.classList?.remove("marquee-dragging");
     return;
   }
   const x = Math.min(marquee.start.x, marquee.current.x);
@@ -33,6 +35,7 @@ export function applyImperativeMarqueeRect(
   rectEl.setAttribute("width", String(width));
   rectEl.setAttribute("height", String(height));
   rectEl.style.display = "";
+  ownerSvg?.classList?.add("marquee-dragging");
 }
 
 export interface GpuWheelZoomPreviewParams {

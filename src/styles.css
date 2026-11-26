@@ -2618,13 +2618,21 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   cursor: grabbing;
 }
 
+/* 平移、框选与多节点拖拽期间禁用 16k SVG 主体子树的浏览器 Hit-Testing，大幅削减高频指针移动开销 */
+.diagram-canvas.panning .canvas-content,
+.diagram-canvas.marquee-dragging .canvas-content,
+.diagram-canvas.multi-node-dragging .canvas-content {
+  pointer-events: none;
+}
+
+/* 缩放到极远全景（<40%）时隐藏肉眼不可辨认的未选中量测框，减少超大图 SVG 排版负担 */
+.diagram-canvas[data-zoom-lod="far"] .measurement-group:not(.selected) {
+  display: none;
+}
+
 .diagram-canvas.terminal-dragging,
 .diagram-canvas.terminal-dragging * {
   cursor: grabbing !important;
-}
-
-.diagram-canvas.multi-node-dragging .canvas-content {
-  pointer-events: none;
 }
 
 .diagram-node.single-drag-origin {

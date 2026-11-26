@@ -37,7 +37,8 @@ function AppStatusbarContent({ scope }: { scope: Record<string, any> }) {
     topologyErrors,
     topologyStatus,
     warningStatusText,
-    warningStatusTitle
+    warningStatusTitle,
+    zoomPercentButtonRef
   } = scope;
   // 目录名 = 空间 id（data/workspaces/<id>/），改名只改显示名、id 不动，故两者会分叉 ——
   // 认目录只能靠 id，这里固定显示它。名字放 title（悬浮可见），不占栏宽。
@@ -66,6 +67,7 @@ function AppStatusbarContent({ scope }: { scope: Record<string, any> }) {
         坐标 <span ref={mousePositionTextRef}>X:- Y:-</span>
       </span>
       <button
+        ref={zoomPercentButtonRef}
         type="button"
         className="status-pill status-zoom-pill"
         title={`当前视图缩放比 ${currentZoomPercent}%，点击回到 100%`}

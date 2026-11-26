@@ -2481,6 +2481,8 @@ export function createBuildLightweightNodeDragPreviewRoutes(__appScope: Selectio
         return node && isBusNode(node);
       })
     );
+    // 批量拖拽跨选区动态预览边超过 30 条时跳过每帧昂贵的正交保形计算，直接走轻量端点折线，松手再做完整路径还原
+    const useFastEndpointPreview = multiNodeMove && previewEdges.length > 30;
     const edgePreviewRoutes = previewEdges.flatMap((edge: Edge) => {
       if (!visibleEdgeIdSet.has(edge.id)) {
         return [];
@@ -2499,7 +2501,7 @@ export function createBuildLightweightNodeDragPreviewRoutes(__appScope: Selectio
       }
       const color = cachedConnectionStrokeColor(edge);
       const originalRoute = dragState.originalRoutePoints[edge.id];
-      const previewPoints = originalRoute?.length
+      const previewPoints = !useFastEndpointPreview && originalRoute?.length
         ? preserveDraggedRouteShape({
             routePoints: originalRoute,
             nextStart: endpoints.start,
@@ -2821,7 +2823,7 @@ export function createFindMultiNodeDragSnapTargetAtDelta(__appScope: SelectionDr
     if (!isMultiNodeMoveState(dragState)) {
       return null;
     }
-    if (dragState.wholeLayerMove) {
+    if (dragState.wholeLayerMove || dragState.nodeIds.length > 20) {
       return null;
     }
     const movedNodeIds = dragMovedNodeIdSet(dragState);

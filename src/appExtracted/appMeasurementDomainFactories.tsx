@@ -2047,7 +2047,26 @@ export function createSynchronizePendingBusTerminalsWithGraphStore(__appScope: G
 
 export function createApplyCanvasPanningVisualOffset(__appScope: GraphMeasurementScope) {
   return (nextOffset: Point) => {
-  const { canvasBaseDisplayOffsetX, canvasBaseDisplayOffsetY, canvasDisplayHeight, canvasDisplayWidth, canvasResizeAnchoredDisplayOffset, canvasResizeDrag, canvasResizeHotzonesRef, canvasRulersRef, svgRef } = __appScope;
+  const { canvasBaseDisplayOffsetX, canvasBaseDisplayOffsetY, canvasDisplayHeight, canvasDisplayWidth, canvasResizeAnchoredDisplayOffset, canvasResizeDrag, canvasResizeHotzonesRef, canvasRulersRef, panningRef, svgRef } = __appScope;
+    const svg = svgRef.current;
+    const hotzones = canvasResizeHotzonesRef.current;
+    const rulers = canvasRulersRef?.current;
+    const activePanning = panningRef?.current;
+    // 平移过程中优先使用纯 GPU 合成 transform: translate3d(dx, dy, 0)，避免每帧改写 left/top 触发 16k SVG 布局重排；
+    // 松手 finishCanvasPanning 会先置空 panningRef.current 再调用本函数，从而自动清空 transform 并落盘精确 left/top。
+    if (activePanning?.canvasOffset && svg && svg.style) {
+      const dx = Math.round(nextOffset.x - activePanning.canvasOffset.x);
+      const dy = Math.round(nextOffset.y - activePanning.canvasOffset.y);
+      const translate = dx === 0 && dy === 0 ? "" : `translate3d(${dx}px, ${dy}px, 0)`;
+      svg.style.transform = translate;
+      if (hotzones && hotzones.style) {
+        hotzones.style.transform = translate;
+      }
+      if (rulers && rulers.style) {
+        rulers.style.transform = translate;
+      }
+      return;
+    }
     const left = canvasResizeAnchoredDisplayOffset(
       Math.round(canvasBaseDisplayOffsetX + nextOffset.x),
       canvasResizeDrag,
@@ -2060,19 +2079,25 @@ export function createApplyCanvasPanningVisualOffset(__appScope: GraphMeasuremen
       "y",
       canvasDisplayHeight
     );
-    const svg = svgRef.current;
     if (svg) {
+      if (svg.style?.transform) {
+        svg.style.transform = "";
+      }
       svg.style.left = `${left}px`;
       svg.style.top = `${top}px`;
     }
-    const hotzones = canvasResizeHotzonesRef.current;
     if (hotzones) {
+      if (hotzones.style?.transform) {
+        hotzones.style.transform = "";
+      }
       hotzones.style.left = `${left}px`;
       hotzones.style.top = `${top}px`;
     }
     // 刻度尺锚点容器与画布原点重合，拖动时用同一组 left/top 一起挪，否则尺子会滞后
-    const rulers = canvasRulersRef?.current;
     if (rulers) {
+      if (rulers.style?.transform) {
+        rulers.style.transform = "";
+      }
       rulers.style.left = `${left}px`;
       rulers.style.top = `${top}px`;
     }
@@ -2618,10 +2643,13 @@ export function createSyncCanvasFrameScrollToWheelAnchor(__appScope: GraphMeasur
     if (!frame || !svg || bounds.width <= 0 || bounds.height <= 0) {
       return;
     }
-    const svgRect = svg.getBoundingClientRect();
+    // 优先使用当帧已计算的 canvasScrollScaleRef，消除每步滚轮强制调用 svg.getBoundingClientRect() 引发的同步回流
+    const cachedScale = canvasScrollScaleRef.current;
+    const hasCachedScale = Number.isFinite(cachedScale?.x) && cachedScale.x > 0 && Number.isFinite(cachedScale?.y) && cachedScale.y > 0;
+    const svgRect = hasCachedScale ? null : svg.getBoundingClientRect();
     const scale = {
-      x: svgRect.width > 0 ? svgRect.width / bounds.width : canvasScrollScaleRef.current.x,
-      y: svgRect.height > 0 ? svgRect.height / bounds.height : canvasScrollScaleRef.current.y
+      x: hasCachedScale ? cachedScale.x : (svgRect && svgRect.width > 0 ? svgRect.width / bounds.width : cachedScale.x),
+      y: hasCachedScale ? cachedScale.y : (svgRect && svgRect.height > 0 ? svgRect.height / bounds.height : cachedScale.y)
     };
     const maxScroll = {
       left: Math.max(0, frame.scrollWidth - frame.clientWidth),
@@ -2669,10 +2697,10 @@ export function createSyncCanvasFrameScrollToWheelAnchor(__appScope: GraphMeasur
         y: canvasVerticalScrollbarsActiveRef.current ? nextViewBox.y : current.y
       }, canvasBoundsRef.current);
       if (
-        Math.round(updated.x) === Math.round(current.x) &&
-        Math.round(updated.y) === Math.round(current.y) &&
-        Math.round(updated.width) === Math.round(current.width) &&
-        Math.round(updated.height) === Math.round(current.height)
+        Math.abs(updated.x - current.x) <= 1 &&
+        Math.abs(updated.y - current.y) <= 1 &&
+        Math.abs(updated.width - current.width) <= 1 &&
+        Math.abs(updated.height - current.height) <= 1
       ) {
         return current;
       }

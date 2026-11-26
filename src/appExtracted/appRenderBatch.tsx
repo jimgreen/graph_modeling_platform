@@ -3984,9 +3984,12 @@ export function useRenderBatch(__appScope: Record<string, any>) {
       "--statusbar-height": `${statusbarHeight}px`
     } as CSSProperties;
   Object.assign(__appScope, { appShellStyle });
+  const effectiveLeftPanelTab = leftPanelTab; Object.assign(__appScope, { effectiveLeftPanelTab });
+  // 按当前激活标签页懒构造左栏内容，避免画布交互/配色变化时为未显示的标签页提前构建整棵 JSX 树
   const libraryPanelContent = useMemo(
-      () => renderLibraryPanel(),
+      () => (effectiveLeftPanelTab === "library" ? renderLibraryPanel() : null),
       [
+        effectiveLeftPanelTab,
         colorPalette,
         componentLibraryDisplayMode,
         collapsedExpandedModeCategoryLibraries,
@@ -4010,8 +4013,9 @@ export function useRenderBatch(__appScope: Record<string, any>) {
     );
   Object.assign(__appScope, { libraryPanelContent });
   const templateLibraryPanelContent = useMemo(
-      () => renderTemplateLibraryPanel(),
+      () => (effectiveLeftPanelTab === "templates" ? renderTemplateLibraryPanel() : null),
       [
+        effectiveLeftPanelTab,
         colorPalette,
         displayedGraphTemplateTypes,
         expandedGraphTemplateTypes,
@@ -4030,8 +4034,9 @@ export function useRenderBatch(__appScope: Record<string, any>) {
     );
   Object.assign(__appScope, { templateLibraryPanelContent });
   const projectPanelContent = useMemo(
-      () => renderProjectPanel(),
+      () => (effectiveLeftPanelTab === "projects" ? renderProjectPanel() : null),
       [
+        effectiveLeftPanelTab,
         activeProjectKey,
         __appScope.expandedSchemeIds,
         __appScope.filteredProjectSchemes,
@@ -4052,7 +4057,6 @@ export function useRenderBatch(__appScope: Record<string, any>) {
       ]
     );
   Object.assign(__appScope, { projectPanelContent });
-  const effectiveLeftPanelTab = leftPanelTab; Object.assign(__appScope, { effectiveLeftPanelTab });
   const leftPanelContent = effectiveLeftPanelTab === "projects"
       ? projectPanelContent
       : effectiveLeftPanelTab === "templates"

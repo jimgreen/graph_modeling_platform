@@ -2557,6 +2557,20 @@ export function renderAppView(__appScope: Record<string, any>) {
     voltageTab
   });
 
+  // 滚轮缩放高频变化时命令式直写状态栏缩放比文本，避免状态栏随滚轮逐帧走 React 重渲染
+  useEffect(() => {
+    const zoomBtn = __appScope.zoomPercentButtonRef?.current as HTMLButtonElement | null | undefined;
+    if (!zoomBtn) return;
+    const text = `缩放 ${currentZoomPercent}%`;
+    if (zoomBtn.textContent !== text) {
+      zoomBtn.textContent = text;
+    }
+    const nextTitle = `当前视图缩放比 ${currentZoomPercent}%，点击回到 100%`;
+    if (zoomBtn.title !== nextTitle) {
+      zoomBtn.title = nextTitle;
+    }
+  }, [currentZoomPercent]);
+
   const rightPanelInputs = [
     rightPanelVisible,
     rightPanelMode,
@@ -2780,7 +2794,6 @@ export function renderAppView(__appScope: Record<string, any>) {
         {isInterfaceCustomizationVisible(__appScope.interfaceCustomization, "module.statusbar") && <AppStatusbar
           scope={__appScope}
           inputs={[
-            currentZoomPercent,
             topologyStatus,
             topologyErrors,
             warningStatusText,

@@ -7,6 +7,32 @@ import { applyImperativeMarqueeRect } from "./imperativeMarquee";
 // 滚轮连续缩放时的视口裁剪静默窗口（ms）：避免在 16k SVG 上施加 CSS transform 引发重光栅化，
 // 同时在连续缩放期间抑制视口子集裁剪重渲染，停手后补一次精确 canvasVisibleViewBox 同步
 const WHEEL_ZOOM_SETTLE_DELAY_MS = 120;
+// 连续快速滚轮合批最小帧间隔（ms）：首帧零延迟响应，连续滚轮合并多余中间帧减少 16k SVG 全树重排
+const WHEEL_ZOOM_CONTINUOUS_THROTTLE_MS = 32;
+let lastWheelZoomFlushTimeMs = 0;
+
+// 按 frame DOM 元素缓存平移 rAF 合批调度器：高频 pointermove 每帧最多写 1 次 scrollLeft/scrollTop 与 translate3d
+type PanFrameTask = () => void;
+const panVisualRafSchedulers = new WeakMap<Element, RafLatestScheduler<PanFrameTask>>();
+
+function schedulePanVisualTask(frame: Element, task: PanFrameTask) {
+  // 无浏览器 rAF 环境（如纯 Node 单测）直接同步执行，保持 100% 兼容
+  if (typeof window === "undefined" || typeof window.requestAnimationFrame !== "function") {
+    task();
+    return;
+  }
+  let scheduler = panVisualRafSchedulers.get(frame);
+  if (!scheduler) {
+    scheduler = createRafLatestScheduler<PanFrameTask>((run) => run());
+    panVisualRafSchedulers.set(frame, scheduler);
+  }
+  scheduler.schedule(task);
+}
+
+function flushPanVisualTask(frame: Element | null | undefined) {
+  if (!frame) return;
+  panVisualRafSchedulers.get(frame)?.flush();
+}
 
 // 按 setMarquee / setViewBox 实例缓存单帧 rAF 合批调度器，避免高刷鼠标每帧多次触发 React 重渲染
 type MarqueeRect = { start: Point; current: Point };
@@ -958,40 +984,48 @@ export function createHandlePointerMove(__appScope: ProjectCanvasScope) {
       if (frame) {
         const pointerDeltaX = event.clientX - activePanning.clientX;
         const pointerDeltaY = event.clientY - activePanning.clientY;
-        let nextOffsetX = activePanning.canvasOffset.x + pointerDeltaX;
-        let nextOffsetY = activePanning.canvasOffset.y + pointerDeltaY;
-        let scrollChanged = false;
-        if (useHorizontalScrollPanning) {
-          const requestedLeft = activePanning.scrollLeft - pointerDeltaX;
-          const previousLeft = frame.scrollLeft;
-          frame.scrollLeft = requestedLeft;
-          nextOffsetX = activePanning.canvasOffset.x + frame.scrollLeft - requestedLeft;
-          if (Math.abs(frame.scrollLeft - previousLeft) > 0.5) {
-            scrollChanged = true;
+        const applyPanStep = () => {
+          let nextOffsetX = activePanning.canvasOffset.x + pointerDeltaX;
+          let nextOffsetY = activePanning.canvasOffset.y + pointerDeltaY;
+          let scrollChanged = false;
+          if (useHorizontalScrollPanning) {
+            const requestedLeft = activePanning.scrollLeft - pointerDeltaX;
+            const previousLeft = frame.scrollLeft;
+            frame.scrollLeft = requestedLeft;
+            nextOffsetX = activePanning.canvasOffset.x + frame.scrollLeft - requestedLeft;
+            if (Math.abs(frame.scrollLeft - previousLeft) > 0.5) {
+              scrollChanged = true;
+            }
           }
-        }
-        if (useVerticalScrollPanning) {
-          const requestedTop = activePanning.scrollTop - pointerDeltaY;
-          const previousTop = frame.scrollTop;
-          frame.scrollTop = requestedTop;
-          nextOffsetY = activePanning.canvasOffset.y + frame.scrollTop - requestedTop;
-          if (Math.abs(frame.scrollTop - previousTop) > 0.5) {
-            scrollChanged = true;
+          if (useVerticalScrollPanning) {
+            const requestedTop = activePanning.scrollTop - pointerDeltaY;
+            const previousTop = frame.scrollTop;
+            frame.scrollTop = requestedTop;
+            nextOffsetY = activePanning.canvasOffset.y + frame.scrollTop - requestedTop;
+            if (Math.abs(frame.scrollTop - previousTop) > 0.5) {
+              scrollChanged = true;
+            }
           }
-        }
-        const nextOffset = clampCanvasNoScrollOffsetPoint({
-          x: nextOffsetX,
-          y: nextOffsetY
-        });
-        const offsetChanged =
-          Math.abs(nextOffset.x - activePanning.canvasOffset.x) > 0.5 ||
-          Math.abs(nextOffset.y - activePanning.canvasOffset.y) > 0.5;
-        pendingCanvasNoScrollOffsetRef.current = nextOffset;
-        canvasNoScrollOffsetRef.current = nextOffset;
-        applyCanvasPanningVisualOffset(nextOffset);
-        skipNextCanvasScrollSyncRef.current = offsetChanged;
-        if (scrollChanged || offsetChanged) {
-          canvasFrameUserScrollRef.current = true;
+          const nextOffset = clampCanvasNoScrollOffsetPoint({
+            x: nextOffsetX,
+            y: nextOffsetY
+          });
+          const offsetChanged =
+            Math.abs(nextOffset.x - activePanning.canvasOffset.x) > 0.5 ||
+            Math.abs(nextOffset.y - activePanning.canvasOffset.y) > 0.5;
+          pendingCanvasNoScrollOffsetRef.current = nextOffset;
+          canvasNoScrollOffsetRef.current = nextOffset;
+          applyCanvasPanningVisualOffset(nextOffset);
+          skipNextCanvasScrollSyncRef.current = offsetChanged;
+          if (scrollChanged || offsetChanged) {
+            canvasFrameUserScrollRef.current = true;
+          }
+        };
+        // 真实浏览器 DOM 下按 rAF 合并高频 pointermove（1 帧最多写 1 次 scroll + translate3d）；测试 mock 同步执行
+        if (typeof Element !== "undefined" && frame instanceof Element) {
+          schedulePanVisualTask(frame, applyPanStep);
+        } else {
+          applyPanStep();
         }
         return;
       }
@@ -1393,13 +1427,16 @@ export function createHandlePointerMove(__appScope: ProjectCanvasScope) {
 
 export function createFinishCanvasPanning(__appScope: ProjectCanvasScope) {
   return () => {
-  const { applyCanvasPanningVisualOffset, canvasNoScrollOffsetRef, flushPendingBlankCanvasDeselect, panningRef, pendingCanvasNoScrollOffsetRef, scheduleCanvasVisibleViewBoxUpdate, setCanvasNoScrollOffset, setCanvasPanning } = __appScope;
+  const { applyCanvasPanningVisualOffset, canvasFrameRef, canvasNoScrollOffsetRef, flushPendingBlankCanvasDeselect, panningRef, pendingCanvasNoScrollOffsetRef, scheduleCanvasVisibleViewBoxUpdate, setCanvasNoScrollOffset, setCanvasPanning } = __appScope;
+    flushPanVisualTask(canvasFrameRef?.current);
     if (!panningRef.current && !pendingCanvasNoScrollOffsetRef.current) {
       flushPendingBlankCanvasDeselect?.();
       return;
     }
     const pendingOffset = pendingCanvasNoScrollOffsetRef.current;
     pendingCanvasNoScrollOffsetRef.current = null;
+    // 先置空 panningRef.current，让随后的 applyCanvasPanningVisualOffset 自动清除 GPU translate3d 并落盘精确 left/top
+    panningRef.current = null;
     if (pendingOffset) {
       canvasNoScrollOffsetRef.current = pendingOffset;
       applyCanvasPanningVisualOffset(pendingOffset);
@@ -1580,6 +1617,7 @@ export function createFlushPendingWheelZoom(__appScope: ProjectCanvasScope) {
     }
     pendingWheelZoomRequestRef.current = null;
     pendingWheelZoomAnchorRef.current = request.anchor;
+    lastWheelZoomFlushTimeMs = typeof performance !== "undefined" ? performance.now() : Date.now();
     setViewBox((current: CanvasViewBox) => {
       const bounds = canvasBoundsRef.current;
       const { width: nextWidth, height: nextHeight } = clampViewBoxDimensionsForZoom(
@@ -1600,25 +1638,48 @@ export function createFlushPendingWheelZoom(__appScope: ProjectCanvasScope) {
 
 export function createScheduleWheelZoom(__appScope: ProjectCanvasScope) {
   return (anchor: WheelZoomAnchor, zoomFactor: number) => {
-  const { flushPendingWheelZoom, pendingWheelZoomRequestRef, scheduleCanvasVisibleViewBoxUpdate, wheelZoomCommitTimerRef, wheelZoomFrameRef } = __appScope;
+  const { flushPendingWheelZoom, pendingWheelZoomRequestRef, scheduleCanvasVisibleViewBoxUpdate, svgRef, wheelZoomCommitTimerRef, wheelZoomFrameRef } = __appScope;
     const current = pendingWheelZoomRequestRef.current;
     pendingWheelZoomRequestRef.current = current
       ? { anchor, zoomFactor: current.zoomFactor * zoomFactor }
       : { anchor, zoomFactor };
 
-    // 标记连续滚轮活跃期：期间若新视口仍在当前已渲染区域内，跳过昂贵的 16k SVG 裁剪重渲染，
-    // 停手 120ms 后再补一次精确 canvasVisibleViewBox 同步。
+    // 连续滚轮活跃期在新视口仍在已渲染区域内时跳过视口重裁剪，停手 120ms 后精确同步一次 canvasVisibleViewBox。
     if (wheelZoomCommitTimerRef) {
       if (wheelZoomCommitTimerRef.current !== null) {
         clearTimeout(wheelZoomCommitTimerRef.current);
       }
       wheelZoomCommitTimerRef.current = setTimeout(() => {
         wheelZoomCommitTimerRef.current = null;
+        if (pendingWheelZoomRequestRef.current) {
+          flushPendingWheelZoom();
+        }
         scheduleCanvasVisibleViewBoxUpdate?.();
       }, WHEEL_ZOOM_SETTLE_DELAY_MS);
     }
 
     if (wheelZoomFrameRef.current !== null) {
+      return;
+    }
+    // 首帧立即在下一 rAF 响应；连续快速滚轮期间按 32ms 合并冗余中间帧，大幅削减 16k SVG 全树重排次数
+    const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+    const elapsedSinceLastFlush = now - lastWheelZoomFlushTimeMs;
+    if (elapsedSinceLastFlush < WHEEL_ZOOM_CONTINUOUS_THROTTLE_MS && wheelZoomCommitTimerRef) {
+      const waitMs = Math.max(1, Math.round(WHEEL_ZOOM_CONTINUOUS_THROTTLE_MS - elapsedSinceLastFlush));
+      wheelZoomFrameRef.current = window.requestAnimationFrame(() => {
+        wheelZoomFrameRef.current = null;
+        if (!pendingWheelZoomRequestRef.current) return;
+        const innerNow = typeof performance !== "undefined" ? performance.now() : Date.now();
+        if (innerNow - lastWheelZoomFlushTimeMs >= WHEEL_ZOOM_CONTINUOUS_THROTTLE_MS) {
+          flushPendingWheelZoom();
+        } else {
+          setTimeout(() => {
+            if (pendingWheelZoomRequestRef.current) {
+              flushPendingWheelZoom();
+            }
+          }, waitMs);
+        }
+      });
       return;
     }
     wheelZoomFrameRef.current = window.requestAnimationFrame(flushPendingWheelZoom);
