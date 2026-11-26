@@ -577,7 +577,7 @@ function AppRightPanelContent({ scope, embedded = false }: { scope: Record<strin
           <button data-ui-content="module.rightPanel.elementTreeTab" className={inspectorTab === "tree" ? "active" : ""} onClick={() => { setInspectorTab("tree"); setCompactPanelTab?.("right"); }} disabled={modelActionsDisabled}>图元树</button>
           <button data-ui-content="module.rightPanel.graphTab" className={inspectorTab === "graph" || inspectorTab === "device" ? "active" : ""} onClick={() => { setInspectorTab("graph"); setCompactPanelTab?.("right"); }} disabled={modelActionsDisabled}>图元</button>
         </div>}
-        {modelActionsDisabled ? (<div className="inspector-empty-state">请先打开模型</div>) : inspectorSelectedNode || currentModelRecord ? (<div className={`form-stack ${inspectorTab === "tree" ? "graph-form-stack" : ""}`}>
+        {modelActionsDisabled ? (<div className="inspector-empty-state">请先打开模型</div>) : inspectorSelectedNode || currentModelRecord ? (<div className={`form-stack ${inspectorTab === "tree" || inspectorTab === "graph" || inspectorTab === "device" ? "graph-form-stack" : ""}`}>
             <div className="inspector-tabs">
               <button data-ui-content="module.rightPanel.baseTab" className={inspectorTab === "model" ? "active" : ""} onClick={() => { setInspectorTab("model"); if (embedded) setCompactPanelTab?.("right"); }} disabled={!currentModelRecord}>
                 基础
@@ -1273,6 +1273,7 @@ function AppRightPanelContent({ scope, embedded = false }: { scope: Record<strin
                       量测
                     </button>
                   </div>)}
+                <div className="device-param-scroll-area">
                 {selectedDeviceInfoView === "measurement" && !__appScope.isStaticGraphicNode(inspectorSelectedNode) ? (<div data-ui-content="module.rightPanel.deviceMeasurement">{renderSelectedNodeMeasurementTable(inspectorSelectedNode)}</div>) : (<>
                     {selectedContainerParameterViews.length > 0 && (<div className="container-param-tabs" role="tablist" aria-label="容器设备参数切换">
                         {selectedContainerParameterViews.map((view: ContainerDeviceParameterView) => (<button key={view.id} type="button" className={selectedContainerParameterView?.id === view.id ? "active" : ""} onClick={() => setContainerParamViewId(view.id)}>
@@ -1388,6 +1389,7 @@ function AppRightPanelContent({ scope, embedded = false }: { scope: Record<strin
                         </tbody>
                       </table>)}
                   </>)}
+                </div>
               </div>) : inspectorTab === "device" ? (<div className="empty-state">
                 <FileJson size={28}/>
                 <p>选择画布设备后，可切换查看图形、模型和量测。</p>
