@@ -5,6 +5,7 @@ import { normalizeCategoryLibraryName } from "../export/device-definition-shared
 import { normalizeElectricFlowSettings } from "../export/electric-flow-markup";
 import { memo, MouseEvent, type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
+import { createIdleTaskScheduler } from "../lib/rafCoalescer";
 import { apiPath } from "../config";
 import { normalizeCanvasThemeMode, migrateLegacyCanvasBackground, type CanvasThemeMode } from "../canvasTheme";
 import { Select, Input, Button, type InputRef } from "antd";
@@ -2990,6 +2991,14 @@ export function readLocalDeviceLibraryPersistencePayload(): DeviceLibraryPersist
 // 缓存 IndexedDB 存储模块的动态导入
 const deviceLibraryStoragePromise = import("../lib/deviceLibraryStorage");
 
+const deviceLibraryLocalStorageIdleScheduler = createIdleTaskScheduler(400);
+let deviceLibraryFlushRegistered = false;
+function ensureDeviceLibraryUnloadFlush(): void {
+  if (deviceLibraryFlushRegistered || typeof window === "undefined") return;
+  deviceLibraryFlushRegistered = true;
+  window.addEventListener("pagehide", () => deviceLibraryLocalStorageIdleScheduler.flush());
+}
+
 function isLocalStorageQuotaError(error: unknown): boolean {
   return error instanceof DOMException
     && (error.name === "QuotaExceededError" || error.name === "NS_ERROR_DOM_QUOTA_REACHED");
@@ -3033,19 +3042,29 @@ function fallbackToLocalStorage(data: DeviceLibraryPersistencePayload): void {
 
 export function writeLocalDeviceLibraryPersistencePayload(normalizedDeviceLibrary: DeviceLibraryPersistencePayload): void {
   normalizedDeviceLibrary = projectDeviceLibraryPersistencePayloadForStorage(normalizedDeviceLibrary);
-  try {
-    window.localStorage.setItem(CUSTOM_CATEGORY_LIBRARIES_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.customCategoryLibraries));
-    window.localStorage.setItem(CUSTOM_COMPONENT_LIBRARIES_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.customComponentLibraries));
-    window.localStorage.setItem(E_DEVICE_DEFINITION_LABELS_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.eDeviceDefinitionLabels ?? {}));
-    window.localStorage.setItem(E_DEVICE_DEFINITION_CLASS_EXPORT_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.eDeviceDefinitionClassExportEnabled ?? {}));
-    window.localStorage.setItem(E_DEVICE_DEFINITION_FIELD_ORDER_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.eDeviceDefinitionFieldOrder ?? {}));
-    window.localStorage.setItem(E_DEVICE_DEFINITION_TEMPLATE_FIELDS_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.eDeviceDefinitionTemplateFields ?? {}));
-    window.localStorage.setItem(E_DEVICE_DEFINITION_TABLE_IDS_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.eDeviceDefinitionTableIds ?? {}));
-  } catch (error) {
-    // 本地接口定义缓存不可写时，不阻断类保存；但配额满需告警（审查 T07-P0-2）
-    if (isLocalStorageQuotaError(error)) {
-      warnLocalStorageWriteFailure(error);
+  const persistMetadataToLocalStorage = () => {
+    try {
+      window.localStorage.setItem(CUSTOM_CATEGORY_LIBRARIES_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.customCategoryLibraries));
+      window.localStorage.setItem(CUSTOM_COMPONENT_LIBRARIES_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.customComponentLibraries));
+      window.localStorage.setItem(E_DEVICE_DEFINITION_LABELS_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.eDeviceDefinitionLabels ?? {}));
+      window.localStorage.setItem(E_DEVICE_DEFINITION_CLASS_EXPORT_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.eDeviceDefinitionClassExportEnabled ?? {}));
+      window.localStorage.setItem(E_DEVICE_DEFINITION_FIELD_ORDER_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.eDeviceDefinitionFieldOrder ?? {}));
+      window.localStorage.setItem(E_DEVICE_DEFINITION_TEMPLATE_FIELDS_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.eDeviceDefinitionTemplateFields ?? {}));
+      window.localStorage.setItem(E_DEVICE_DEFINITION_TABLE_IDS_STORAGE_KEY, JSON.stringify(normalizedDeviceLibrary.eDeviceDefinitionTableIds ?? {}));
+    } catch (error) {
+      // 本地接口定义缓存不可写时，不阻断类保存；但配额满需告警（审查 T07-P0-2）
+      if (isLocalStorageQuotaError(error)) {
+        warnLocalStorageWriteFailure(error);
+      }
     }
+  };
+  // 真实浏览器中延后至空闲帧批量 JSON.stringify + 写盘（挂载 pagehide 自动 flush 防丢数），测试环境同步落盘
+  const isVitestEnv = typeof process !== "undefined" && Boolean((process as { env?: Record<string, string | undefined> }).env?.VITEST);
+  if (!isVitestEnv && typeof window !== "undefined" && typeof globalThis.requestIdleCallback === "function") {
+    ensureDeviceLibraryUnloadFlush();
+    deviceLibraryLocalStorageIdleScheduler.schedule(persistMetadataToLocalStorage);
+  } else {
+    persistMetadataToLocalStorage();
   }
   // 阶段 5：只写 IndexedDB，失败时降级到 localStorage
   deviceLibraryStoragePromise.then(({ saveDeviceTemplates, saveGraphTemplates, saveOverrides }) => {

@@ -4,6 +4,7 @@
  */
 
 import type { EdgeRouteInteractionScope } from "./appScopeTypes";
+import { sharedElementRectCache } from "../lib/rafCoalescer";
 import type { MouseEvent, PointerEvent } from "react";
 import { isLineOnlyConnectionNode, type Edge, type ModelNode, type Point } from "../model";
 import { type ConnectTarget } from "./appCoreCanvasUtilities";
@@ -170,7 +171,7 @@ export function createConnectionHitTolerance(__appScope: EdgeRouteInteractionSco
   return () => {
   const { CONNECTION_HIT_SCREEN_TOLERANCE, svgRef } = __appScope;
     const svg = svgRef.current;
-    const rect = svg?.getBoundingClientRect();
+    const rect = svg ? sharedElementRectCache.getRect(svg) : undefined;
     if (!svg || !rect || rect.width <= 0 || rect.height <= 0) {
       return 16;
     }

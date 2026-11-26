@@ -3455,18 +3455,18 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 
 .single-node-drag-preview-node {
   opacity: 0.96;
-  filter: drop-shadow(0 5px 10px rgba(37, 99, 235, 0.18));
+  will-change: transform;
 }
 
 .multi-node-drag-preview-node {
   opacity: 0.96;
-  filter: drop-shadow(0 5px 10px rgba(37, 99, 235, 0.18));
+  will-change: transform;
 }
 
 .multi-node-drag-preview-node-lite {
   opacity: 0.9;
   vector-effect: non-scaling-stroke;
-  filter: drop-shadow(0 5px 10px rgba(37, 99, 235, 0.16));
+  will-change: transform;
 }
 
 .multi-node-drag-bounds-preview {
@@ -14527,13 +14527,14 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   pointer-events: none;
 }
 
+/* 普通未选中态去掉昂贵的 SVG 高斯模糊 drop-shadow，避免百级量测框缩放/平移每帧光栅化卡顿 */
 .measurement-group-bg {
-  filter: drop-shadow(0 2px 5px rgba(15, 23, 42, 0.12));
+  filter: none;
 }
 
 .measurement-group.selected .measurement-group-bg {
   /* Keep the configured SVG stroke/stroke-width visible while indicating selection. */
-  filter: drop-shadow(0 0 1px rgba(37, 99, 235, 0.72)) drop-shadow(0 2px 5px rgba(15, 23, 42, 0.12));
+  filter: drop-shadow(0 0 1px rgba(37, 99, 235, 0.72));
 }
 
 /* 量测文本的描边（光晕）用来把字从背景上托起来。
@@ -17993,4 +17994,22 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   background: #0d121a;
   color: #f1f5f9;
   border-color: rgba(148, 163, 184, 0.28);
+}
+
+/* ============================================================================
+   Phase 5：人机交互流畅度与渲染隔离优化
+   1. 限制画布内部重排/重绘范围，避免波及顶栏与左右侧面板
+   2. 对千级方案树、元素树、图元库卡片与右侧大表格启用视口外跳过布局（content-visibility）
+   ============================================================================ */
+.diagram-canvas {
+  contain: layout style paint;
+}
+
+.project-option,
+.element-tree-item,
+.library-template-button,
+.custom-param-table tbody tr,
+.measurement-table tbody tr {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 28px;
 }

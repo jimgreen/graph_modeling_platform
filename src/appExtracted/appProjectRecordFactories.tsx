@@ -1,6 +1,53 @@
 /** 方案与模型记录 CRUD、剪贴板粘贴、电压基准批量设置及图层管理工厂模块。 */
 
 import type { ProjectCanvasScope } from "./appScopeTypes";
+import { createRafLatestScheduler, sharedElementRectCache, type RafLatestScheduler } from "../lib/rafCoalescer";
+
+// 按 setMarquee / setViewBox 实例缓存单帧 rAF 合批调度器，避免高刷鼠标每帧多次触发 React 重渲染
+type MarqueeRect = { start: Point; current: Point };
+type StateSetter<T> = (next: T | ((current: T) => T)) => void;
+
+const marqueeRafSchedulers = new WeakMap<Function, RafLatestScheduler<MarqueeRect>>();
+const panViewBoxRafSchedulers = new WeakMap<Function, RafLatestScheduler<CanvasViewBox>>();
+
+function scheduleMarqueeUpdate(setMarquee: StateSetter<MarqueeRect | null>, next: MarqueeRect | null) {
+  let scheduler = marqueeRafSchedulers.get(setMarquee);
+  if (!scheduler) {
+    scheduler = createRafLatestScheduler<MarqueeRect>((rect) => {
+      setMarquee((current) =>
+        current &&
+        current.start.x === rect.start.x &&
+        current.start.y === rect.start.y &&
+        current.current.x === rect.current.x &&
+        current.current.y === rect.current.y
+          ? current
+          : rect
+      );
+    });
+    marqueeRafSchedulers.set(setMarquee, scheduler);
+  }
+  if (next === null) {
+    scheduler.cancel();
+    setMarquee(null);
+    return;
+  }
+  scheduler.schedule(next);
+}
+
+function schedulePanViewBoxUpdate(setViewBox: StateSetter<CanvasViewBox>, nextViewBox: CanvasViewBox) {
+  let scheduler = panViewBoxRafSchedulers.get(setViewBox);
+  if (!scheduler) {
+    scheduler = createRafLatestScheduler<CanvasViewBox>((vb) => {
+      setViewBox((current) =>
+        current.x === vb.x && current.y === vb.y && current.width === vb.width && current.height === vb.height
+          ? current
+          : vb
+      );
+    });
+    panViewBoxRafSchedulers.set(setViewBox, scheduler);
+  }
+  scheduler.schedule(nextViewBox);
+}
 import { clampNumber } from "../canvasViewport";
 import { routeEdgesForStoredRendering } from "../model-routing";
 import {
@@ -943,18 +990,11 @@ export function createHandlePointerMove(__appScope: ProjectCanvasScope) {
         }
         return;
       }
-      const rect = svgRef.current.getBoundingClientRect();
+      const rect = sharedElementRectCache.getRect(svgRef.current);
       const dx = rect.width > 0 ? ((event.clientX - activePanning.clientX) / rect.width) * canvasBounds.width : 0;
       const dy = rect.height > 0 ? ((event.clientY - activePanning.clientY) / rect.height) * canvasBounds.height : 0;
       const nextViewBox = clampViewBoxToCanvas({ ...activePanning.viewBox, x: activePanning.viewBox.x - dx, y: activePanning.viewBox.y - dy });
-      setViewBox((current: CanvasViewBox) =>
-        current.x === nextViewBox.x &&
-        current.y === nextViewBox.y &&
-        current.width === nextViewBox.width &&
-        current.height === nextViewBox.height
-          ? current
-          : nextViewBox
-      );
+      schedulePanViewBoxUpdate(setViewBox, nextViewBox);
       return;
     }
     if (svgRef.current) {
@@ -973,7 +1013,7 @@ export function createHandlePointerMove(__appScope: ProjectCanvasScope) {
       }
       const activeContextMarqueeSelection = contextMarqueeSelectionRef.current;
       if (activeContextMarqueeSelection) {
-        setMarquee({ start: activeContextMarqueeSelection.start, current: pointer });
+        scheduleMarqueeUpdate(setMarquee, { start: activeContextMarqueeSelection.start, current: pointer });
         event.preventDefault();
         event.stopPropagation();
         return;
@@ -1005,9 +1045,9 @@ export function createHandlePointerMove(__appScope: ProjectCanvasScope) {
         setModifierSelectionPress(nextPress);
       }
       if (moved) {
-        setMarquee({ start: modifierPress.startPoint, current: currentPoint });
+        scheduleMarqueeUpdate(setMarquee, { start: modifierPress.startPoint, current: currentPoint });
       } else {
-        setMarquee(null);
+        scheduleMarqueeUpdate(setMarquee, null);
       }
       event.preventDefault();
       event.stopPropagation();
@@ -1150,11 +1190,9 @@ export function createHandlePointerMove(__appScope: ProjectCanvasScope) {
     }
     if (marquee && svgRef.current) {
       const currentPoint = lastCanvasPointerRef.current ?? clampPointToCanvas(screenToSvgPoint(svgRef.current, event.clientX, event.clientY));
-      setMarquee((current: { start: Point; current: Point } | null) =>
-        current && !sameOptionalPoint(current.current, currentPoint)
-          ? { ...current, current: currentPoint }
-          : current
-      );
+      if (!sameOptionalPoint(marquee.current, currentPoint)) {
+        scheduleMarqueeUpdate(setMarquee, { start: marquee.start, current: currentPoint });
+      }
       return;
     }
     if (transformDrag && svgRef.current) {
@@ -1401,8 +1439,8 @@ export function createClientPointInsideRenderedCanvas(__appScope: ProjectCanvasS
     if (!frame || !svg) {
       return false;
     }
-    const frameRect = frame.getBoundingClientRect();
-    const svgRect = svg.getBoundingClientRect();
+    const frameRect = sharedElementRectCache.getRect(frame);
+    const svgRect = sharedElementRectCache.getRect(svg);
     return (
       clientX >= frameRect.left &&
       clientX <= frameRect.right &&
@@ -1447,7 +1485,7 @@ export function createWheelZoomAnchorFromClient(__appScope: ProjectCanvasScope) 
     if (!frame || !svg) {
       return null;
     }
-    const frameRect = frame.getBoundingClientRect();
+    const frameRect = sharedElementRectCache.getRect(frame);
     const cursorInsideFrame =
       clientX >= frameRect.left &&
       clientX <= frameRect.right &&

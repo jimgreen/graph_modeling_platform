@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { Segmented } from "antd";
-import { MemoizedViewSection } from "./appViewRenderBoundary";
+import { memo } from "react";
+import { areViewSectionPropsEqual, MemoizedViewSection } from "./appViewRenderBoundary";
 import type { ContainerDeviceParameterView, ContainerDeviceParameterViewRow, DeviceParameterDefinition, DeviceTemplate, ModelLayer, ModelNode, Terminal } from "../model";
 import { InlineEditableValue } from "../components/InputComponents";
 import {
@@ -155,15 +156,23 @@ type AppRightPanelProps = {
   embedded?: boolean;
 };
 
-export function AppRightPanel({ scope, inputs, embedded = false }: AppRightPanelProps) {
-  return (
-    <MemoizedViewSection
-      section={embedded ? "embedded-right-panel" : "right-panel"}
-      inputs={inputs}
-      render={() => <AppRightPanelContent scope={scope} embedded={embedded} />}
-    />
-  );
-}
+export const AppRightPanel = memo(
+  function AppRightPanel({ scope, inputs, embedded = false }: AppRightPanelProps) {
+    return (
+      <MemoizedViewSection
+        section={embedded ? "embedded-right-panel" : "right-panel"}
+        inputs={inputs}
+        render={() => <AppRightPanelContent scope={scope} embedded={embedded} />}
+      />
+    );
+  },
+  (prev, next) =>
+    prev.embedded === next.embedded &&
+    areViewSectionPropsEqual(
+      { section: prev.embedded ? "embedded-right-panel" : "right-panel", inputs: prev.inputs },
+      { section: next.embedded ? "embedded-right-panel" : "right-panel", inputs: next.inputs }
+    )
+);
 
 function AppRightPanelContent({ scope, embedded = false }: { scope: Record<string, any>; embedded?: boolean }) {
   const __appScope = scope;

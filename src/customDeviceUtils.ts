@@ -758,15 +758,60 @@ export function parseCustomDefinitions(params: Record<string, string>): DevicePa
   }
 }
 
+// 同帧 SVG 逆变换矩阵缓存：消除高刷鼠标同帧多次 pointermove 调用 getScreenCTM() 诱发的强制同步布局
+const svgInverseCtmFrameCache = new WeakMap<SVGSVGElement, { inverse: DOMMatrix; frameToken: number }>();
+let svgCtmFrameToken = 0;
+let svgCtmFrameResetScheduled = false;
+
+function currentSvgCtmFrameToken(): number {
+  if (typeof globalThis.requestAnimationFrame !== "function") {
+    // 非浏览器（如 Vitest Node）环境每次递增，确保单测绝不复用陈旧桩矩阵
+    svgCtmFrameToken += 1;
+    return svgCtmFrameToken;
+  }
+  if (!svgCtmFrameResetScheduled) {
+    svgCtmFrameResetScheduled = true;
+    globalThis.requestAnimationFrame(() => {
+      svgCtmFrameResetScheduled = false;
+      svgCtmFrameToken += 1;
+    });
+  }
+  return svgCtmFrameToken;
+}
+
 export function screenToSvgPoint(svg: SVGSVGElement, clientX: number, clientY: number): Point {
+  const token = currentSvgCtmFrameToken();
+  const cached = svgInverseCtmFrameCache.get(svg);
+  let inverse: DOMMatrix | null = null;
+  if (cached && cached.frameToken === token) {
+    inverse = cached.inverse;
+  } else {
+    const matrix = svg.getScreenCTM();
+    if (!matrix) {
+      return { x: clientX, y: clientY };
+    }
+    inverse = matrix.inverse();
+    if (typeof globalThis.requestAnimationFrame === "function") {
+      svgInverseCtmFrameCache.set(svg, { inverse, frameToken: token });
+    }
+  }
+  // 真实 DOMMatrix 具备全部 a..f 有限数值系数，直接做零分配 2D 仿射变换；测试 mock 缺失部分系数时回退 createSVGPoint().matrixTransform
+  if (
+    Number.isFinite(inverse.a) &&
+    Number.isFinite(inverse.b) &&
+    Number.isFinite(inverse.c) &&
+    Number.isFinite(inverse.d) &&
+    Number.isFinite(inverse.e) &&
+    Number.isFinite(inverse.f)
+  ) {
+    const tx = inverse.a * clientX + inverse.c * clientY + inverse.e;
+    const ty = inverse.b * clientX + inverse.d * clientY + inverse.f;
+    return { x: Math.round(tx), y: Math.round(ty) };
+  }
   const point = svg.createSVGPoint();
   point.x = clientX;
   point.y = clientY;
-  const matrix = svg.getScreenCTM();
-  if (!matrix) {
-    return { x: clientX, y: clientY };
-  }
-  const transformed = point.matrixTransform(matrix.inverse());
+  const transformed = point.matrixTransform(inverse);
   return { x: Math.round(transformed.x), y: Math.round(transformed.y) };
 }
 

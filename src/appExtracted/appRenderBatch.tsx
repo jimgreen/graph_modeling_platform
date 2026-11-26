@@ -1,3 +1,5 @@
+import { useRef } from "react";
+import { ensureStableFactoryStore, getOrCreateStableFactory, type StableFactoryStore } from "./stableScopeFactoryCache";
 // 从 App.tsx 第 3053-6217 行提取
 import { useMemo, useEffect, useCallback, useLayoutEffect, type DragEvent } from "react";
 import type { LibraryPackageScope } from "./appPersistenceLibraryExport";
@@ -244,6 +246,13 @@ export function createMeasurementEditorGroupId(
 }
 
 export function useRenderBatch(__appScope: Record<string, any>) {
+  // 跨渲染帧稳定工厂缓存：700+ 纯延迟解构工厂仅初始化创建一次，经实时 Proxy 读取最新 __appScope
+  const __liveScopeRef = useRef(__appScope);
+  __liveScopeRef.current = __appScope;
+  const __stableFactoryStoreRef = useRef<StableFactoryStore | null>(null);
+  const __stableFactories = ensureStableFactoryStore(__stableFactoryStoreRef, __liveScopeRef);
+  const __s = <TResult,>(key: string, factory: (scope: Record<string, unknown>) => TResult) =>
+    getOrCreateStableFactory(__stableFactories, key, factory);
   const {
     activeImageFolderId,
     activeLayerEdgeIdSet,
@@ -571,11 +580,11 @@ export function useRenderBatch(__appScope: Record<string, any>) {
     voltageUnit
   } = __appScope;
   const { customMeasurementSelectionAnchorRef } = __appScope;
-  const refreshSchemesFromBackendDirectory = createRefreshSchemesFromBackendDirectory(__appScope);
-  const handleBackendSchemeMutationFailure = createHandleBackendSchemeMutationFailure(__appScope);
-  const saveSchemeTreeToBackend = createSaveSchemeTreeToBackend(__appScope);
-  const persistSchemeTreeToBackend = createPersistSchemeTreeToBackend(__appScope);
-  const replaceSchemeTreeInBackend = createReplaceSchemeTreeInBackend(__appScope);
+  const refreshSchemesFromBackendDirectory = __s("refreshSchemesFromBackendDirectory", createRefreshSchemesFromBackendDirectory);
+  const handleBackendSchemeMutationFailure = __s("handleBackendSchemeMutationFailure", createHandleBackendSchemeMutationFailure);
+  const saveSchemeTreeToBackend = __s("saveSchemeTreeToBackend", createSaveSchemeTreeToBackend);
+  const persistSchemeTreeToBackend = __s("persistSchemeTreeToBackend", createPersistSchemeTreeToBackend);
+  const replaceSchemeTreeInBackend = __s("replaceSchemeTreeInBackend", createReplaceSchemeTreeInBackend);
   Object.assign(__appScope, { refreshSchemesFromBackendDirectory, handleBackendSchemeMutationFailure, saveSchemeTreeToBackend, persistSchemeTreeToBackend, replaceSchemeTreeInBackend });
   useEffect(createAppHookCallback77(__appScope), []);
   useEffect(createAppHookCallback78(__appScope), []);
@@ -788,7 +797,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
   useEffect(createAppHookCallback91(__appScope), []);
   // 内存守望：堆逼近 2GB 时逐级释放撤销历史 / 自动刷新兜底（见 src/memoryWatch.ts 头注）
   useEffect(createMemoryWatchCallback(__appScope), []);
-  const persistRefreshRecoveryNow = createPersistRefreshRecoveryNow(__appScope); Object.assign(__appScope, { persistRefreshRecoveryNow });
+  const persistRefreshRecoveryNow = __s("persistRefreshRecoveryNow", createPersistRefreshRecoveryNow); Object.assign(__appScope, { persistRefreshRecoveryNow });
   useEffect(createAppHookCallback92(__appScope), [saveRequired]);
   useEffect(createAppHookCallback93(__appScope), [hasUnsavedChanges]);
   useEffect(createAppHookCallback94(__appScope), [connectDropReady]);
@@ -801,12 +810,12 @@ export function useRenderBatch(__appScope: Record<string, any>) {
       }
       pendingNodeDragMoveRef.current = null;
     }, []);
-  const clearRecordSelection = createClearRecordSelection(__appScope); Object.assign(__appScope, { clearRecordSelection });
-  const blurLayerManagementDropdownFocus = createBlurLayerManagementDropdownFocus(__appScope); Object.assign(__appScope, { blurLayerManagementDropdownFocus });
-  const selectSingleScheme = createSelectSingleScheme(__appScope); Object.assign(__appScope, { selectSingleScheme });
-  const selectSingleProject = createSelectSingleProject(__appScope); Object.assign(__appScope, { selectSingleProject });
-  const toggleSchemeSelection = createToggleSchemeSelection(__appScope); Object.assign(__appScope, { toggleSchemeSelection });
-  const toggleProjectSelection = createToggleProjectSelection(__appScope); Object.assign(__appScope, { toggleProjectSelection });
+  const clearRecordSelection = __s("clearRecordSelection", createClearRecordSelection); Object.assign(__appScope, { clearRecordSelection });
+  const blurLayerManagementDropdownFocus = __s("blurLayerManagementDropdownFocus", createBlurLayerManagementDropdownFocus); Object.assign(__appScope, { blurLayerManagementDropdownFocus });
+  const selectSingleScheme = __s("selectSingleScheme", createSelectSingleScheme); Object.assign(__appScope, { selectSingleScheme });
+  const selectSingleProject = __s("selectSingleProject", createSelectSingleProject); Object.assign(__appScope, { selectSingleProject });
+  const toggleSchemeSelection = __s("toggleSchemeSelection", createToggleSchemeSelection); Object.assign(__appScope, { toggleSchemeSelection });
+  const toggleProjectSelection = __s("toggleProjectSelection", createToggleProjectSelection); Object.assign(__appScope, { toggleProjectSelection });
   const cloneProjectState = (deepModelSnapshot = false, graphPatchScope?: UndoGraphPatchScope): UndoSnapshot => ({
       graphSnapshotMode: deepModelSnapshot ? "deep" : "reference",
       graphPatchScope: deepModelSnapshot ? undefined : graphPatchScope,
@@ -850,10 +859,10 @@ export function useRenderBatch(__appScope: Record<string, any>) {
         ...snapshot.edges.map((edge) => edge.id)
       ]);
   Object.assign(__appScope, { fullUndoGraphDirtyEdgeIds });
-  const undoGraphSnapshotPatchPlan = createUndoGraphSnapshotPatchPlan(__appScope); Object.assign(__appScope, { undoGraphSnapshotPatchPlan });
-  const applyUndoGraphSnapshot = createApplyUndoGraphSnapshot(__appScope); Object.assign(__appScope, { applyUndoGraphSnapshot });
-  const pushUndoSnapshot = createPushUndoSnapshot(__appScope); Object.assign(__appScope, { pushUndoSnapshot });
-  const uniqueUndoScopeIds = createUniqueUndoScopeIds(__appScope); Object.assign(__appScope, { uniqueUndoScopeIds });
+  const undoGraphSnapshotPatchPlan = __s("undoGraphSnapshotPatchPlan", createUndoGraphSnapshotPatchPlan); Object.assign(__appScope, { undoGraphSnapshotPatchPlan });
+  const applyUndoGraphSnapshot = __s("applyUndoGraphSnapshot", createApplyUndoGraphSnapshot); Object.assign(__appScope, { applyUndoGraphSnapshot });
+  const pushUndoSnapshot = __s("pushUndoSnapshot", createPushUndoSnapshot); Object.assign(__appScope, { pushUndoSnapshot });
+  const uniqueUndoScopeIds = __s("uniqueUndoScopeIds", createUniqueUndoScopeIds); Object.assign(__appScope, { uniqueUndoScopeIds });
   const undoScopeForGraphPatch = (
       nodeIds: Iterable<string | undefined> = [],
       edgeIds: Iterable<string | undefined> = []
@@ -873,27 +882,27 @@ export function useRenderBatch(__appScope: Record<string, any>) {
           )
         : undefined;
   Object.assign(__appScope, { undoScopeForDraggingState });
-  const pushNodeOnlyUndoSnapshot = createPushNodeOnlyUndoSnapshot(__appScope); Object.assign(__appScope, { pushNodeOnlyUndoSnapshot });
-  const syncExistingNodesWithTemplateDefinitions = createSyncExistingNodesWithTemplateDefinitions(__appScope); Object.assign(__appScope, { syncExistingNodesWithTemplateDefinitions });
-  const updateMeasurementConfig = createUpdateMeasurementConfig(__appScope); Object.assign(__appScope, { updateMeasurementConfig });
-  const prepareMeasurementConfigDraft = createPrepareMeasurementConfigDraft(__appScope); Object.assign(__appScope, { prepareMeasurementConfigDraft });
-  const openMeasurementConfigDialog = createOpenMeasurementConfigDialog(__appScope); Object.assign(__appScope, { openMeasurementConfigDialog });
-  const closeMeasurementConfigDialog = createCloseMeasurementConfigDialog(__appScope); Object.assign(__appScope, { closeMeasurementConfigDialog });
-  const flushMeasurementConfigDialogDraftInputs = createFlushMeasurementConfigDialogDraftInputs(__appScope); Object.assign(__appScope, { flushMeasurementConfigDialogDraftInputs });
-  const saveMeasurementConfigDialog = createSaveMeasurementConfigDialog(__appScope); Object.assign(__appScope, { saveMeasurementConfigDialog });
-  const updateMeasurementType = createUpdateMeasurementType(__appScope); Object.assign(__appScope, { updateMeasurementType });
-  const addMeasurementType = createAddMeasurementType(__appScope); Object.assign(__appScope, { addMeasurementType });
-  const deleteMeasurementType = createDeleteMeasurementType(__appScope); Object.assign(__appScope, { deleteMeasurementType });
-  const setMeasurementProfileItems = createSetMeasurementProfileItems(__appScope); Object.assign(__appScope, { setMeasurementProfileItems });
-  const createMeasurementProfileItem = createCreateMeasurementProfileItem(__appScope); Object.assign(__appScope, { createMeasurementProfileItem });
-  const addMeasurementProfileItem = createAddMeasurementProfileItem(__appScope); Object.assign(__appScope, { addMeasurementProfileItem });
-  const updateMeasurementProfileItem = createUpdateMeasurementProfileItem(__appScope); Object.assign(__appScope, { updateMeasurementProfileItem });
-  const deleteMeasurementProfileItem = createDeleteMeasurementProfileItem(__appScope); Object.assign(__appScope, { deleteMeasurementProfileItem });
-  const moveMeasurementProfileItem = createMoveMeasurementProfileItem(__appScope); Object.assign(__appScope, { moveMeasurementProfileItem });
-  const updateProjectMeasurementsWithUndo = createUpdateProjectMeasurementsWithUndo(__appScope); Object.assign(__appScope, { updateProjectMeasurementsWithUndo });
-  const addDefaultMeasurementsToNode = createAddDefaultMeasurementsToNode(__appScope); Object.assign(__appScope, { addDefaultMeasurementsToNode });
-  const removeMeasurementsFromNode = createRemoveMeasurementsFromNode(__appScope); Object.assign(__appScope, { removeMeasurementsFromNode });
-  const measurementGroupShellOffsetForNode = createMeasurementGroupShellOffsetForNode(__appScope); Object.assign(__appScope, { measurementGroupShellOffsetForNode });
+  const pushNodeOnlyUndoSnapshot = __s("pushNodeOnlyUndoSnapshot", createPushNodeOnlyUndoSnapshot); Object.assign(__appScope, { pushNodeOnlyUndoSnapshot });
+  const syncExistingNodesWithTemplateDefinitions = __s("syncExistingNodesWithTemplateDefinitions", createSyncExistingNodesWithTemplateDefinitions); Object.assign(__appScope, { syncExistingNodesWithTemplateDefinitions });
+  const updateMeasurementConfig = __s("updateMeasurementConfig", createUpdateMeasurementConfig); Object.assign(__appScope, { updateMeasurementConfig });
+  const prepareMeasurementConfigDraft = __s("prepareMeasurementConfigDraft", createPrepareMeasurementConfigDraft); Object.assign(__appScope, { prepareMeasurementConfigDraft });
+  const openMeasurementConfigDialog = __s("openMeasurementConfigDialog", createOpenMeasurementConfigDialog); Object.assign(__appScope, { openMeasurementConfigDialog });
+  const closeMeasurementConfigDialog = __s("closeMeasurementConfigDialog", createCloseMeasurementConfigDialog); Object.assign(__appScope, { closeMeasurementConfigDialog });
+  const flushMeasurementConfigDialogDraftInputs = __s("flushMeasurementConfigDialogDraftInputs", createFlushMeasurementConfigDialogDraftInputs); Object.assign(__appScope, { flushMeasurementConfigDialogDraftInputs });
+  const saveMeasurementConfigDialog = __s("saveMeasurementConfigDialog", createSaveMeasurementConfigDialog); Object.assign(__appScope, { saveMeasurementConfigDialog });
+  const updateMeasurementType = __s("updateMeasurementType", createUpdateMeasurementType); Object.assign(__appScope, { updateMeasurementType });
+  const addMeasurementType = __s("addMeasurementType", createAddMeasurementType); Object.assign(__appScope, { addMeasurementType });
+  const deleteMeasurementType = __s("deleteMeasurementType", createDeleteMeasurementType); Object.assign(__appScope, { deleteMeasurementType });
+  const setMeasurementProfileItems = __s("setMeasurementProfileItems", createSetMeasurementProfileItems); Object.assign(__appScope, { setMeasurementProfileItems });
+  const createMeasurementProfileItem = __s("createMeasurementProfileItem", createCreateMeasurementProfileItem); Object.assign(__appScope, { createMeasurementProfileItem });
+  const addMeasurementProfileItem = __s("addMeasurementProfileItem", createAddMeasurementProfileItem); Object.assign(__appScope, { addMeasurementProfileItem });
+  const updateMeasurementProfileItem = __s("updateMeasurementProfileItem", createUpdateMeasurementProfileItem); Object.assign(__appScope, { updateMeasurementProfileItem });
+  const deleteMeasurementProfileItem = __s("deleteMeasurementProfileItem", createDeleteMeasurementProfileItem); Object.assign(__appScope, { deleteMeasurementProfileItem });
+  const moveMeasurementProfileItem = __s("moveMeasurementProfileItem", createMoveMeasurementProfileItem); Object.assign(__appScope, { moveMeasurementProfileItem });
+  const updateProjectMeasurementsWithUndo = __s("updateProjectMeasurementsWithUndo", createUpdateProjectMeasurementsWithUndo); Object.assign(__appScope, { updateProjectMeasurementsWithUndo });
+  const addDefaultMeasurementsToNode = __s("addDefaultMeasurementsToNode", createAddDefaultMeasurementsToNode); Object.assign(__appScope, { addDefaultMeasurementsToNode });
+  const removeMeasurementsFromNode = __s("removeMeasurementsFromNode", createRemoveMeasurementsFromNode); Object.assign(__appScope, { removeMeasurementsFromNode });
+  const measurementGroupShellOffsetForNode = __s("measurementGroupShellOffsetForNode", createMeasurementGroupShellOffsetForNode); Object.assign(__appScope, { measurementGroupShellOffsetForNode });
   const createMeasurementGroupShellForNode = (node: ModelNode, terminalId?: string): MeasurementGroup => ({
       id: terminalId ? `measurement-${node.id}-${terminalId}` : `measurement-${node.id}`,
       nodeId: node.id,
@@ -925,19 +934,19 @@ export function useRenderBatch(__appScope: Record<string, any>) {
       id: createMeasurementEditorGroupIdForScope(node.id, terminalId)
     });
   Object.assign(__appScope, { createMeasurementEditorGroupShellForNode });
-  const measurementSourcePointForNodeItem = createMeasurementSourcePointForNodeItem(__appScope); Object.assign(__appScope, { measurementSourcePointForNodeItem });
+  const measurementSourcePointForNodeItem = __s("measurementSourcePointForNodeItem", createMeasurementSourcePointForNodeItem); Object.assign(__appScope, { measurementSourcePointForNodeItem });
   const measurementProfileItemsForMeasurementGroup = (node: ModelNode, terminalId?: string) =>
       measurementProfileItemsForNodePosition(node, runtimeMeasurementConfig ?? measurementConfig, terminalId);
   Object.assign(__appScope, { measurementProfileItemsForMeasurementGroup });
-  const measurementTypeOptionsForMeasurementGroup = createMeasurementTypeOptionsForMeasurementGroup(__appScope); Object.assign(__appScope, { measurementTypeOptionsForMeasurementGroup });
-  const createMeasurementItemForNode = createCreateMeasurementItemForNode(__appScope); Object.assign(__appScope, { createMeasurementItemForNode });
-  const updateMeasurementGroupById = createUpdateMeasurementGroupById(__appScope); Object.assign(__appScope, { updateMeasurementGroupById });
-  const updateSelectedMeasurementGroup = createUpdateSelectedMeasurementGroup(__appScope); Object.assign(__appScope, { updateSelectedMeasurementGroup });
-  const updateSelectedMeasurementGroups = createUpdateSelectedMeasurementGroups(__appScope); Object.assign(__appScope, { updateSelectedMeasurementGroups });
-  const addMeasurementItemToGroup = createAddMeasurementItemToGroup(__appScope); Object.assign(__appScope, { addMeasurementItemToGroup });
-  const addMeasurementItemToNode = createAddMeasurementItemToNode(__appScope); Object.assign(__appScope, { addMeasurementItemToNode });
-  const updateMeasurementItem = createUpdateMeasurementItem(__appScope); Object.assign(__appScope, { updateMeasurementItem });
-  const removeMeasurementItem = createRemoveMeasurementItem(__appScope); Object.assign(__appScope, { removeMeasurementItem });
+  const measurementTypeOptionsForMeasurementGroup = __s("measurementTypeOptionsForMeasurementGroup", createMeasurementTypeOptionsForMeasurementGroup); Object.assign(__appScope, { measurementTypeOptionsForMeasurementGroup });
+  const createMeasurementItemForNode = __s("createMeasurementItemForNode", createCreateMeasurementItemForNode); Object.assign(__appScope, { createMeasurementItemForNode });
+  const updateMeasurementGroupById = __s("updateMeasurementGroupById", createUpdateMeasurementGroupById); Object.assign(__appScope, { updateMeasurementGroupById });
+  const updateSelectedMeasurementGroup = __s("updateSelectedMeasurementGroup", createUpdateSelectedMeasurementGroup); Object.assign(__appScope, { updateSelectedMeasurementGroup });
+  const updateSelectedMeasurementGroups = __s("updateSelectedMeasurementGroups", createUpdateSelectedMeasurementGroups); Object.assign(__appScope, { updateSelectedMeasurementGroups });
+  const addMeasurementItemToGroup = __s("addMeasurementItemToGroup", createAddMeasurementItemToGroup); Object.assign(__appScope, { addMeasurementItemToGroup });
+  const addMeasurementItemToNode = __s("addMeasurementItemToNode", createAddMeasurementItemToNode); Object.assign(__appScope, { addMeasurementItemToNode });
+  const updateMeasurementItem = __s("updateMeasurementItem", createUpdateMeasurementItem); Object.assign(__appScope, { updateMeasurementItem });
+  const removeMeasurementItem = __s("removeMeasurementItem", createRemoveMeasurementItem); Object.assign(__appScope, { removeMeasurementItem });
   const applyMeasurementEditorGroupSettings = (group: MeasurementGroup, template: MeasurementGroup): MeasurementGroup => ({
       ...group,
       visible: template.visible,
@@ -952,26 +961,26 @@ export function useRenderBatch(__appScope: Record<string, any>) {
       groupStyleOverride: template.groupStyleOverride ? { ...template.groupStyleOverride } : undefined
     });
   Object.assign(__appScope, { applyMeasurementEditorGroupSettings });
-  const createMeasurementEditorGroupForPosition = createCreateMeasurementEditorGroupForPosition(__appScope); Object.assign(__appScope, { createMeasurementEditorGroupForPosition });
-  const updateMeasurementEditorGroupSettings = createUpdateMeasurementEditorGroupSettings(__appScope); Object.assign(__appScope, { updateMeasurementEditorGroupSettings });
-  const updateMeasurementEditorDraftItem = createUpdateMeasurementEditorDraftItem(__appScope); Object.assign(__appScope, { updateMeasurementEditorDraftItem });
-  const addMeasurementEditorDraftItem = createAddMeasurementEditorDraftItem(__appScope); Object.assign(__appScope, { addMeasurementEditorDraftItem });
-  const removeMeasurementEditorDraftItem = createRemoveMeasurementEditorDraftItem(__appScope); Object.assign(__appScope, { removeMeasurementEditorDraftItem });
-  const moveMeasurementEditorDraftItem = createMoveMeasurementEditorDraftItem(__appScope); Object.assign(__appScope, { moveMeasurementEditorDraftItem });
-  const updateMeasurementEditorDraftItemPosition = createUpdateMeasurementEditorDraftItemPosition(__appScope); Object.assign(__appScope, { updateMeasurementEditorDraftItemPosition });
+  const createMeasurementEditorGroupForPosition = __s("createMeasurementEditorGroupForPosition", createCreateMeasurementEditorGroupForPosition); Object.assign(__appScope, { createMeasurementEditorGroupForPosition });
+  const updateMeasurementEditorGroupSettings = __s("updateMeasurementEditorGroupSettings", createUpdateMeasurementEditorGroupSettings); Object.assign(__appScope, { updateMeasurementEditorGroupSettings });
+  const updateMeasurementEditorDraftItem = __s("updateMeasurementEditorDraftItem", createUpdateMeasurementEditorDraftItem); Object.assign(__appScope, { updateMeasurementEditorDraftItem });
+  const addMeasurementEditorDraftItem = __s("addMeasurementEditorDraftItem", createAddMeasurementEditorDraftItem); Object.assign(__appScope, { addMeasurementEditorDraftItem });
+  const removeMeasurementEditorDraftItem = __s("removeMeasurementEditorDraftItem", createRemoveMeasurementEditorDraftItem); Object.assign(__appScope, { removeMeasurementEditorDraftItem });
+  const moveMeasurementEditorDraftItem = __s("moveMeasurementEditorDraftItem", createMoveMeasurementEditorDraftItem); Object.assign(__appScope, { moveMeasurementEditorDraftItem });
+  const updateMeasurementEditorDraftItemPosition = __s("updateMeasurementEditorDraftItemPosition", createUpdateMeasurementEditorDraftItemPosition); Object.assign(__appScope, { updateMeasurementEditorDraftItemPosition });
   const measurementEditorItemName = (item: MeasurementItemBinding) =>
       (item.name ?? measurementTypeById.get(item.measurementTypeId)?.name ?? item.measurementTypeId).trim();
   Object.assign(__appScope, { measurementEditorItemName });
-  const duplicateMeasurementEditorItemNames = createDuplicateMeasurementEditorItemNames(__appScope); Object.assign(__appScope, { duplicateMeasurementEditorItemNames });
-  const confirmMeasurementEditorDialog = createConfirmMeasurementEditorDialog(__appScope); Object.assign(__appScope, { confirmMeasurementEditorDialog });
-  const renderSelectedNodeMeasurementTable = createRenderSelectedNodeMeasurementTable(__appScope); Object.assign(__appScope, { renderSelectedNodeMeasurementTable });
-  const beginMeasurementDrag = createBeginMeasurementDrag(__appScope); Object.assign(__appScope, { beginMeasurementDrag });
-  const updateMeasurementDrag = createUpdateMeasurementDrag(__appScope); Object.assign(__appScope, { updateMeasurementDrag });
-  const finishMeasurementDrag = createFinishMeasurementDrag(__appScope); Object.assign(__appScope, { finishMeasurementDrag });
-  const ensureDraggingUndoSnapshot = createEnsureDraggingUndoSnapshot(__appScope); Object.assign(__appScope, { ensureDraggingUndoSnapshot });
-  const requestCanvasFrameCenter = createRequestCanvasFrameCenter(__appScope); Object.assign(__appScope, { requestCanvasFrameCenter });
-  const undoLastOperation = createUndoLastOperation(__appScope); Object.assign(__appScope, { undoLastOperation });
-  const redoLastOperation = createRedoLastOperation(__appScope); Object.assign(__appScope, { redoLastOperation });
+  const duplicateMeasurementEditorItemNames = __s("duplicateMeasurementEditorItemNames", createDuplicateMeasurementEditorItemNames); Object.assign(__appScope, { duplicateMeasurementEditorItemNames });
+  const confirmMeasurementEditorDialog = __s("confirmMeasurementEditorDialog", createConfirmMeasurementEditorDialog); Object.assign(__appScope, { confirmMeasurementEditorDialog });
+  const renderSelectedNodeMeasurementTable = __s("renderSelectedNodeMeasurementTable", createRenderSelectedNodeMeasurementTable); Object.assign(__appScope, { renderSelectedNodeMeasurementTable });
+  const beginMeasurementDrag = __s("beginMeasurementDrag", createBeginMeasurementDrag); Object.assign(__appScope, { beginMeasurementDrag });
+  const updateMeasurementDrag = __s("updateMeasurementDrag", createUpdateMeasurementDrag); Object.assign(__appScope, { updateMeasurementDrag });
+  const finishMeasurementDrag = __s("finishMeasurementDrag", createFinishMeasurementDrag); Object.assign(__appScope, { finishMeasurementDrag });
+  const ensureDraggingUndoSnapshot = __s("ensureDraggingUndoSnapshot", createEnsureDraggingUndoSnapshot); Object.assign(__appScope, { ensureDraggingUndoSnapshot });
+  const requestCanvasFrameCenter = __s("requestCanvasFrameCenter", createRequestCanvasFrameCenter); Object.assign(__appScope, { requestCanvasFrameCenter });
+  const undoLastOperation = __s("undoLastOperation", createUndoLastOperation); Object.assign(__appScope, { undoLastOperation });
+  const redoLastOperation = __s("redoLastOperation", createRedoLastOperation); Object.assign(__appScope, { redoLastOperation });
   useEffect(createAppHookCallback97(__appScope), [canvasBounds]);
   useLayoutEffect(createAppHookCallback98(__appScope), [canvasCenterRequest]);
   useEffect(createAppHookCallback99(__appScope), [projectPanelResize]);
@@ -984,7 +993,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
   useEffect(createAppHookCallback106(__appScope), [nodeDoubleClickDialogResize]);
   useEffect(createAppHookCallback107(__appScope), [deviceLibraryDialogDrag]);
   useEffect(createAppHookCallback108(__appScope), [deviceLibraryDialogResize]);
-  const canvasPointerKeyboardShortcutAvailability = createCanvasPointerKeyboardShortcutAvailability(__appScope); Object.assign(__appScope, { canvasPointerKeyboardShortcutAvailability });
+  const canvasPointerKeyboardShortcutAvailability = __s("canvasPointerKeyboardShortcutAvailability", createCanvasPointerKeyboardShortcutAvailability); Object.assign(__appScope, { canvasPointerKeyboardShortcutAvailability });
   useEffect(createAppHookCallback109(__appScope), []);
   useEffect(createAppHookCallback110(__appScope), [activeLayerEdges, activeLayerGroups, activeLayerNodes, activeSelectedEdgeIds, activeSelectedNodeIds, canvasBounds, canvasClipboard, canvasSelectionScope, connectSource, customDeviceDefinitionMode, customDeviceDialogOpen, customDeviceDraft, deviceIndexCounters, displaySelectedEdgeIds, displaySelectedNodeIds, edges, editingCustomDeviceKind, hasUnsavedChanges, hoveredCategoryLibraryComponentLibrary, isEditMode, libraryPlacement, measurementConfigDraft, nodes, projectById, projectName, recordClipboard, routedEdgeById, saveRequired, schemes, selectedCustomComponentTemplate, selectedDefinitionKind, selectedDefinitionTemplate, selectedEdgeId, selectedEdgeIds, selectedNodeIds, selectedProjectId, selectedProjectIds, selectedSchemeId, selectedSchemeIds, staticDrawing, topologyErrors, viewBox]);
   useEffect(createAppHookCallback111(__appScope), [leftPanelTab]);
@@ -996,11 +1005,11 @@ export function useRenderBatch(__appScope: Record<string, any>) {
   useEffect(createAppHookCallback117(__appScope), [rightPanelWidth]);
   useEffect(createAppHookCallback118(__appScope), [statusbarHeight]);
   useEffect(createAppHookCallback119(__appScope), [topologyWarningPanelHeight]);
-  const routeForCurrentEdgeSave = createRouteForCurrentEdgeSave(__appScope); Object.assign(__appScope, { routeForCurrentEdgeSave });
+  const routeForCurrentEdgeSave = __s("routeForCurrentEdgeSave", createRouteForCurrentEdgeSave); Object.assign(__appScope, { routeForCurrentEdgeSave });
   const edgeWithCurrentRouteGeometryForSave = (edge: Edge): Edge =>
       edgeWithSavedRouteGeometry(edge, routeForCurrentEdgeSave(edge), nodeById.get(edge.sourceId), nodeById.get(edge.targetId));
   Object.assign(__appScope, { edgeWithCurrentRouteGeometryForSave });
-  const currentProject = createCurrentProject(__appScope); Object.assign(__appScope, { currentProject });
+  const currentProject = __s("currentProject", createCurrentProject); Object.assign(__appScope, { currentProject });
   const currentGraphDirtyBaseline = (): GraphDirtyBaseline => ({
       projectName,
       layers,
@@ -1050,14 +1059,14 @@ export function useRenderBatch(__appScope: Record<string, any>) {
   Object.assign(__appScope, { graphDirtyBaselineChanged });
   useEffect(createAppHookCallback120(__appScope), [activeLayerId, allowAutoExpandCanvas, backgroundLayerIds, backgroundProjectId, canvasBackgroundColor, canvasBackgroundImage, canvasBackgroundImageAssetId, canvasBackgroundImageFit, canvasHeight, canvasWidth, currentUnit, deviceIndexCounters, edges, groups, layers, nodes, powerBaseValue, powerUnit, projectMeasurements, projectName, voltageUnit]);
   const canAdjustSelectedDisplayLayer = isEditMode && activeSelectedNodeIds.length > 0; Object.assign(__appScope, { canAdjustSelectedDisplayLayer });
-  const adjustSelectedDisplayLayer = createAdjustSelectedDisplayLayer(__appScope); Object.assign(__appScope, { adjustSelectedDisplayLayer });
-  const clearTransientSelectionState = createClearTransientSelectionState(__appScope); Object.assign(__appScope, { clearTransientSelectionState });
-  const queuePendingBlankCanvasDeselect = createQueuePendingBlankCanvasDeselect(__appScope); Object.assign(__appScope, { queuePendingBlankCanvasDeselect });
-  const cancelPendingBlankCanvasDeselectOnMove = createCancelPendingBlankCanvasDeselectOnMove(__appScope); Object.assign(__appScope, { cancelPendingBlankCanvasDeselectOnMove });
-  const flushPendingBlankCanvasDeselect = createFlushPendingBlankCanvasDeselect(__appScope); Object.assign(__appScope, { flushPendingBlankCanvasDeselect });
-  const writeOperationLog = createWriteOperationLog(__appScope); Object.assign(__appScope, { writeOperationLog });
-  const persistDeviceLibraryChange = createPersistDeviceLibraryChange(__appScope); Object.assign(__appScope, { persistDeviceLibraryChange });
-  const persistTemplateLibraryChange = createPersistTemplateLibraryChange(__appScope); Object.assign(__appScope, { persistTemplateLibraryChange });
+  const adjustSelectedDisplayLayer = __s("adjustSelectedDisplayLayer", createAdjustSelectedDisplayLayer); Object.assign(__appScope, { adjustSelectedDisplayLayer });
+  const clearTransientSelectionState = __s("clearTransientSelectionState", createClearTransientSelectionState); Object.assign(__appScope, { clearTransientSelectionState });
+  const queuePendingBlankCanvasDeselect = __s("queuePendingBlankCanvasDeselect", createQueuePendingBlankCanvasDeselect); Object.assign(__appScope, { queuePendingBlankCanvasDeselect });
+  const cancelPendingBlankCanvasDeselectOnMove = __s("cancelPendingBlankCanvasDeselectOnMove", createCancelPendingBlankCanvasDeselectOnMove); Object.assign(__appScope, { cancelPendingBlankCanvasDeselectOnMove });
+  const flushPendingBlankCanvasDeselect = __s("flushPendingBlankCanvasDeselect", createFlushPendingBlankCanvasDeselect); Object.assign(__appScope, { flushPendingBlankCanvasDeselect });
+  const writeOperationLog = __s("writeOperationLog", createWriteOperationLog); Object.assign(__appScope, { writeOperationLog });
+  const persistDeviceLibraryChange = __s("persistDeviceLibraryChange", createPersistDeviceLibraryChange); Object.assign(__appScope, { persistDeviceLibraryChange });
+  const persistTemplateLibraryChange = __s("persistTemplateLibraryChange", createPersistTemplateLibraryChange); Object.assign(__appScope, { persistTemplateLibraryChange });
   const libraryPackageScopeLabels: Record<LibraryPackageScope, string> = {
     measurement: "量测定义",
     "device-library": "类",
@@ -1153,37 +1162,37 @@ export function useRenderBatch(__appScope: Record<string, any>) {
     userCustomizationSnapshotView
   ]);
   Object.assign(__appScope, { userCustomizationInventory });
-  const captureUserCustomizationSnapshot = createCaptureUserCustomizationSnapshot(__appScope);
+  const captureUserCustomizationSnapshot = __s("captureUserCustomizationSnapshot", createCaptureUserCustomizationSnapshot);
   Object.assign(__appScope, { captureUserCustomizationSnapshot });
-  const persistUserCustomizationSnapshot = createPersistUserCustomizationSnapshot(__appScope);
+  const persistUserCustomizationSnapshot = __s("persistUserCustomizationSnapshot", createPersistUserCustomizationSnapshot);
   Object.assign(__appScope, { persistUserCustomizationSnapshot });
-  const applyUserCustomizationSnapshotToState = createApplyUserCustomizationSnapshotToState(__appScope);
+  const applyUserCustomizationSnapshotToState = __s("applyUserCustomizationSnapshotToState", createApplyUserCustomizationSnapshotToState);
   Object.assign(__appScope, { applyUserCustomizationSnapshotToState });
-  const reconcileOpenModelAfterCustomizationChange = createReconcileOpenModelAfterCustomizationChange(__appScope);
+  const reconcileOpenModelAfterCustomizationChange = __s("reconcileOpenModelAfterCustomizationChange", createReconcileOpenModelAfterCustomizationChange);
   Object.assign(__appScope, { reconcileOpenModelAfterCustomizationChange });
-  const refreshUserCustomizationManager = createRefreshUserCustomizationManager(__appScope);
+  const refreshUserCustomizationManager = __s("refreshUserCustomizationManager", createRefreshUserCustomizationManager);
   Object.assign(__appScope, { refreshUserCustomizationManager });
-  const saveUserCustomizationSnapshotFile = createSaveUserCustomizationSnapshotFile(__appScope);
+  const saveUserCustomizationSnapshotFile = __s("saveUserCustomizationSnapshotFile", createSaveUserCustomizationSnapshotFile);
   Object.assign(__appScope, { saveUserCustomizationSnapshotFile });
-  const applyUserCustomizationSnapshot = createApplyUserCustomizationSnapshot(__appScope);
+  const applyUserCustomizationSnapshot = __s("applyUserCustomizationSnapshot", createApplyUserCustomizationSnapshot);
   Object.assign(__appScope, { applyUserCustomizationSnapshot });
-  const exportAllUserCustomizations = createExportAllUserCustomizations(__appScope);
+  const exportAllUserCustomizations = __s("exportAllUserCustomizations", createExportAllUserCustomizations);
   Object.assign(__appScope, { exportAllUserCustomizations });
-  const openUserCustomizationManager = createOpenUserCustomizationManager(__appScope);
+  const openUserCustomizationManager = __s("openUserCustomizationManager", createOpenUserCustomizationManager);
   Object.assign(__appScope, { openUserCustomizationManager });
-  const closeUserCustomizationManager = createCloseUserCustomizationManager(__appScope);
+  const closeUserCustomizationManager = __s("closeUserCustomizationManager", createCloseUserCustomizationManager);
   Object.assign(__appScope, { closeUserCustomizationManager });
-  const openUserCustomizationImportFilePicker = createOpenUserCustomizationImportFilePicker(__appScope);
+  const openUserCustomizationImportFilePicker = __s("openUserCustomizationImportFilePicker", createOpenUserCustomizationImportFilePicker);
   Object.assign(__appScope, { openUserCustomizationImportFilePicker });
-  const importUserCustomizationFile = createImportUserCustomizationFile(__appScope);
+  const importUserCustomizationFile = __s("importUserCustomizationFile", createImportUserCustomizationFile);
   Object.assign(__appScope, { importUserCustomizationFile });
-  const changePendingUserCustomizationImportMode = createChangePendingUserCustomizationImportMode(__appScope);
+  const changePendingUserCustomizationImportMode = __s("changePendingUserCustomizationImportMode", createChangePendingUserCustomizationImportMode);
   Object.assign(__appScope, { changePendingUserCustomizationImportMode });
-  const confirmUserCustomizationImport = createConfirmUserCustomizationImport(__appScope);
+  const confirmUserCustomizationImport = __s("confirmUserCustomizationImport", createConfirmUserCustomizationImport);
   Object.assign(__appScope, { confirmUserCustomizationImport });
-  const cancelPendingUserCustomizationImport = createCancelPendingUserCustomizationImport(__appScope);
+  const cancelPendingUserCustomizationImport = __s("cancelPendingUserCustomizationImport", createCancelPendingUserCustomizationImport);
   Object.assign(__appScope, { cancelPendingUserCustomizationImport });
-  const restoreUserCustomizations = createRestoreUserCustomizations(__appScope);
+  const restoreUserCustomizations = __s("restoreUserCustomizations", createRestoreUserCustomizations);
   Object.assign(__appScope, { restoreUserCustomizations });
   const exportLibraryPackage = async (scope: LibraryPackageScope) => {
     try {
@@ -1404,19 +1413,19 @@ export function useRenderBatch(__appScope: Record<string, any>) {
     reader.readAsText(file, "utf-8");
   };
   Object.assign(__appScope, { importLibraryPackageFile });
-  const connectionCommitFailureMessage = createConnectionCommitFailureMessage(__appScope); Object.assign(__appScope, { connectionCommitFailureMessage });
+  const connectionCommitFailureMessage = __s("connectionCommitFailureMessage", createConnectionCommitFailureMessage); Object.assign(__appScope, { connectionCommitFailureMessage });
   const connectionEndpointRuleFailureMessage = (edge: Edge) =>
       validateConnectionEndpointRules(nodes, edges, edge)[0]?.message ?? "";
   Object.assign(__appScope, { connectionEndpointRuleFailureMessage });
   const expandActiveGroupSelection = (nodeIds: readonly string[] = [], edgeIds: readonly string[] = []) =>
       expandSelectionByGroups(activeLayerGroups, nodeIds, edgeIds);
   Object.assign(__appScope, { expandActiveGroupSelection });
-  const switchInspectorTabForCanvasSelection = createSwitchInspectorTabForCanvasSelection(__appScope); Object.assign(__appScope, { switchInspectorTabForCanvasSelection });
-  const selectCanvasGraphics = createSelectCanvasGraphics(__appScope); Object.assign(__appScope, { selectCanvasGraphics });
-  const setModifierSelectionPress = createSetModifierSelectionPress(__appScope); Object.assign(__appScope, { setModifierSelectionPress });
-  const toggleNodeSelectionFromModifierClick = createToggleNodeSelectionFromModifierClick(__appScope); Object.assign(__appScope, { toggleNodeSelectionFromModifierClick });
-  const toggleEdgeSelectionFromModifierClick = createToggleEdgeSelectionFromModifierClick(__appScope); Object.assign(__appScope, { toggleEdgeSelectionFromModifierClick });
-  const toggleSelectionFromModifierClick = createToggleSelectionFromModifierClick(__appScope); Object.assign(__appScope, { toggleSelectionFromModifierClick });
+  const switchInspectorTabForCanvasSelection = __s("switchInspectorTabForCanvasSelection", createSwitchInspectorTabForCanvasSelection); Object.assign(__appScope, { switchInspectorTabForCanvasSelection });
+  const selectCanvasGraphics = __s("selectCanvasGraphics", createSelectCanvasGraphics); Object.assign(__appScope, { selectCanvasGraphics });
+  const setModifierSelectionPress = __s("setModifierSelectionPress", createSetModifierSelectionPress); Object.assign(__appScope, { setModifierSelectionPress });
+  const toggleNodeSelectionFromModifierClick = __s("toggleNodeSelectionFromModifierClick", createToggleNodeSelectionFromModifierClick); Object.assign(__appScope, { toggleNodeSelectionFromModifierClick });
+  const toggleEdgeSelectionFromModifierClick = __s("toggleEdgeSelectionFromModifierClick", createToggleEdgeSelectionFromModifierClick); Object.assign(__appScope, { toggleEdgeSelectionFromModifierClick });
+  const toggleSelectionFromModifierClick = __s("toggleSelectionFromModifierClick", createToggleSelectionFromModifierClick); Object.assign(__appScope, { toggleSelectionFromModifierClick });
   const createCanvasSelectionSnapshot = (
       scope: CanvasSelectionScope,
       nodeIds: readonly string[],
@@ -1432,63 +1441,63 @@ export function useRenderBatch(__appScope: Record<string, any>) {
   const currentCanvasSelectionSnapshot = (): CanvasSelectionSnapshot =>
       createCanvasSelectionSnapshot(canvasSelectionScope, selectedNodeIds, selectedEdgeIds, selectedEdgeId);
   Object.assign(__appScope, { currentCanvasSelectionSnapshot });
-  const restoreCanvasSelectionSnapshot = createRestoreCanvasSelectionSnapshot(__appScope); Object.assign(__appScope, { restoreCanvasSelectionSnapshot });
-  const restoreCanvasSelectionSnapshotWithInspector = createRestoreCanvasSelectionSnapshotWithInspector(__appScope); Object.assign(__appScope, { restoreCanvasSelectionSnapshotWithInspector });
-  const startModifierSelectionPress = createStartModifierSelectionPress(__appScope); Object.assign(__appScope, { startModifierSelectionPress });
-  const cancelModifierSelectionPress = createCancelModifierSelectionPress(__appScope); Object.assign(__appScope, { cancelModifierSelectionPress });
-  const finishModifierSelectionPress = createFinishModifierSelectionPress(__appScope); Object.assign(__appScope, { finishModifierSelectionPress });
-  const startNodeLabelDrag = createStartNodeLabelDrag(__appScope); Object.assign(__appScope, { startNodeLabelDrag });
-  const startNodeLabelRotateDrag = createStartNodeLabelRotateDrag(__appScope); Object.assign(__appScope, { startNodeLabelRotateDrag });
-  const finishNodeLabelDrag = createFinishNodeLabelDrag(__appScope); Object.assign(__appScope, { finishNodeLabelDrag });
-  const finishNodeLabelRotateDrag = createFinishNodeLabelRotateDrag(__appScope); Object.assign(__appScope, { finishNodeLabelRotateDrag });
-  const setSelectedNodeLabelDisplayMode = createSetSelectedNodeLabelDisplayMode(__appScope); Object.assign(__appScope, { setSelectedNodeLabelDisplayMode });
-  const toggleSelectedNodeLabelDisplay = createToggleSelectedNodeLabelDisplay(__appScope); Object.assign(__appScope, { toggleSelectedNodeLabelDisplay });
-  const copySelection = createCopySelection(__appScope); Object.assign(__appScope, { copySelection });
-  const cutSelection = createCutSelection(__appScope); Object.assign(__appScope, { cutSelection });
-  const pasteSelection = createPasteSelection(__appScope); Object.assign(__appScope, { pasteSelection });
-  const createGraphTemplateType = createCreateGraphTemplateType(__appScope); Object.assign(__appScope, { createGraphTemplateType });
-  const createGroupDeviceIconSvg = createCreateGroupDeviceIconSvg(__appScope); Object.assign(__appScope, { createGroupDeviceIconSvg });
-  const groupDeviceTerminalAnchor = createGroupDeviceTerminalAnchor(__appScope); Object.assign(__appScope, { groupDeviceTerminalAnchor });
-  const groupDeviceTerminalSortKey = createGroupDeviceTerminalSortKey(__appScope); Object.assign(__appScope, { groupDeviceTerminalSortKey });
-  const groupDeviceTerminalAssociationFor = createGroupDeviceTerminalAssociationFor(__appScope); Object.assign(__appScope, { groupDeviceTerminalAssociationFor });
-  const groupDeviceExternalTerminals = createGroupDeviceExternalTerminals(__appScope); Object.assign(__appScope, { groupDeviceExternalTerminals });
+  const restoreCanvasSelectionSnapshot = __s("restoreCanvasSelectionSnapshot", createRestoreCanvasSelectionSnapshot); Object.assign(__appScope, { restoreCanvasSelectionSnapshot });
+  const restoreCanvasSelectionSnapshotWithInspector = __s("restoreCanvasSelectionSnapshotWithInspector", createRestoreCanvasSelectionSnapshotWithInspector); Object.assign(__appScope, { restoreCanvasSelectionSnapshotWithInspector });
+  const startModifierSelectionPress = __s("startModifierSelectionPress", createStartModifierSelectionPress); Object.assign(__appScope, { startModifierSelectionPress });
+  const cancelModifierSelectionPress = __s("cancelModifierSelectionPress", createCancelModifierSelectionPress); Object.assign(__appScope, { cancelModifierSelectionPress });
+  const finishModifierSelectionPress = __s("finishModifierSelectionPress", createFinishModifierSelectionPress); Object.assign(__appScope, { finishModifierSelectionPress });
+  const startNodeLabelDrag = __s("startNodeLabelDrag", createStartNodeLabelDrag); Object.assign(__appScope, { startNodeLabelDrag });
+  const startNodeLabelRotateDrag = __s("startNodeLabelRotateDrag", createStartNodeLabelRotateDrag); Object.assign(__appScope, { startNodeLabelRotateDrag });
+  const finishNodeLabelDrag = __s("finishNodeLabelDrag", createFinishNodeLabelDrag); Object.assign(__appScope, { finishNodeLabelDrag });
+  const finishNodeLabelRotateDrag = __s("finishNodeLabelRotateDrag", createFinishNodeLabelRotateDrag); Object.assign(__appScope, { finishNodeLabelRotateDrag });
+  const setSelectedNodeLabelDisplayMode = __s("setSelectedNodeLabelDisplayMode", createSetSelectedNodeLabelDisplayMode); Object.assign(__appScope, { setSelectedNodeLabelDisplayMode });
+  const toggleSelectedNodeLabelDisplay = __s("toggleSelectedNodeLabelDisplay", createToggleSelectedNodeLabelDisplay); Object.assign(__appScope, { toggleSelectedNodeLabelDisplay });
+  const copySelection = __s("copySelection", createCopySelection); Object.assign(__appScope, { copySelection });
+  const cutSelection = __s("cutSelection", createCutSelection); Object.assign(__appScope, { cutSelection });
+  const pasteSelection = __s("pasteSelection", createPasteSelection); Object.assign(__appScope, { pasteSelection });
+  const createGraphTemplateType = __s("createGraphTemplateType", createCreateGraphTemplateType); Object.assign(__appScope, { createGraphTemplateType });
+  const createGroupDeviceIconSvg = __s("createGroupDeviceIconSvg", createCreateGroupDeviceIconSvg); Object.assign(__appScope, { createGroupDeviceIconSvg });
+  const groupDeviceTerminalAnchor = __s("groupDeviceTerminalAnchor", createGroupDeviceTerminalAnchor); Object.assign(__appScope, { groupDeviceTerminalAnchor });
+  const groupDeviceTerminalSortKey = __s("groupDeviceTerminalSortKey", createGroupDeviceTerminalSortKey); Object.assign(__appScope, { groupDeviceTerminalSortKey });
+  const groupDeviceTerminalAssociationFor = __s("groupDeviceTerminalAssociationFor", createGroupDeviceTerminalAssociationFor); Object.assign(__appScope, { groupDeviceTerminalAssociationFor });
+  const groupDeviceExternalTerminals = __s("groupDeviceExternalTerminals", createGroupDeviceExternalTerminals); Object.assign(__appScope, { groupDeviceExternalTerminals });
   const groupDeviceTerminalSignature = (terminalTypes: readonly TerminalType[]) =>
       `${terminalTypes.length}|${TERMINAL_TYPE_OPTIONS.map((option) => `${option.value}:${terminalTypes.filter((type) => type === option.value).length}`).join("|")}`;
   Object.assign(__appScope, { groupDeviceTerminalSignature });
-  const validateGroupDeviceIconReplacement = createValidateGroupDeviceIconReplacement(__appScope); Object.assign(__appScope, { validateGroupDeviceIconReplacement });
-  const replaceBuiltinDeviceIconOverride = createReplaceBuiltinDeviceIconOverride(__appScope); Object.assign(__appScope, { replaceBuiltinDeviceIconOverride });
-  const openGroupDeviceDefinitionDialog = createOpenGroupDeviceDefinitionDialog(__appScope); Object.assign(__appScope, { openGroupDeviceDefinitionDialog });
-  const confirmCreateDeviceFromGroup = createConfirmCreateDeviceFromGroup(__appScope); Object.assign(__appScope, { confirmCreateDeviceFromGroup });
-  const confirmReplaceDeviceIconFromGroup = createConfirmReplaceDeviceIconFromGroup(__appScope); Object.assign(__appScope, { confirmReplaceDeviceIconFromGroup });
-  const openAddTemplateDialog = createOpenAddTemplateDialog(__appScope); Object.assign(__appScope, { openAddTemplateDialog });
-  const cancelTemplateDialog = createCancelTemplateDialog(__appScope); Object.assign(__appScope, { cancelTemplateDialog });
-  const confirmAddGraphTemplate = createConfirmAddGraphTemplate(__appScope); Object.assign(__appScope, { confirmAddGraphTemplate });
-  const deleteGraphTemplate = createDeleteGraphTemplate(__appScope); Object.assign(__appScope, { deleteGraphTemplate });
-  const deleteGraphTemplateType = createDeleteGraphTemplateType(__appScope); Object.assign(__appScope, { deleteGraphTemplateType });
-  const dropGraphTemplate = createDropGraphTemplate(__appScope); Object.assign(__appScope, { dropGraphTemplate });
-  const finishMarqueeSelectionFromPoints = createFinishMarqueeSelectionFromPoints(__appScope); Object.assign(__appScope, { finishMarqueeSelectionFromPoints });
-  const startContextMarqueeSelection = createStartContextMarqueeSelection(__appScope); Object.assign(__appScope, { startContextMarqueeSelection });
-  const openFilterSelectionDialog = createOpenFilterSelectionDialog(__appScope); Object.assign(__appScope, { openFilterSelectionDialog });
+  const validateGroupDeviceIconReplacement = __s("validateGroupDeviceIconReplacement", createValidateGroupDeviceIconReplacement); Object.assign(__appScope, { validateGroupDeviceIconReplacement });
+  const replaceBuiltinDeviceIconOverride = __s("replaceBuiltinDeviceIconOverride", createReplaceBuiltinDeviceIconOverride); Object.assign(__appScope, { replaceBuiltinDeviceIconOverride });
+  const openGroupDeviceDefinitionDialog = __s("openGroupDeviceDefinitionDialog", createOpenGroupDeviceDefinitionDialog); Object.assign(__appScope, { openGroupDeviceDefinitionDialog });
+  const confirmCreateDeviceFromGroup = __s("confirmCreateDeviceFromGroup", createConfirmCreateDeviceFromGroup); Object.assign(__appScope, { confirmCreateDeviceFromGroup });
+  const confirmReplaceDeviceIconFromGroup = __s("confirmReplaceDeviceIconFromGroup", createConfirmReplaceDeviceIconFromGroup); Object.assign(__appScope, { confirmReplaceDeviceIconFromGroup });
+  const openAddTemplateDialog = __s("openAddTemplateDialog", createOpenAddTemplateDialog); Object.assign(__appScope, { openAddTemplateDialog });
+  const cancelTemplateDialog = __s("cancelTemplateDialog", createCancelTemplateDialog); Object.assign(__appScope, { cancelTemplateDialog });
+  const confirmAddGraphTemplate = __s("confirmAddGraphTemplate", createConfirmAddGraphTemplate); Object.assign(__appScope, { confirmAddGraphTemplate });
+  const deleteGraphTemplate = __s("deleteGraphTemplate", createDeleteGraphTemplate); Object.assign(__appScope, { deleteGraphTemplate });
+  const deleteGraphTemplateType = __s("deleteGraphTemplateType", createDeleteGraphTemplateType); Object.assign(__appScope, { deleteGraphTemplateType });
+  const dropGraphTemplate = __s("dropGraphTemplate", createDropGraphTemplate); Object.assign(__appScope, { dropGraphTemplate });
+  const finishMarqueeSelectionFromPoints = __s("finishMarqueeSelectionFromPoints", createFinishMarqueeSelectionFromPoints); Object.assign(__appScope, { finishMarqueeSelectionFromPoints });
+  const startContextMarqueeSelection = __s("startContextMarqueeSelection", createStartContextMarqueeSelection); Object.assign(__appScope, { startContextMarqueeSelection });
+  const openFilterSelectionDialog = __s("openFilterSelectionDialog", createOpenFilterSelectionDialog); Object.assign(__appScope, { openFilterSelectionDialog });
   const filterSelectionTypeSelected = (option: FilterSelectionTypeOption) =>
       option.items.length > 0 && option.items.every((item) => filterSelectionTypeKeys.includes(item.itemKey));
   Object.assign(__appScope, { filterSelectionTypeSelected });
   const filterSelectionTypePartial = (option: FilterSelectionTypeOption) =>
       option.items.some((item) => filterSelectionTypeKeys.includes(item.itemKey)) && !filterSelectionTypeSelected(option);
   Object.assign(__appScope, { filterSelectionTypePartial });
-  const toggleFilterSelectionType = createToggleFilterSelectionType(__appScope); Object.assign(__appScope, { toggleFilterSelectionType });
-  const toggleFilterSelectionItem = createToggleFilterSelectionItem(__appScope); Object.assign(__appScope, { toggleFilterSelectionItem });
-  const confirmFilterSelectionDialog = createConfirmFilterSelectionDialog(__appScope); Object.assign(__appScope, { confirmFilterSelectionDialog });
-  const finishMarqueeSelection = createFinishMarqueeSelection(__appScope); Object.assign(__appScope, { finishMarqueeSelection });
-  const deleteSelection = createDeleteSelection(__appScope); Object.assign(__appScope, { deleteSelection });
-  const deleteSelectedGraphicsFromCanvas = createDeleteSelectedGraphicsFromCanvas(__appScope); Object.assign(__appScope, { deleteSelectedGraphicsFromCanvas });
-  const groupSelectedGraphics = createGroupSelectedGraphics(__appScope); Object.assign(__appScope, { groupSelectedGraphics });
-  const ungroupSelectedGraphics = createUngroupSelectedGraphics(__appScope); Object.assign(__appScope, { ungroupSelectedGraphics });
-  const addToContainer = createAddToContainer(__appScope); Object.assign(__appScope, { addToContainer });
-  const confirmAddToContainer = createConfirmAddToContainer(__appScope); Object.assign(__appScope, { confirmAddToContainer });
-  const removeFromContainer = createRemoveFromContainer(__appScope); Object.assign(__appScope, { removeFromContainer });
-  const manualPointDeltaForEdge = createManualPointDeltaForEdge(__appScope); Object.assign(__appScope, { manualPointDeltaForEdge });
-  const routePreserveEdgeIdsForMovedNodes = createRoutePreserveEdgeIdsForMovedNodes(__appScope); Object.assign(__appScope, { routePreserveEdgeIdsForMovedNodes });
-  const routeSnapshotEdgesForMove = createRouteSnapshotEdgesForMove(__appScope); Object.assign(__appScope, { routeSnapshotEdgesForMove });
+  const toggleFilterSelectionType = __s("toggleFilterSelectionType", createToggleFilterSelectionType); Object.assign(__appScope, { toggleFilterSelectionType });
+  const toggleFilterSelectionItem = __s("toggleFilterSelectionItem", createToggleFilterSelectionItem); Object.assign(__appScope, { toggleFilterSelectionItem });
+  const confirmFilterSelectionDialog = __s("confirmFilterSelectionDialog", createConfirmFilterSelectionDialog); Object.assign(__appScope, { confirmFilterSelectionDialog });
+  const finishMarqueeSelection = __s("finishMarqueeSelection", createFinishMarqueeSelection); Object.assign(__appScope, { finishMarqueeSelection });
+  const deleteSelection = __s("deleteSelection", createDeleteSelection); Object.assign(__appScope, { deleteSelection });
+  const deleteSelectedGraphicsFromCanvas = __s("deleteSelectedGraphicsFromCanvas", createDeleteSelectedGraphicsFromCanvas); Object.assign(__appScope, { deleteSelectedGraphicsFromCanvas });
+  const groupSelectedGraphics = __s("groupSelectedGraphics", createGroupSelectedGraphics); Object.assign(__appScope, { groupSelectedGraphics });
+  const ungroupSelectedGraphics = __s("ungroupSelectedGraphics", createUngroupSelectedGraphics); Object.assign(__appScope, { ungroupSelectedGraphics });
+  const addToContainer = __s("addToContainer", createAddToContainer); Object.assign(__appScope, { addToContainer });
+  const confirmAddToContainer = __s("confirmAddToContainer", createConfirmAddToContainer); Object.assign(__appScope, { confirmAddToContainer });
+  const removeFromContainer = __s("removeFromContainer", createRemoveFromContainer); Object.assign(__appScope, { removeFromContainer });
+  const manualPointDeltaForEdge = __s("manualPointDeltaForEdge", createManualPointDeltaForEdge); Object.assign(__appScope, { manualPointDeltaForEdge });
+  const routePreserveEdgeIdsForMovedNodes = __s("routePreserveEdgeIdsForMovedNodes", createRoutePreserveEdgeIdsForMovedNodes); Object.assign(__appScope, { routePreserveEdgeIdsForMovedNodes });
+  const routeSnapshotEdgesForMove = __s("routeSnapshotEdgesForMove", createRouteSnapshotEdgesForMove); Object.assign(__appScope, { routeSnapshotEdgesForMove });
   const routePointsSnapshotForMove = (
       candidateEdges: Edge[],
       movedNodeIds: Iterable<string>,
@@ -1534,141 +1543,141 @@ export function useRenderBatch(__appScope: Record<string, any>) {
       bottom: box.bottom + padding
     });
   Object.assign(__appScope, { expandRouteBox });
-  const routeTouchesExpandedBoxes = createRouteTouchesExpandedBoxes(__appScope); Object.assign(__appScope, { routeTouchesExpandedBoxes });
-  const boundsForNodeSet = createBoundsForNodeSet(__appScope); Object.assign(__appScope, { boundsForNodeSet });
-  const mergeNodeUpdateLists = createMergeNodeUpdateLists(__appScope); Object.assign(__appScope, { mergeNodeUpdateLists });
-  const mergeUniqueEdgesById = createMergeUniqueEdgesById(__appScope); Object.assign(__appScope, { mergeUniqueEdgesById });
-  const completeNodeListForPartialPatch = createCompleteNodeListForPartialPatch(__appScope); Object.assign(__appScope, { completeNodeListForPartialPatch });
+  const routeTouchesExpandedBoxes = __s("routeTouchesExpandedBoxes", createRouteTouchesExpandedBoxes); Object.assign(__appScope, { routeTouchesExpandedBoxes });
+  const boundsForNodeSet = __s("boundsForNodeSet", createBoundsForNodeSet); Object.assign(__appScope, { boundsForNodeSet });
+  const mergeNodeUpdateLists = __s("mergeNodeUpdateLists", createMergeNodeUpdateLists); Object.assign(__appScope, { mergeNodeUpdateLists });
+  const mergeUniqueEdgesById = __s("mergeUniqueEdgesById", createMergeUniqueEdgesById); Object.assign(__appScope, { mergeUniqueEdgesById });
+  const completeNodeListForPartialPatch = __s("completeNodeListForPartialPatch", createCompleteNodeListForPartialPatch); Object.assign(__appScope, { completeNodeListForPartialPatch });
   const movableCanvasNodeIds = (nodeIds: readonly string[]) =>
       nodeIds.filter((nodeId) => {
         const node = nodeById.get(nodeId);
         return node && isCanvasNodeMovable(node.kind);
       });
   Object.assign(__appScope, { movableCanvasNodeIds });
-  const isWholeActiveLayerMove = createIsWholeActiveLayerMove(__appScope); Object.assign(__appScope, { isWholeActiveLayerMove });
-  const internalMoveEdgeIdsForMovedNodes = createInternalMoveEdgeIdsForMovedNodes(__appScope); Object.assign(__appScope, { internalMoveEdgeIdsForMovedNodes });
-  const externalMoveCandidateEdges = createExternalMoveCandidateEdges(__appScope); Object.assign(__appScope, { externalMoveCandidateEdges });
-  const internalMoveCandidateEdges = createInternalMoveCandidateEdges(__appScope); Object.assign(__appScope, { internalMoveCandidateEdges });
-  const translateInternalMoveCandidateEdges = createTranslateInternalMoveCandidateEdges(__appScope); Object.assign(__appScope, { translateInternalMoveCandidateEdges });
-  const translateWholeMoveCandidateEdges = createTranslateWholeMoveCandidateEdges(__appScope); Object.assign(__appScope, { translateWholeMoveCandidateEdges });
-  const internalRoutableLineNodeUpdatesForMove = createInternalRoutableLineNodeUpdatesForMove(__appScope); Object.assign(__appScope, { internalRoutableLineNodeUpdatesForMove });
+  const isWholeActiveLayerMove = __s("isWholeActiveLayerMove", createIsWholeActiveLayerMove); Object.assign(__appScope, { isWholeActiveLayerMove });
+  const internalMoveEdgeIdsForMovedNodes = __s("internalMoveEdgeIdsForMovedNodes", createInternalMoveEdgeIdsForMovedNodes); Object.assign(__appScope, { internalMoveEdgeIdsForMovedNodes });
+  const externalMoveCandidateEdges = __s("externalMoveCandidateEdges", createExternalMoveCandidateEdges); Object.assign(__appScope, { externalMoveCandidateEdges });
+  const internalMoveCandidateEdges = __s("internalMoveCandidateEdges", createInternalMoveCandidateEdges); Object.assign(__appScope, { internalMoveCandidateEdges });
+  const translateInternalMoveCandidateEdges = __s("translateInternalMoveCandidateEdges", createTranslateInternalMoveCandidateEdges); Object.assign(__appScope, { translateInternalMoveCandidateEdges });
+  const translateWholeMoveCandidateEdges = __s("translateWholeMoveCandidateEdges", createTranslateWholeMoveCandidateEdges); Object.assign(__appScope, { translateWholeMoveCandidateEdges });
+  const internalRoutableLineNodeUpdatesForMove = __s("internalRoutableLineNodeUpdatesForMove", createInternalRoutableLineNodeUpdatesForMove); Object.assign(__appScope, { internalRoutableLineNodeUpdatesForMove });
   const wholeMoveRoutableLineNodeUpdates = (movedNodeIds: Iterable<string>, delta: Point) =>
       internalRoutableLineNodeUpdatesForMove(movedNodeIds, delta);
   Object.assign(__appScope, { wholeMoveRoutableLineNodeUpdates });
-  const routableLineRouteCandidateIdsForMovedNodes = createRoutableLineRouteCandidateIdsForMovedNodes(__appScope); Object.assign(__appScope, { routableLineRouteCandidateIdsForMovedNodes });
-  const rebuildRoutableLineNodeUpdatesForChangedNodes = createRebuildRoutableLineNodeUpdatesForChangedNodes(__appScope); Object.assign(__appScope, { rebuildRoutableLineNodeUpdatesForChangedNodes });
-  const scheduleDeferredRoutableLineRouteRepair = createScheduleDeferredRoutableLineRouteRepair(__appScope); Object.assign(__appScope, { scheduleDeferredRoutableLineRouteRepair });
-  const localRouteOptimizationEdges = createLocalRouteOptimizationEdges(__appScope); Object.assign(__appScope, { localRouteOptimizationEdges });
-  const localRouteOptimizationCandidateEdges = createLocalRouteOptimizationCandidateEdges(__appScope); Object.assign(__appScope, { localRouteOptimizationCandidateEdges });
-  const routePointsForMovedNodeBlockers = createRoutePointsForMovedNodeBlockers(__appScope); Object.assign(__appScope, { routePointsForMovedNodeBlockers });
-  const routePointsForMovedEdgesBlockedByStationaryNodes = createRoutePointsForMovedEdgesBlockedByStationaryNodes(__appScope); Object.assign(__appScope, { routePointsForMovedEdgesBlockedByStationaryNodes });
-  const routePointsNearOriginalMovedNodes = createRoutePointsNearOriginalMovedNodes(__appScope); Object.assign(__appScope, { routePointsNearOriginalMovedNodes });
+  const routableLineRouteCandidateIdsForMovedNodes = __s("routableLineRouteCandidateIdsForMovedNodes", createRoutableLineRouteCandidateIdsForMovedNodes); Object.assign(__appScope, { routableLineRouteCandidateIdsForMovedNodes });
+  const rebuildRoutableLineNodeUpdatesForChangedNodes = __s("rebuildRoutableLineNodeUpdatesForChangedNodes", createRebuildRoutableLineNodeUpdatesForChangedNodes); Object.assign(__appScope, { rebuildRoutableLineNodeUpdatesForChangedNodes });
+  const scheduleDeferredRoutableLineRouteRepair = __s("scheduleDeferredRoutableLineRouteRepair", createScheduleDeferredRoutableLineRouteRepair); Object.assign(__appScope, { scheduleDeferredRoutableLineRouteRepair });
+  const localRouteOptimizationEdges = __s("localRouteOptimizationEdges", createLocalRouteOptimizationEdges); Object.assign(__appScope, { localRouteOptimizationEdges });
+  const localRouteOptimizationCandidateEdges = __s("localRouteOptimizationCandidateEdges", createLocalRouteOptimizationCandidateEdges); Object.assign(__appScope, { localRouteOptimizationCandidateEdges });
+  const routePointsForMovedNodeBlockers = __s("routePointsForMovedNodeBlockers", createRoutePointsForMovedNodeBlockers); Object.assign(__appScope, { routePointsForMovedNodeBlockers });
+  const routePointsForMovedEdgesBlockedByStationaryNodes = __s("routePointsForMovedEdgesBlockedByStationaryNodes", createRoutePointsForMovedEdgesBlockedByStationaryNodes); Object.assign(__appScope, { routePointsForMovedEdgesBlockedByStationaryNodes });
+  const routePointsNearOriginalMovedNodes = __s("routePointsNearOriginalMovedNodes", createRoutePointsNearOriginalMovedNodes); Object.assign(__appScope, { routePointsNearOriginalMovedNodes });
   Object.assign(__appScope, { sameOptionalPoint, sameConnectTarget });
   Object.assign(__appScope, { sameOptionalPointList });
-  const adjustEdgesAfterNodeMove = createAdjustEdgesAfterNodeMove(__appScope); Object.assign(__appScope, { adjustEdgesAfterNodeMove });
-  const rebuildSingleAffectedConnectionRoute = createRebuildSingleAffectedConnectionRoute(__appScope); Object.assign(__appScope, { rebuildSingleAffectedConnectionRoute });
-  const synchronousEdgeAdjustmentCandidates = createSynchronousEdgeAdjustmentCandidates(__appScope); Object.assign(__appScope, { synchronousEdgeAdjustmentCandidates });
-  const shouldAdjustEdgeSynchronouslyAfterMove = createShouldAdjustEdgeSynchronouslyAfterMove(__appScope); Object.assign(__appScope, { shouldAdjustEdgeSynchronouslyAfterMove });
-  const mergeAdjustedCandidateEdges = createMergeAdjustedCandidateEdges(__appScope); Object.assign(__appScope, { mergeAdjustedCandidateEdges });
+  const adjustEdgesAfterNodeMove = __s("adjustEdgesAfterNodeMove", createAdjustEdgesAfterNodeMove); Object.assign(__appScope, { adjustEdgesAfterNodeMove });
+  const rebuildSingleAffectedConnectionRoute = __s("rebuildSingleAffectedConnectionRoute", createRebuildSingleAffectedConnectionRoute); Object.assign(__appScope, { rebuildSingleAffectedConnectionRoute });
+  const synchronousEdgeAdjustmentCandidates = __s("synchronousEdgeAdjustmentCandidates", createSynchronousEdgeAdjustmentCandidates); Object.assign(__appScope, { synchronousEdgeAdjustmentCandidates });
+  const shouldAdjustEdgeSynchronouslyAfterMove = __s("shouldAdjustEdgeSynchronouslyAfterMove", createShouldAdjustEdgeSynchronouslyAfterMove); Object.assign(__appScope, { shouldAdjustEdgeSynchronouslyAfterMove });
+  const mergeAdjustedCandidateEdges = __s("mergeAdjustedCandidateEdges", createMergeAdjustedCandidateEdges); Object.assign(__appScope, { mergeAdjustedCandidateEdges });
   Object.assign(__appScope, { shouldFinalizeMovedNodeEdgesSynchronously });
   Object.assign(__appScope, { shouldDeferSingleNodeTerminalReconciliation });
-  const terminalReconcileNodeScope = createTerminalReconcileNodeScope(__appScope); Object.assign(__appScope, { terminalReconcileNodeScope });
-  const finalizeMovedNodeEdgesFast = createFinalizeMovedNodeEdgesFast(__appScope); Object.assign(__appScope, { finalizeMovedNodeEdgesFast });
-  const optimizeMovedNodeEdgeRoutes = createOptimizeMovedNodeEdgeRoutes(__appScope); Object.assign(__appScope, { optimizeMovedNodeEdgeRoutes });
-  const shouldRunDeferredMoveOptimization = createShouldRunDeferredMoveOptimization(__appScope); Object.assign(__appScope, { shouldRunDeferredMoveOptimization });
-  const scheduleMovedEdgeOptimization = createScheduleMovedEdgeOptimization(__appScope); Object.assign(__appScope, { scheduleMovedEdgeOptimization });
-  const scheduleDeferredMovedConnectionRepair = createScheduleDeferredMovedConnectionRepair(__appScope); Object.assign(__appScope, { scheduleDeferredMovedConnectionRepair });
-  const moveRouteRepairSeedEdges = createMoveRouteRepairSeedEdges(__appScope); Object.assign(__appScope, { moveRouteRepairSeedEdges });
+  const terminalReconcileNodeScope = __s("terminalReconcileNodeScope", createTerminalReconcileNodeScope); Object.assign(__appScope, { terminalReconcileNodeScope });
+  const finalizeMovedNodeEdgesFast = __s("finalizeMovedNodeEdgesFast", createFinalizeMovedNodeEdgesFast); Object.assign(__appScope, { finalizeMovedNodeEdgesFast });
+  const optimizeMovedNodeEdgeRoutes = __s("optimizeMovedNodeEdgeRoutes", createOptimizeMovedNodeEdgeRoutes); Object.assign(__appScope, { optimizeMovedNodeEdgeRoutes });
+  const shouldRunDeferredMoveOptimization = __s("shouldRunDeferredMoveOptimization", createShouldRunDeferredMoveOptimization); Object.assign(__appScope, { shouldRunDeferredMoveOptimization });
+  const scheduleMovedEdgeOptimization = __s("scheduleMovedEdgeOptimization", createScheduleMovedEdgeOptimization); Object.assign(__appScope, { scheduleMovedEdgeOptimization });
+  const scheduleDeferredMovedConnectionRepair = __s("scheduleDeferredMovedConnectionRepair", createScheduleDeferredMovedConnectionRepair); Object.assign(__appScope, { scheduleDeferredMovedConnectionRepair });
+  const moveRouteRepairSeedEdges = __s("moveRouteRepairSeedEdges", createMoveRouteRepairSeedEdges); Object.assign(__appScope, { moveRouteRepairSeedEdges });
   Object.assign(__appScope, { shouldPatchRouteCacheForHighFanoutMove });
-  const lightweightMovedEndpointRoute = createLightweightMovedEndpointRoute(__appScope); Object.assign(__appScope, { lightweightMovedEndpointRoute });
-  const patchCachedRoutesForHighFanoutMove = createPatchCachedRoutesForHighFanoutMove(__appScope); Object.assign(__appScope, { patchCachedRoutesForHighFanoutMove });
-  const patchCachedRoutesForBulkTranslation = createPatchCachedRoutesForBulkTranslation(__appScope); Object.assign(__appScope, { patchCachedRoutesForBulkTranslation });
-  const patchCachedRoutesForWholeMove = createPatchCachedRoutesForWholeMove(__appScope); Object.assign(__appScope, { patchCachedRoutesForWholeMove });
-  const patchCachedRoutesForInternalMove = createPatchCachedRoutesForInternalMove(__appScope); Object.assign(__appScope, { patchCachedRoutesForInternalMove });
-  const storedRouteDirtyIdsForMove = createStoredRouteDirtyIdsForMove(__appScope); Object.assign(__appScope, { storedRouteDirtyIdsForMove });
-  const buildBulkMovePlan = createBuildBulkMovePlan(__appScope); Object.assign(__appScope, { buildBulkMovePlan });
-  const commitFastMovedGraphPatches = createCommitFastMovedGraphPatches(__appScope); Object.assign(__appScope, { commitFastMovedGraphPatches });
+  const lightweightMovedEndpointRoute = __s("lightweightMovedEndpointRoute", createLightweightMovedEndpointRoute); Object.assign(__appScope, { lightweightMovedEndpointRoute });
+  const patchCachedRoutesForHighFanoutMove = __s("patchCachedRoutesForHighFanoutMove", createPatchCachedRoutesForHighFanoutMove); Object.assign(__appScope, { patchCachedRoutesForHighFanoutMove });
+  const patchCachedRoutesForBulkTranslation = __s("patchCachedRoutesForBulkTranslation", createPatchCachedRoutesForBulkTranslation); Object.assign(__appScope, { patchCachedRoutesForBulkTranslation });
+  const patchCachedRoutesForWholeMove = __s("patchCachedRoutesForWholeMove", createPatchCachedRoutesForWholeMove); Object.assign(__appScope, { patchCachedRoutesForWholeMove });
+  const patchCachedRoutesForInternalMove = __s("patchCachedRoutesForInternalMove", createPatchCachedRoutesForInternalMove); Object.assign(__appScope, { patchCachedRoutesForInternalMove });
+  const storedRouteDirtyIdsForMove = __s("storedRouteDirtyIdsForMove", createStoredRouteDirtyIdsForMove); Object.assign(__appScope, { storedRouteDirtyIdsForMove });
+  const buildBulkMovePlan = __s("buildBulkMovePlan", createBuildBulkMovePlan); Object.assign(__appScope, { buildBulkMovePlan });
+  const commitFastMovedGraphPatches = __s("commitFastMovedGraphPatches", createCommitFastMovedGraphPatches); Object.assign(__appScope, { commitFastMovedGraphPatches });
   const clampPointToCanvas = (point: Point) => clampPointToBounds(point, canvasBounds); Object.assign(__appScope, { clampPointToCanvas });
   const clampNodeToCanvas = (node: ModelNode, position = node.position) => clampNodePositionToBounds(node, canvasBounds, position); Object.assign(__appScope, { clampNodeToCanvas });
   const clampViewBoxToCanvas = (box: typeof viewBox) => normalizeViewBoxToCanvas(box, canvasBounds); Object.assign(__appScope, { clampViewBoxToCanvas });
-  const updateMouseStatus = createUpdateMouseStatus(__appScope); Object.assign(__appScope, { updateMouseStatus });
-  const updateMultiNodeDragOverlayTransform = createUpdateMultiNodeDragOverlayTransform(__appScope); Object.assign(__appScope, { updateMultiNodeDragOverlayTransform });
-  const showImperativeMultiNodeDragOverlay = createShowImperativeMultiNodeDragOverlay(__appScope); Object.assign(__appScope, { showImperativeMultiNodeDragOverlay });
-  const hideImperativeMultiNodeDragOverlay = createHideImperativeMultiNodeDragOverlay(__appScope); Object.assign(__appScope, { hideImperativeMultiNodeDragOverlay });
-  const resetMultiNodeDragOverlayTransform = createResetMultiNodeDragOverlayTransform(__appScope); Object.assign(__appScope, { resetMultiNodeDragOverlayTransform });
+  const updateMouseStatus = __s("updateMouseStatus", createUpdateMouseStatus); Object.assign(__appScope, { updateMouseStatus });
+  const updateMultiNodeDragOverlayTransform = __s("updateMultiNodeDragOverlayTransform", createUpdateMultiNodeDragOverlayTransform); Object.assign(__appScope, { updateMultiNodeDragOverlayTransform });
+  const showImperativeMultiNodeDragOverlay = __s("showImperativeMultiNodeDragOverlay", createShowImperativeMultiNodeDragOverlay); Object.assign(__appScope, { showImperativeMultiNodeDragOverlay });
+  const hideImperativeMultiNodeDragOverlay = __s("hideImperativeMultiNodeDragOverlay", createHideImperativeMultiNodeDragOverlay); Object.assign(__appScope, { hideImperativeMultiNodeDragOverlay });
+  const resetMultiNodeDragOverlayTransform = __s("resetMultiNodeDragOverlayTransform", createResetMultiNodeDragOverlayTransform); Object.assign(__appScope, { resetMultiNodeDragOverlayTransform });
   const singleNodeDragRenderState = (dragState: DraggingState): DraggingState => ({
       ...dragState,
       currentDelta: undefined,
       previewDelta: undefined
     });
   Object.assign(__appScope, { singleNodeDragRenderState });
-  const buildSingleNodeDragPreviewNodeMarkup = createBuildSingleNodeDragPreviewNodeMarkup(__appScope); Object.assign(__appScope, { buildSingleNodeDragPreviewNodeMarkup });
-  const clearImperativeNodeDragEdgePreview = createClearImperativeNodeDragEdgePreview(__appScope); Object.assign(__appScope, { clearImperativeNodeDragEdgePreview });
-  const showImperativeSingleNodeDragPreview = createShowImperativeSingleNodeDragPreview(__appScope); Object.assign(__appScope, { showImperativeSingleNodeDragPreview });
-  const cssSelectorEscape = createCssSelectorEscape(__appScope); Object.assign(__appScope, { cssSelectorEscape });
-  const clearImperativeSingleNodeDragOriginLines = createClearImperativeSingleNodeDragOriginLines(__appScope); Object.assign(__appScope, { clearImperativeSingleNodeDragOriginLines });
-  const setImperativeSingleNodeDragOriginLines = createSetImperativeSingleNodeDragOriginLines(__appScope); Object.assign(__appScope, { setImperativeSingleNodeDragOriginLines });
-  const setImperativeSingleNodeDragOrigin = createSetImperativeSingleNodeDragOrigin(__appScope); Object.assign(__appScope, { setImperativeSingleNodeDragOrigin });
-  const bindCanvasNodeElement = createBindCanvasNodeElement(__appScope); Object.assign(__appScope, { bindCanvasNodeElement });
-  const hideImperativeSingleNodeDragPreview = createHideImperativeSingleNodeDragPreview(__appScope); Object.assign(__appScope, { hideImperativeSingleNodeDragPreview });
-  const singleNodeDragPreviewNodeFor = createSingleNodeDragPreviewNodeFor(__appScope); Object.assign(__appScope, { singleNodeDragPreviewNodeFor });
-  const singleNodeDragRelevantEdges = createSingleNodeDragRelevantEdges(__appScope); Object.assign(__appScope, { singleNodeDragRelevantEdges });
-  const singleNodeDragPreviewBounds = createSingleNodeDragPreviewBounds(__appScope); Object.assign(__appScope, { singleNodeDragPreviewBounds });
-  const singleNodeDragEdgeTouchesBounds = createSingleNodeDragEdgeTouchesBounds(__appScope); Object.assign(__appScope, { singleNodeDragEdgeTouchesBounds });
-  const singleNodeDragViewportLocalEdgesByScan = createSingleNodeDragViewportLocalEdgesByScan(__appScope); Object.assign(__appScope, { singleNodeDragViewportLocalEdgesByScan });
-  const singleNodeDragScopedEdges = createSingleNodeDragScopedEdges(__appScope); Object.assign(__appScope, { singleNodeDragScopedEdges });
+  const buildSingleNodeDragPreviewNodeMarkup = __s("buildSingleNodeDragPreviewNodeMarkup", createBuildSingleNodeDragPreviewNodeMarkup); Object.assign(__appScope, { buildSingleNodeDragPreviewNodeMarkup });
+  const clearImperativeNodeDragEdgePreview = __s("clearImperativeNodeDragEdgePreview", createClearImperativeNodeDragEdgePreview); Object.assign(__appScope, { clearImperativeNodeDragEdgePreview });
+  const showImperativeSingleNodeDragPreview = __s("showImperativeSingleNodeDragPreview", createShowImperativeSingleNodeDragPreview); Object.assign(__appScope, { showImperativeSingleNodeDragPreview });
+  const cssSelectorEscape = __s("cssSelectorEscape", createCssSelectorEscape); Object.assign(__appScope, { cssSelectorEscape });
+  const clearImperativeSingleNodeDragOriginLines = __s("clearImperativeSingleNodeDragOriginLines", createClearImperativeSingleNodeDragOriginLines); Object.assign(__appScope, { clearImperativeSingleNodeDragOriginLines });
+  const setImperativeSingleNodeDragOriginLines = __s("setImperativeSingleNodeDragOriginLines", createSetImperativeSingleNodeDragOriginLines); Object.assign(__appScope, { setImperativeSingleNodeDragOriginLines });
+  const setImperativeSingleNodeDragOrigin = __s("setImperativeSingleNodeDragOrigin", createSetImperativeSingleNodeDragOrigin); Object.assign(__appScope, { setImperativeSingleNodeDragOrigin });
+  const bindCanvasNodeElement = __s("bindCanvasNodeElement", createBindCanvasNodeElement); Object.assign(__appScope, { bindCanvasNodeElement });
+  const hideImperativeSingleNodeDragPreview = __s("hideImperativeSingleNodeDragPreview", createHideImperativeSingleNodeDragPreview); Object.assign(__appScope, { hideImperativeSingleNodeDragPreview });
+  const singleNodeDragPreviewNodeFor = __s("singleNodeDragPreviewNodeFor", createSingleNodeDragPreviewNodeFor); Object.assign(__appScope, { singleNodeDragPreviewNodeFor });
+  const singleNodeDragRelevantEdges = __s("singleNodeDragRelevantEdges", createSingleNodeDragRelevantEdges); Object.assign(__appScope, { singleNodeDragRelevantEdges });
+  const singleNodeDragPreviewBounds = __s("singleNodeDragPreviewBounds", createSingleNodeDragPreviewBounds); Object.assign(__appScope, { singleNodeDragPreviewBounds });
+  const singleNodeDragEdgeTouchesBounds = __s("singleNodeDragEdgeTouchesBounds", createSingleNodeDragEdgeTouchesBounds); Object.assign(__appScope, { singleNodeDragEdgeTouchesBounds });
+  const singleNodeDragViewportLocalEdgesByScan = __s("singleNodeDragViewportLocalEdgesByScan", createSingleNodeDragViewportLocalEdgesByScan); Object.assign(__appScope, { singleNodeDragViewportLocalEdgesByScan });
+  const singleNodeDragScopedEdges = __s("singleNodeDragScopedEdges", createSingleNodeDragScopedEdges); Object.assign(__appScope, { singleNodeDragScopedEdges });
   const singleNodeDragPreviewEdges = (dragState: DraggingState, delta: Point) =>
       singleNodeDragScopedEdges(dragState, delta).previewEdges;
   Object.assign(__appScope, { singleNodeDragPreviewEdges });
   const singleNodeDragSnapEdges = (dragState: DraggingState, delta: Point) =>
       singleNodeDragScopedEdges(dragState, delta).snapEdges;
   Object.assign(__appScope, { singleNodeDragSnapEdges });
-  const simpleOrthogonalDragPreviewPoints = createSimpleOrthogonalDragPreviewPoints(__appScope); Object.assign(__appScope, { simpleOrthogonalDragPreviewPoints });
-  const routableLineIdsConnectedToNodeIds = createRoutableLineIdsConnectedToNodeIds(__appScope); Object.assign(__appScope, { routableLineIdsConnectedToNodeIds });
-  const buildRoutableLinePreviewRoutesForNodeUpdates = createBuildRoutableLinePreviewRoutesForNodeUpdates(__appScope); Object.assign(__appScope, { buildRoutableLinePreviewRoutesForNodeUpdates });
-  const buildRoutableLineEndpointPreviewNodeUpdates = createBuildRoutableLineEndpointPreviewNodeUpdates(__appScope); Object.assign(__appScope, { buildRoutableLineEndpointPreviewNodeUpdates });
-  const buildTranslatedInternalRoutableLineDragPreviewRoutes = createBuildTranslatedInternalRoutableLineDragPreviewRoutes(__appScope); Object.assign(__appScope, { buildTranslatedInternalRoutableLineDragPreviewRoutes });
-  const buildRoutableLineDragPreviewRoutes = createBuildRoutableLineDragPreviewRoutes(__appScope); Object.assign(__appScope, { buildRoutableLineDragPreviewRoutes });
+  const simpleOrthogonalDragPreviewPoints = __s("simpleOrthogonalDragPreviewPoints", createSimpleOrthogonalDragPreviewPoints); Object.assign(__appScope, { simpleOrthogonalDragPreviewPoints });
+  const routableLineIdsConnectedToNodeIds = __s("routableLineIdsConnectedToNodeIds", createRoutableLineIdsConnectedToNodeIds); Object.assign(__appScope, { routableLineIdsConnectedToNodeIds });
+  const buildRoutableLinePreviewRoutesForNodeUpdates = __s("buildRoutableLinePreviewRoutesForNodeUpdates", createBuildRoutableLinePreviewRoutesForNodeUpdates); Object.assign(__appScope, { buildRoutableLinePreviewRoutesForNodeUpdates });
+  const buildRoutableLineEndpointPreviewNodeUpdates = __s("buildRoutableLineEndpointPreviewNodeUpdates", createBuildRoutableLineEndpointPreviewNodeUpdates); Object.assign(__appScope, { buildRoutableLineEndpointPreviewNodeUpdates });
+  const buildTranslatedInternalRoutableLineDragPreviewRoutes = __s("buildTranslatedInternalRoutableLineDragPreviewRoutes", createBuildTranslatedInternalRoutableLineDragPreviewRoutes); Object.assign(__appScope, { buildTranslatedInternalRoutableLineDragPreviewRoutes });
+  const buildRoutableLineDragPreviewRoutes = __s("buildRoutableLineDragPreviewRoutes", createBuildRoutableLineDragPreviewRoutes); Object.assign(__appScope, { buildRoutableLineDragPreviewRoutes });
   const shiftedDragPreviewPoint = (point: Point | undefined, delta: Point | undefined) =>
       point && delta ? { x: point.x + delta.x, y: point.y + delta.y } : point;
   Object.assign(__appScope, { shiftedDragPreviewPoint });
   const shiftPreviewEndpointForDelta = (point: Point, moves: boolean, delta: Point) =>
       moves ? { x: point.x + delta.x, y: point.y + delta.y } : point;
   Object.assign(__appScope, { shiftPreviewEndpointForDelta });
-  const buildCachedSingleNodeDragPreviewRoutes = createBuildCachedSingleNodeDragPreviewRoutes(__appScope); Object.assign(__appScope, { buildCachedSingleNodeDragPreviewRoutes });
-  const buildDragPreviewEndpointPoints = createBuildDragPreviewEndpointPoints(__appScope); Object.assign(__appScope, { buildDragPreviewEndpointPoints });
-  const connectionEndpointPreviewRoutePoints = createConnectionEndpointPreviewRoutePoints(__appScope); Object.assign(__appScope, { connectionEndpointPreviewRoutePoints });
+  const buildCachedSingleNodeDragPreviewRoutes = __s("buildCachedSingleNodeDragPreviewRoutes", createBuildCachedSingleNodeDragPreviewRoutes); Object.assign(__appScope, { buildCachedSingleNodeDragPreviewRoutes });
+  const buildDragPreviewEndpointPoints = __s("buildDragPreviewEndpointPoints", createBuildDragPreviewEndpointPoints); Object.assign(__appScope, { buildDragPreviewEndpointPoints });
+  const connectionEndpointPreviewRoutePoints = __s("connectionEndpointPreviewRoutePoints", createConnectionEndpointPreviewRoutePoints); Object.assign(__appScope, { connectionEndpointPreviewRoutePoints });
   const singleNodeDragPreviewKey = (dragState: DraggingState, roundedDelta: Point, previewEdges: Edge[]) =>
       `single:${dragState.nodeIds[0] ?? ""}:${roundedDelta.x},${roundedDelta.y}:${previewEdges.length}:${previewEdges[0]?.id ?? ""}:${previewEdges[previewEdges.length - 1]?.id ?? ""}`;
   Object.assign(__appScope, { singleNodeDragPreviewKey });
-  const buildLightweightNodeDragPreviewRoutes = createBuildLightweightNodeDragPreviewRoutes(__appScope); Object.assign(__appScope, { buildLightweightNodeDragPreviewRoutes });
-  const buildLightweightNodeDragPreviewRouteMarkup = createBuildLightweightNodeDragPreviewRouteMarkup(__appScope); Object.assign(__appScope, { buildLightweightNodeDragPreviewRouteMarkup });
-  const syncImperativeNodeDragPreviewPaths = createSyncImperativeNodeDragPreviewPaths(__appScope); Object.assign(__appScope, { syncImperativeNodeDragPreviewPaths });
-  const updateNodeDragLightweightEdgePreview = createUpdateNodeDragLightweightEdgePreview(__appScope); Object.assign(__appScope, { updateNodeDragLightweightEdgePreview });
-  const singleNodeDragInteractionNodes = createSingleNodeDragInteractionNodes(__appScope); Object.assign(__appScope, { singleNodeDragInteractionNodes });
-  const multiNodeDragInteractionNodes = createMultiNodeDragInteractionNodes(__appScope); Object.assign(__appScope, { multiNodeDragInteractionNodes });
-  const updateImperativeNodeDragDropHint = createUpdateImperativeNodeDragDropHint(__appScope); Object.assign(__appScope, { updateImperativeNodeDragDropHint });
-  const findSingleNodeDragSnapTargetAtDelta = createFindSingleNodeDragSnapTargetAtDelta(__appScope); Object.assign(__appScope, { findSingleNodeDragSnapTargetAtDelta });
-  const findMultiNodeDragSnapTargetAtDelta = createFindMultiNodeDragSnapTargetAtDelta(__appScope); Object.assign(__appScope, { findMultiNodeDragSnapTargetAtDelta });
-  const updateSingleNodeDragImperativePreview = createUpdateSingleNodeDragImperativePreview(__appScope); Object.assign(__appScope, { updateSingleNodeDragImperativePreview });
-  const startDraggingState = createStartDraggingState(__appScope); Object.assign(__appScope, { startDraggingState });
-  const flushConnectPreviewDom = createFlushConnectPreviewDom(__appScope); Object.assign(__appScope, { flushConnectPreviewDom });
-  const setConnectPreviewDom = createSetConnectPreviewDom(__appScope); Object.assign(__appScope, { setConnectPreviewDom });
-  const applyConnectPreviewState = createApplyConnectPreviewState(__appScope); Object.assign(__appScope, { applyConnectPreviewState });
-  const scheduleConnectPreviewPoint = createScheduleConnectPreviewPoint(__appScope); Object.assign(__appScope, { scheduleConnectPreviewPoint });
-  const applyRoutableLinePreviewState = createApplyRoutableLinePreviewState(__appScope); Object.assign(__appScope, { applyRoutableLinePreviewState });
-  const scheduleRoutableLinePreviewPoint = createScheduleRoutableLinePreviewPoint(__appScope); Object.assign(__appScope, { scheduleRoutableLinePreviewPoint });
-  const releaseRoutableLinePreviewAxisLock = createReleaseRoutableLinePreviewAxisLock(__appScope); Object.assign(__appScope, { releaseRoutableLinePreviewAxisLock });
+  const buildLightweightNodeDragPreviewRoutes = __s("buildLightweightNodeDragPreviewRoutes", createBuildLightweightNodeDragPreviewRoutes); Object.assign(__appScope, { buildLightweightNodeDragPreviewRoutes });
+  const buildLightweightNodeDragPreviewRouteMarkup = __s("buildLightweightNodeDragPreviewRouteMarkup", createBuildLightweightNodeDragPreviewRouteMarkup); Object.assign(__appScope, { buildLightweightNodeDragPreviewRouteMarkup });
+  const syncImperativeNodeDragPreviewPaths = __s("syncImperativeNodeDragPreviewPaths", createSyncImperativeNodeDragPreviewPaths); Object.assign(__appScope, { syncImperativeNodeDragPreviewPaths });
+  const updateNodeDragLightweightEdgePreview = __s("updateNodeDragLightweightEdgePreview", createUpdateNodeDragLightweightEdgePreview); Object.assign(__appScope, { updateNodeDragLightweightEdgePreview });
+  const singleNodeDragInteractionNodes = __s("singleNodeDragInteractionNodes", createSingleNodeDragInteractionNodes); Object.assign(__appScope, { singleNodeDragInteractionNodes });
+  const multiNodeDragInteractionNodes = __s("multiNodeDragInteractionNodes", createMultiNodeDragInteractionNodes); Object.assign(__appScope, { multiNodeDragInteractionNodes });
+  const updateImperativeNodeDragDropHint = __s("updateImperativeNodeDragDropHint", createUpdateImperativeNodeDragDropHint); Object.assign(__appScope, { updateImperativeNodeDragDropHint });
+  const findSingleNodeDragSnapTargetAtDelta = __s("findSingleNodeDragSnapTargetAtDelta", createFindSingleNodeDragSnapTargetAtDelta); Object.assign(__appScope, { findSingleNodeDragSnapTargetAtDelta });
+  const findMultiNodeDragSnapTargetAtDelta = __s("findMultiNodeDragSnapTargetAtDelta", createFindMultiNodeDragSnapTargetAtDelta); Object.assign(__appScope, { findMultiNodeDragSnapTargetAtDelta });
+  const updateSingleNodeDragImperativePreview = __s("updateSingleNodeDragImperativePreview", createUpdateSingleNodeDragImperativePreview); Object.assign(__appScope, { updateSingleNodeDragImperativePreview });
+  const startDraggingState = __s("startDraggingState", createStartDraggingState); Object.assign(__appScope, { startDraggingState });
+  const flushConnectPreviewDom = __s("flushConnectPreviewDom", createFlushConnectPreviewDom); Object.assign(__appScope, { flushConnectPreviewDom });
+  const setConnectPreviewDom = __s("setConnectPreviewDom", createSetConnectPreviewDom); Object.assign(__appScope, { setConnectPreviewDom });
+  const applyConnectPreviewState = __s("applyConnectPreviewState", createApplyConnectPreviewState); Object.assign(__appScope, { applyConnectPreviewState });
+  const scheduleConnectPreviewPoint = __s("scheduleConnectPreviewPoint", createScheduleConnectPreviewPoint); Object.assign(__appScope, { scheduleConnectPreviewPoint });
+  const applyRoutableLinePreviewState = __s("applyRoutableLinePreviewState", createApplyRoutableLinePreviewState); Object.assign(__appScope, { applyRoutableLinePreviewState });
+  const scheduleRoutableLinePreviewPoint = __s("scheduleRoutableLinePreviewPoint", createScheduleRoutableLinePreviewPoint); Object.assign(__appScope, { scheduleRoutableLinePreviewPoint });
+  const releaseRoutableLinePreviewAxisLock = __s("releaseRoutableLinePreviewAxisLock", createReleaseRoutableLinePreviewAxisLock); Object.assign(__appScope, { releaseRoutableLinePreviewAxisLock });
   const routableLinePreviewAxisReferencePoint = () =>
       routableLinePlacement?.manualPoints?.[routableLinePlacement.manualPoints.length - 1] ??
       (routableLinePlacement?.source ? connectTargetPoint(routableLinePlacement.source) : null);
   Object.assign(__appScope, { routableLinePreviewAxisReferencePoint });
-  const lockRoutableLinePreviewAxis = createLockRoutableLinePreviewAxis(__appScope); Object.assign(__appScope, { lockRoutableLinePreviewAxis });
-  const appendRoutableLinePreviewManualPoint = createAppendRoutableLinePreviewManualPoint(__appScope); Object.assign(__appScope, { appendRoutableLinePreviewManualPoint });
-  const resolveRoutableLinePreviewPoint = createResolveRoutableLinePreviewPoint(__appScope); Object.assign(__appScope, { resolveRoutableLinePreviewPoint });
-  const resetRoutableLinePreviewState = createResetRoutableLinePreviewState(__appScope); Object.assign(__appScope, { resetRoutableLinePreviewState });
-  const scheduleRewirePreviewPoint = createScheduleRewirePreviewPoint(__appScope); Object.assign(__appScope, { scheduleRewirePreviewPoint });
-  const resetConnectPreviewState = createResetConnectPreviewState(__appScope); Object.assign(__appScope, { resetConnectPreviewState });
+  const lockRoutableLinePreviewAxis = __s("lockRoutableLinePreviewAxis", createLockRoutableLinePreviewAxis); Object.assign(__appScope, { lockRoutableLinePreviewAxis });
+  const appendRoutableLinePreviewManualPoint = __s("appendRoutableLinePreviewManualPoint", createAppendRoutableLinePreviewManualPoint); Object.assign(__appScope, { appendRoutableLinePreviewManualPoint });
+  const resolveRoutableLinePreviewPoint = __s("resolveRoutableLinePreviewPoint", createResolveRoutableLinePreviewPoint); Object.assign(__appScope, { resolveRoutableLinePreviewPoint });
+  const resetRoutableLinePreviewState = __s("resetRoutableLinePreviewState", createResetRoutableLinePreviewState); Object.assign(__appScope, { resetRoutableLinePreviewState });
+  const scheduleRewirePreviewPoint = __s("scheduleRewirePreviewPoint", createScheduleRewirePreviewPoint); Object.assign(__appScope, { scheduleRewirePreviewPoint });
+  const resetConnectPreviewState = __s("resetConnectPreviewState", createResetConnectPreviewState); Object.assign(__appScope, { resetConnectPreviewState });
   // ESC 键取消连接预览
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -1680,24 +1689,24 @@ export function useRenderBatch(__appScope: Record<string, any>) {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [connectSource]);
-  const releaseConnectPreviewAxisLock = createReleaseConnectPreviewAxisLock(__appScope); Object.assign(__appScope, { releaseConnectPreviewAxisLock });
-  const connectSourceEndpointPoint = createConnectSourceEndpointPoint(__appScope); Object.assign(__appScope, { connectSourceEndpointPoint });
+  const releaseConnectPreviewAxisLock = __s("releaseConnectPreviewAxisLock", createReleaseConnectPreviewAxisLock); Object.assign(__appScope, { releaseConnectPreviewAxisLock });
+  const connectSourceEndpointPoint = __s("connectSourceEndpointPoint", createConnectSourceEndpointPoint); Object.assign(__appScope, { connectSourceEndpointPoint });
   const connectPreviewAxisReferencePoint = () =>
       connectSource?.manualPoints?.[connectSource.manualPoints.length - 1] ?? connectSourceEndpointPoint();
   Object.assign(__appScope, { connectPreviewAxisReferencePoint });
-  const lockConnectPreviewAxis = createLockConnectPreviewAxis(__appScope); Object.assign(__appScope, { lockConnectPreviewAxis });
-  const appendConnectPreviewManualPoint = createAppendConnectPreviewManualPoint(__appScope); Object.assign(__appScope, { appendConnectPreviewManualPoint });
-  const resolveConnectPreviewPoint = createResolveConnectPreviewPoint(__appScope); Object.assign(__appScope, { resolveConnectPreviewPoint });
+  const lockConnectPreviewAxis = __s("lockConnectPreviewAxis", createLockConnectPreviewAxis); Object.assign(__appScope, { lockConnectPreviewAxis });
+  const appendConnectPreviewManualPoint = __s("appendConnectPreviewManualPoint", createAppendConnectPreviewManualPoint); Object.assign(__appScope, { appendConnectPreviewManualPoint });
+  const resolveConnectPreviewPoint = __s("resolveConnectPreviewPoint", createResolveConnectPreviewPoint); Object.assign(__appScope, { resolveConnectPreviewPoint });
   const axisLockedDelta = (dx: number, dy: number): Point => (
       Math.abs(dx) >= Math.abs(dy) ? { x: dx, y: 0 } : { x: 0, y: dy }
     );
   Object.assign(__appScope, { axisLockedDelta });
-  const boundedDeltaForNodes = createBoundedDeltaForNodes(__appScope); Object.assign(__appScope, { boundedDeltaForNodes });
-  const boundedDeltaForMultiNodeInteractiveMove = createBoundedDeltaForMultiNodeInteractiveMove(__appScope); Object.assign(__appScope, { boundedDeltaForMultiNodeInteractiveMove });
-  const nodeMoveGeometryInsideCanvas = createNodeMoveGeometryInsideCanvas(__appScope); Object.assign(__appScope, { nodeMoveGeometryInsideCanvas });
-  const nearestBoundarySafeDelta = createNearestBoundarySafeDelta(__appScope); Object.assign(__appScope, { nearestBoundarySafeDelta });
-  const boundedDeltaForMoveGeometry = createBoundedDeltaForMoveGeometry(__appScope); Object.assign(__appScope, { boundedDeltaForMoveGeometry });
-  const commitSafeDeltaForDraggingState = createCommitSafeDeltaForDraggingState(__appScope); Object.assign(__appScope, { commitSafeDeltaForDraggingState });
+  const boundedDeltaForNodes = __s("boundedDeltaForNodes", createBoundedDeltaForNodes); Object.assign(__appScope, { boundedDeltaForNodes });
+  const boundedDeltaForMultiNodeInteractiveMove = __s("boundedDeltaForMultiNodeInteractiveMove", createBoundedDeltaForMultiNodeInteractiveMove); Object.assign(__appScope, { boundedDeltaForMultiNodeInteractiveMove });
+  const nodeMoveGeometryInsideCanvas = __s("nodeMoveGeometryInsideCanvas", createNodeMoveGeometryInsideCanvas); Object.assign(__appScope, { nodeMoveGeometryInsideCanvas });
+  const nearestBoundarySafeDelta = __s("nearestBoundarySafeDelta", createNearestBoundarySafeDelta); Object.assign(__appScope, { nearestBoundarySafeDelta });
+  const boundedDeltaForMoveGeometry = __s("boundedDeltaForMoveGeometry", createBoundedDeltaForMoveGeometry); Object.assign(__appScope, { boundedDeltaForMoveGeometry });
+  const commitSafeDeltaForDraggingState = __s("commitSafeDeltaForDraggingState", createCommitSafeDeltaForDraggingState); Object.assign(__appScope, { commitSafeDeltaForDraggingState });
   const canvasBoundsForMoveDelta = (
       nodeIds: string[],
       originalPositions: Record<string, Point>,
@@ -1705,43 +1714,43 @@ export function useRenderBatch(__appScope: Record<string, any>) {
       dy: number
     ) => canvasBoundsForMovedNodeDelta(nodeIds, originalPositions, dx, dy);
   Object.assign(__appScope, { canvasBoundsForMoveDelta });
-  const canvasBoundsForMovedNodeDelta = createCanvasBoundsForMovedNodeDelta(__appScope); Object.assign(__appScope, { canvasBoundsForMovedNodeDelta });
-  const dragBoundsForSmartAlignment = createDragBoundsForSmartAlignment(__appScope); Object.assign(__appScope, { dragBoundsForSmartAlignment });
-  const terminalOutflowAnchorsForSmartAlignmentDrag = createTerminalOutflowAnchorsForSmartAlignmentDrag(__appScope); Object.assign(__appScope, { terminalOutflowAnchorsForSmartAlignmentDrag });
+  const canvasBoundsForMovedNodeDelta = __s("canvasBoundsForMovedNodeDelta", createCanvasBoundsForMovedNodeDelta); Object.assign(__appScope, { canvasBoundsForMovedNodeDelta });
+  const dragBoundsForSmartAlignment = __s("dragBoundsForSmartAlignment", createDragBoundsForSmartAlignment); Object.assign(__appScope, { dragBoundsForSmartAlignment });
+  const terminalOutflowAnchorsForSmartAlignmentDrag = __s("terminalOutflowAnchorsForSmartAlignmentDrag", createTerminalOutflowAnchorsForSmartAlignmentDrag); Object.assign(__appScope, { terminalOutflowAnchorsForSmartAlignmentDrag });
   const computeSmartAlignmentSnap = createComputeSmartAlignmentSnap(__appScope); Object.assign(__appScope, { computeSmartAlignmentSnap });
-  const computeNodeDragPreviewDelta = createComputeNodeDragPreviewDelta(__appScope); Object.assign(__appScope, { computeNodeDragPreviewDelta });
-  const computeNodeDragDelta = createComputeNodeDragDelta(__appScope); Object.assign(__appScope, { computeNodeDragDelta });
-  const applyNodeDragMove = createApplyNodeDragMove(__appScope); Object.assign(__appScope, { applyNodeDragMove });
-  const scheduleNodeDragMove = createScheduleNodeDragMove(__appScope); Object.assign(__appScope, { scheduleNodeDragMove });
-  const flushPendingNodeDragMove = createFlushPendingNodeDragMove(__appScope); Object.assign(__appScope, { flushPendingNodeDragMove });
-  const clearNodeDragMoveSchedule = createClearNodeDragMoveSchedule(__appScope); Object.assign(__appScope, { clearNodeDragMoveSchedule });
-  const clearKeyboardMoveCommitSchedule = createClearKeyboardMoveCommitSchedule(__appScope); Object.assign(__appScope, { clearKeyboardMoveCommitSchedule });
-  const clearKeyboardNudgeSchedule = createClearKeyboardNudgeSchedule(__appScope); Object.assign(__appScope, { clearKeyboardNudgeSchedule });
-  const clearDraggingMoveState = createClearDraggingMoveState(__appScope); Object.assign(__appScope, { clearDraggingMoveState });
-  const cancelActiveEditInteractions = createCancelActiveEditInteractions(__appScope); Object.assign(__appScope, { cancelActiveEditInteractions });
-  const finishDraggingMove = createFinishDraggingMove(__appScope); Object.assign(__appScope, { finishDraggingMove });
-  const finishNodeDrag = createFinishNodeDrag(__appScope); Object.assign(__appScope, { finishNodeDrag });
-  const finishTransformDrag = createFinishTransformDrag(__appScope); Object.assign(__appScope, { finishTransformDrag });
-  const finishKeyboardMove = createFinishKeyboardMove(__appScope); Object.assign(__appScope, { finishKeyboardMove });
-  const scheduleKeyboardMoveCommit = createScheduleKeyboardMoveCommit(__appScope); Object.assign(__appScope, { scheduleKeyboardMoveCommit });
-  const applyKeyboardMoveDelta = createApplyKeyboardMoveDelta(__appScope); Object.assign(__appScope, { applyKeyboardMoveDelta });
-  const flushPendingKeyboardMove = createFlushPendingKeyboardMove(__appScope); Object.assign(__appScope, { flushPendingKeyboardMove });
-  const keyboardMoveActiveFrameDelta = createKeyboardMoveActiveFrameDelta(__appScope); Object.assign(__appScope, { keyboardMoveActiveFrameDelta });
-  const appendPendingKeyboardMoveDelta = createAppendPendingKeyboardMoveDelta(__appScope); Object.assign(__appScope, { appendPendingKeyboardMoveDelta });
-  const scheduleKeyboardNudgeFrame = createScheduleKeyboardNudgeFrame(__appScope); Object.assign(__appScope, { scheduleKeyboardNudgeFrame });
-  const releaseKeyboardMoveKey = createReleaseKeyboardMoveKey(__appScope); Object.assign(__appScope, { releaseKeyboardMoveKey });
-  const startKeyboardMoveSession = createStartKeyboardMoveSession(__appScope); Object.assign(__appScope, { startKeyboardMoveSession });
-  const nudgeSelectionByKeyboard = createNudgeSelectionByKeyboard(__appScope); Object.assign(__appScope, { nudgeSelectionByKeyboard });
-  const moveSelection = createMoveSelection(__appScope); Object.assign(__appScope, { moveSelection });
-  const undoScopeForNodeFootprintPatch = createUndoScopeForNodeFootprintPatch(__appScope); Object.assign(__appScope, { undoScopeForNodeFootprintPatch });
-  const updateSelectedNode = createUpdateSelectedNode(__appScope); Object.assign(__appScope, { updateSelectedNode });
-  const commitNodeFootprintUpdates = createCommitNodeFootprintUpdates(__appScope); Object.assign(__appScope, { commitNodeFootprintUpdates });
-  const assignSelectedNodesToModelLayer = createAssignSelectedNodesToModelLayer(__appScope); Object.assign(__appScope, { assignSelectedNodesToModelLayer });
-  const openLayerAssignmentDialog = createOpenLayerAssignmentDialog(__appScope); Object.assign(__appScope, { openLayerAssignmentDialog });
-  const applyLayerAssignmentDialog = createApplyLayerAssignmentDialog(__appScope); Object.assign(__appScope, { applyLayerAssignmentDialog });
-  const rotateSelectedLayoutUnits = createRotateSelectedLayoutUnits(__appScope); Object.assign(__appScope, { rotateSelectedLayoutUnits });
-  const mirrorSelectedNodes = createMirrorSelectedNodes(__appScope); Object.assign(__appScope, { mirrorSelectedNodes });
-  const updateCanvasSize = createUpdateCanvasSize(__appScope); Object.assign(__appScope, { updateCanvasSize });
+  const computeNodeDragPreviewDelta = __s("computeNodeDragPreviewDelta", createComputeNodeDragPreviewDelta); Object.assign(__appScope, { computeNodeDragPreviewDelta });
+  const computeNodeDragDelta = __s("computeNodeDragDelta", createComputeNodeDragDelta); Object.assign(__appScope, { computeNodeDragDelta });
+  const applyNodeDragMove = __s("applyNodeDragMove", createApplyNodeDragMove); Object.assign(__appScope, { applyNodeDragMove });
+  const scheduleNodeDragMove = __s("scheduleNodeDragMove", createScheduleNodeDragMove); Object.assign(__appScope, { scheduleNodeDragMove });
+  const flushPendingNodeDragMove = __s("flushPendingNodeDragMove", createFlushPendingNodeDragMove); Object.assign(__appScope, { flushPendingNodeDragMove });
+  const clearNodeDragMoveSchedule = __s("clearNodeDragMoveSchedule", createClearNodeDragMoveSchedule); Object.assign(__appScope, { clearNodeDragMoveSchedule });
+  const clearKeyboardMoveCommitSchedule = __s("clearKeyboardMoveCommitSchedule", createClearKeyboardMoveCommitSchedule); Object.assign(__appScope, { clearKeyboardMoveCommitSchedule });
+  const clearKeyboardNudgeSchedule = __s("clearKeyboardNudgeSchedule", createClearKeyboardNudgeSchedule); Object.assign(__appScope, { clearKeyboardNudgeSchedule });
+  const clearDraggingMoveState = __s("clearDraggingMoveState", createClearDraggingMoveState); Object.assign(__appScope, { clearDraggingMoveState });
+  const cancelActiveEditInteractions = __s("cancelActiveEditInteractions", createCancelActiveEditInteractions); Object.assign(__appScope, { cancelActiveEditInteractions });
+  const finishDraggingMove = __s("finishDraggingMove", createFinishDraggingMove); Object.assign(__appScope, { finishDraggingMove });
+  const finishNodeDrag = __s("finishNodeDrag", createFinishNodeDrag); Object.assign(__appScope, { finishNodeDrag });
+  const finishTransformDrag = __s("finishTransformDrag", createFinishTransformDrag); Object.assign(__appScope, { finishTransformDrag });
+  const finishKeyboardMove = __s("finishKeyboardMove", createFinishKeyboardMove); Object.assign(__appScope, { finishKeyboardMove });
+  const scheduleKeyboardMoveCommit = __s("scheduleKeyboardMoveCommit", createScheduleKeyboardMoveCommit); Object.assign(__appScope, { scheduleKeyboardMoveCommit });
+  const applyKeyboardMoveDelta = __s("applyKeyboardMoveDelta", createApplyKeyboardMoveDelta); Object.assign(__appScope, { applyKeyboardMoveDelta });
+  const flushPendingKeyboardMove = __s("flushPendingKeyboardMove", createFlushPendingKeyboardMove); Object.assign(__appScope, { flushPendingKeyboardMove });
+  const keyboardMoveActiveFrameDelta = __s("keyboardMoveActiveFrameDelta", createKeyboardMoveActiveFrameDelta); Object.assign(__appScope, { keyboardMoveActiveFrameDelta });
+  const appendPendingKeyboardMoveDelta = __s("appendPendingKeyboardMoveDelta", createAppendPendingKeyboardMoveDelta); Object.assign(__appScope, { appendPendingKeyboardMoveDelta });
+  const scheduleKeyboardNudgeFrame = __s("scheduleKeyboardNudgeFrame", createScheduleKeyboardNudgeFrame); Object.assign(__appScope, { scheduleKeyboardNudgeFrame });
+  const releaseKeyboardMoveKey = __s("releaseKeyboardMoveKey", createReleaseKeyboardMoveKey); Object.assign(__appScope, { releaseKeyboardMoveKey });
+  const startKeyboardMoveSession = __s("startKeyboardMoveSession", createStartKeyboardMoveSession); Object.assign(__appScope, { startKeyboardMoveSession });
+  const nudgeSelectionByKeyboard = __s("nudgeSelectionByKeyboard", createNudgeSelectionByKeyboard); Object.assign(__appScope, { nudgeSelectionByKeyboard });
+  const moveSelection = __s("moveSelection", createMoveSelection); Object.assign(__appScope, { moveSelection });
+  const undoScopeForNodeFootprintPatch = __s("undoScopeForNodeFootprintPatch", createUndoScopeForNodeFootprintPatch); Object.assign(__appScope, { undoScopeForNodeFootprintPatch });
+  const updateSelectedNode = __s("updateSelectedNode", createUpdateSelectedNode); Object.assign(__appScope, { updateSelectedNode });
+  const commitNodeFootprintUpdates = __s("commitNodeFootprintUpdates", createCommitNodeFootprintUpdates); Object.assign(__appScope, { commitNodeFootprintUpdates });
+  const assignSelectedNodesToModelLayer = __s("assignSelectedNodesToModelLayer", createAssignSelectedNodesToModelLayer); Object.assign(__appScope, { assignSelectedNodesToModelLayer });
+  const openLayerAssignmentDialog = __s("openLayerAssignmentDialog", createOpenLayerAssignmentDialog); Object.assign(__appScope, { openLayerAssignmentDialog });
+  const applyLayerAssignmentDialog = __s("applyLayerAssignmentDialog", createApplyLayerAssignmentDialog); Object.assign(__appScope, { applyLayerAssignmentDialog });
+  const rotateSelectedLayoutUnits = __s("rotateSelectedLayoutUnits", createRotateSelectedLayoutUnits); Object.assign(__appScope, { rotateSelectedLayoutUnits });
+  const mirrorSelectedNodes = __s("mirrorSelectedNodes", createMirrorSelectedNodes); Object.assign(__appScope, { mirrorSelectedNodes });
+  const updateCanvasSize = __s("updateCanvasSize", createUpdateCanvasSize); Object.assign(__appScope, { updateCanvasSize });
   // 收紧画布：以内容包围盒 + 2*GAP 重设画布，四边均留间隙；某方向达到最小值时内容在该方向居中
   const shrinkCanvasToFitContent = () => {
     const { canvasWidth, canvasHeight, edges, nodes, routedEdges, translateNodeBy, translateEdgeBy, shiftCachedRoutesForCanvasOrigin, clampNodePositionToBounds, clampEdgeGeometryToBounds, setGraphArrays, pushUndoSnapshot, applyCanvasBounds, includeMeasurementGroupBounds } = __appScope;
@@ -1792,14 +1801,14 @@ export function useRenderBatch(__appScope: Record<string, any>) {
     applyCanvasBounds(nextBounds);
   };
   Object.assign(__appScope, { shrinkCanvasToFitContent });
-  const commitCanvasSizeDraft = createCommitCanvasSizeDraft(__appScope); Object.assign(__appScope, { commitCanvasSizeDraft });
-  const resetCanvasSizeDraft = createResetCanvasSizeDraft(__appScope); Object.assign(__appScope, { resetCanvasSizeDraft });
-  const handleCanvasSizeBlur = createHandleCanvasSizeBlur(__appScope); Object.assign(__appScope, { handleCanvasSizeBlur });
-  const handleCanvasSizeKeyDown = createHandleCanvasSizeKeyDown(__appScope); Object.assign(__appScope, { handleCanvasSizeKeyDown });
-  const updateParam = createUpdateParam(__appScope); Object.assign(__appScope, { updateParam });
-  const applyBatchCommonParamPatch = createApplyBatchCommonParamPatch(__appScope); Object.assign(__appScope, { applyBatchCommonParamPatch });
-  const applyBatchCommonParam = createApplyBatchCommonParam(__appScope); Object.assign(__appScope, { applyBatchCommonParam });
-  const applyBatchCommonMeasurementGroupSetting = createApplyBatchCommonMeasurementGroupSetting(__appScope); Object.assign(__appScope, { applyBatchCommonMeasurementGroupSetting });
+  const commitCanvasSizeDraft = __s("commitCanvasSizeDraft", createCommitCanvasSizeDraft); Object.assign(__appScope, { commitCanvasSizeDraft });
+  const resetCanvasSizeDraft = __s("resetCanvasSizeDraft", createResetCanvasSizeDraft); Object.assign(__appScope, { resetCanvasSizeDraft });
+  const handleCanvasSizeBlur = __s("handleCanvasSizeBlur", createHandleCanvasSizeBlur); Object.assign(__appScope, { handleCanvasSizeBlur });
+  const handleCanvasSizeKeyDown = __s("handleCanvasSizeKeyDown", createHandleCanvasSizeKeyDown); Object.assign(__appScope, { handleCanvasSizeKeyDown });
+  const updateParam = __s("updateParam", createUpdateParam); Object.assign(__appScope, { updateParam });
+  const applyBatchCommonParamPatch = __s("applyBatchCommonParamPatch", createApplyBatchCommonParamPatch); Object.assign(__appScope, { applyBatchCommonParamPatch });
+  const applyBatchCommonParam = __s("applyBatchCommonParam", createApplyBatchCommonParam); Object.assign(__appScope, { applyBatchCommonParam });
+  const applyBatchCommonMeasurementGroupSetting = __s("applyBatchCommonMeasurementGroupSetting", createApplyBatchCommonMeasurementGroupSetting); Object.assign(__appScope, { applyBatchCommonMeasurementGroupSetting });
   const batchEditors = useBatchEditors({
       activeSelectedNodeIds,
       nodeById,
@@ -1824,19 +1833,19 @@ export function useRenderBatch(__appScope: Record<string, any>) {
       libraryTemplateByKind,
     });
   Object.assign(__appScope, { batchEditors });
-  const commitElementTreeNodeIdentity = createCommitElementTreeNodeIdentity(__appScope); Object.assign(__appScope, { commitElementTreeNodeIdentity });
-  const commitElementTreeContainerChildParam = createCommitElementTreeContainerChildParam(__appScope); Object.assign(__appScope, { commitElementTreeContainerChildParam });
-  const terminalVbaseFallback = createTerminalVbaseFallback(__appScope); Object.assign(__appScope, { terminalVbaseFallback });
-  const updateTerminalVbase = createUpdateTerminalVbase(__appScope); Object.assign(__appScope, { updateTerminalVbase });
+  const commitElementTreeNodeIdentity = __s("commitElementTreeNodeIdentity", createCommitElementTreeNodeIdentity); Object.assign(__appScope, { commitElementTreeNodeIdentity });
+  const commitElementTreeContainerChildParam = __s("commitElementTreeContainerChildParam", createCommitElementTreeContainerChildParam); Object.assign(__appScope, { commitElementTreeContainerChildParam });
+  const terminalVbaseFallback = __s("terminalVbaseFallback", createTerminalVbaseFallback); Object.assign(__appScope, { terminalVbaseFallback });
+  const updateTerminalVbase = __s("updateTerminalVbase", createUpdateTerminalVbase); Object.assign(__appScope, { updateTerminalVbase });
   const formatDeviceModelParamDisplayValue = (key: string, value: string) =>
       formatPowerBaseDisplayValue(key, value);
   Object.assign(__appScope, { formatDeviceModelParamDisplayValue });
-  const renderParamHeader = createRenderParamHeader(__appScope); Object.assign(__appScope, { renderParamHeader });
+  const renderParamHeader = __s("renderParamHeader", createRenderParamHeader); Object.assign(__appScope, { renderParamHeader });
   const renderChineseParamHeader = (key: string, fallback = key) => (
       batchEditors.renderParamHeader(key, key, PARAM_LABELS[key] ?? fallback)
     );
   Object.assign(__appScope, { renderChineseParamHeader });
-  const renderNodeDoubleClickDeviceParamRows = createRenderNodeDoubleClickDeviceParamRows(__appScope); Object.assign(__appScope, { renderNodeDoubleClickDeviceParamRows });
+  const renderNodeDoubleClickDeviceParamRows = __s("renderNodeDoubleClickDeviceParamRows", createRenderNodeDoubleClickDeviceParamRows); Object.assign(__appScope, { renderNodeDoubleClickDeviceParamRows });
   const renderNodeDoubleClickContainerParamRows = (node: ModelNode, view: ContainerDeviceParameterView) => (
       view.rows.map((row) => {
         const displayValue = formatDeviceModelParamDisplayValue(row.key, row.value);
@@ -1920,26 +1929,26 @@ export function useRenderBatch(__appScope: Record<string, any>) {
       </table>
     );
   Object.assign(__appScope, { renderNodeDoubleClickTextParamTable });
-  const rememberNodeDoubleClickDialogGuard = createRememberNodeDoubleClickDialogGuard(__appScope); Object.assign(__appScope, { rememberNodeDoubleClickDialogGuard });
-  const suppressNodeDoubleClickDialogEvent = createSuppressNodeDoubleClickDialogEvent(__appScope); Object.assign(__appScope, { suppressNodeDoubleClickDialogEvent });
-  const finishNodeDoubleClickDialogPointerOperation = createFinishNodeDoubleClickDialogPointerOperation(__appScope); Object.assign(__appScope, { finishNodeDoubleClickDialogPointerOperation });
-  const stopNodeDoubleClickDialogEvent = createStopNodeDoubleClickDialogEvent(__appScope); Object.assign(__appScope, { stopNodeDoubleClickDialogEvent });
-  const currentNodeDoubleClickDialogRect = createCurrentNodeDoubleClickDialogRect(__appScope); Object.assign(__appScope, { currentNodeDoubleClickDialogRect });
-  const startNodeDoubleClickDialogDrag = createStartNodeDoubleClickDialogDrag(__appScope); Object.assign(__appScope, { startNodeDoubleClickDialogDrag });
-  const startNodeDoubleClickDialogResize = createStartNodeDoubleClickDialogResize(__appScope); Object.assign(__appScope, { startNodeDoubleClickDialogResize });
-  const cancelNodeDoubleClickDialog = createCancelNodeDoubleClickDialog(__appScope); Object.assign(__appScope, { cancelNodeDoubleClickDialog });
-  const confirmNodeDoubleClickDialog = createConfirmNodeDoubleClickDialog(__appScope); Object.assign(__appScope, { confirmNodeDoubleClickDialog });
-  const renderNodeDoubleClickDialog = createRenderNodeDoubleClickDialog(__appScope); Object.assign(__appScope, { renderNodeDoubleClickDialog });
-  const contextMenuPlacement = createContextMenuPlacement(__appScope); Object.assign(__appScope, { contextMenuPlacement });
-  const contextMenuStyle = createContextMenuStyle(__appScope); Object.assign(__appScope, { contextMenuStyle });
-  const contextMenuClassName = createContextMenuClassName(__appScope); Object.assign(__appScope, { contextMenuClassName });
-  const stopSidePanelEventPropagation = createStopSidePanelEventPropagation(__appScope); Object.assign(__appScope, { stopSidePanelEventPropagation });
-  const setSidePanelMode = createSetSidePanelMode(__appScope); Object.assign(__appScope, { setSidePanelMode });
+  const rememberNodeDoubleClickDialogGuard = __s("rememberNodeDoubleClickDialogGuard", createRememberNodeDoubleClickDialogGuard); Object.assign(__appScope, { rememberNodeDoubleClickDialogGuard });
+  const suppressNodeDoubleClickDialogEvent = __s("suppressNodeDoubleClickDialogEvent", createSuppressNodeDoubleClickDialogEvent); Object.assign(__appScope, { suppressNodeDoubleClickDialogEvent });
+  const finishNodeDoubleClickDialogPointerOperation = __s("finishNodeDoubleClickDialogPointerOperation", createFinishNodeDoubleClickDialogPointerOperation); Object.assign(__appScope, { finishNodeDoubleClickDialogPointerOperation });
+  const stopNodeDoubleClickDialogEvent = __s("stopNodeDoubleClickDialogEvent", createStopNodeDoubleClickDialogEvent); Object.assign(__appScope, { stopNodeDoubleClickDialogEvent });
+  const currentNodeDoubleClickDialogRect = __s("currentNodeDoubleClickDialogRect", createCurrentNodeDoubleClickDialogRect); Object.assign(__appScope, { currentNodeDoubleClickDialogRect });
+  const startNodeDoubleClickDialogDrag = __s("startNodeDoubleClickDialogDrag", createStartNodeDoubleClickDialogDrag); Object.assign(__appScope, { startNodeDoubleClickDialogDrag });
+  const startNodeDoubleClickDialogResize = __s("startNodeDoubleClickDialogResize", createStartNodeDoubleClickDialogResize); Object.assign(__appScope, { startNodeDoubleClickDialogResize });
+  const cancelNodeDoubleClickDialog = __s("cancelNodeDoubleClickDialog", createCancelNodeDoubleClickDialog); Object.assign(__appScope, { cancelNodeDoubleClickDialog });
+  const confirmNodeDoubleClickDialog = __s("confirmNodeDoubleClickDialog", createConfirmNodeDoubleClickDialog); Object.assign(__appScope, { confirmNodeDoubleClickDialog });
+  const renderNodeDoubleClickDialog = __s("renderNodeDoubleClickDialog", createRenderNodeDoubleClickDialog); Object.assign(__appScope, { renderNodeDoubleClickDialog });
+  const contextMenuPlacement = __s("contextMenuPlacement", createContextMenuPlacement); Object.assign(__appScope, { contextMenuPlacement });
+  const contextMenuStyle = __s("contextMenuStyle", createContextMenuStyle); Object.assign(__appScope, { contextMenuStyle });
+  const contextMenuClassName = __s("contextMenuClassName", createContextMenuClassName); Object.assign(__appScope, { contextMenuClassName });
+  const stopSidePanelEventPropagation = __s("stopSidePanelEventPropagation", createStopSidePanelEventPropagation); Object.assign(__appScope, { stopSidePanelEventPropagation });
+  const setSidePanelMode = __s("setSidePanelMode", createSetSidePanelMode); Object.assign(__appScope, { setSidePanelMode });
   const pointerRelatedTargetInside = (event: ReactPointerEvent<HTMLElement>, selector: string) =>
       event.relatedTarget instanceof Element && Boolean(event.relatedTarget.closest(selector));
   Object.assign(__appScope, { pointerRelatedTargetInside });
-  const pointerClientTargetInside = createPointerClientTargetInside(__appScope); Object.assign(__appScope, { pointerClientTargetInside });
-  const pointerInsideElementRect = createPointerInsideElementRect(__appScope); Object.assign(__appScope, { pointerInsideElementRect });
+  const pointerClientTargetInside = __s("pointerClientTargetInside", createPointerClientTargetInside); Object.assign(__appScope, { pointerClientTargetInside });
+  const pointerInsideElementRect = __s("pointerInsideElementRect", createPointerInsideElementRect); Object.assign(__appScope, { pointerInsideElementRect });
   const pointerInsideFloatingPanelBounds = (event: ReactPointerEvent<HTMLElement>) => {
     const { leftPanelVisible, rightPanelVisible } = __appScope;
     return (leftPanelVisible && (
@@ -1964,52 +1973,52 @@ export function useRenderBatch(__appScope: Record<string, any>) {
       ));
   };
   Object.assign(__appScope, { pointerInsideFloatingPanelBounds });
-  const updateAutoPanelVisibility = createUpdateAutoPanelVisibility(__appScope); Object.assign(__appScope, { updateAutoPanelVisibility });
-  const activateInspectorFromCanvas = createActivateInspectorFromCanvas(__appScope); Object.assign(__appScope, { activateInspectorFromCanvas });
-  const openMeasurementEditorForNode = createOpenMeasurementEditorForNode(__appScope); Object.assign(__appScope, { openMeasurementEditorForNode });
-  const handleSidePanelPointerLeave = createHandleSidePanelPointerLeave(__appScope); Object.assign(__appScope, { handleSidePanelPointerLeave });
-  const hideAutoPanelsFromWorkspace = createHideAutoPanelsFromWorkspace(__appScope); Object.assign(__appScope, { hideAutoPanelsFromWorkspace });
+  const updateAutoPanelVisibility = __s("updateAutoPanelVisibility", createUpdateAutoPanelVisibility); Object.assign(__appScope, { updateAutoPanelVisibility });
+  const activateInspectorFromCanvas = __s("activateInspectorFromCanvas", createActivateInspectorFromCanvas); Object.assign(__appScope, { activateInspectorFromCanvas });
+  const openMeasurementEditorForNode = __s("openMeasurementEditorForNode", createOpenMeasurementEditorForNode); Object.assign(__appScope, { openMeasurementEditorForNode });
+  const handleSidePanelPointerLeave = __s("handleSidePanelPointerLeave", createHandleSidePanelPointerLeave); Object.assign(__appScope, { handleSidePanelPointerLeave });
+  const hideAutoPanelsFromWorkspace = __s("hideAutoPanelsFromWorkspace", createHideAutoPanelsFromWorkspace); Object.assign(__appScope, { hideAutoPanelsFromWorkspace });
   const interactiveStaticDrawingNeedsExplicitFinish = (kind: DeviceKind) =>
       staticConnectorDrawingNeedsExplicitFinish(kind);
   Object.assign(__appScope, { interactiveStaticDrawingNeedsExplicitFinish });
-  const appendDistinctStaticDrawingPoint = createAppendDistinctStaticDrawingPoint(__appScope); Object.assign(__appScope, { appendDistinctStaticDrawingPoint });
+  const appendDistinctStaticDrawingPoint = __s("appendDistinctStaticDrawingPoint", createAppendDistinctStaticDrawingPoint); Object.assign(__appScope, { appendDistinctStaticDrawingPoint });
   const staticDrawingPreviewPoints = (drawing: StaticDrawingState) =>
       appendDistinctStaticDrawingPoint(drawing.points, drawing.previewPoint);
   Object.assign(__appScope, { staticDrawingPreviewPoints });
   const staticDrawingPathData = (kind: DeviceKind, points: Point[]) =>
       staticConnectorDrawingPath(kind, points);
   Object.assign(__appScope, { staticDrawingPathData });
-  const renderStaticBoxDrawingPreview = createRenderStaticBoxDrawingPreview(__appScope); Object.assign(__appScope, { renderStaticBoxDrawingPreview });
-  const startInteractiveStaticDrawing = createStartInteractiveStaticDrawing(__appScope); Object.assign(__appScope, { startInteractiveStaticDrawing });
-  const cancelInteractiveStaticDrawing = createCancelInteractiveStaticDrawing(__appScope); Object.assign(__appScope, { cancelInteractiveStaticDrawing });
-  const finishInteractiveStaticDrawing = createFinishInteractiveStaticDrawing(__appScope); Object.assign(__appScope, { finishInteractiveStaticDrawing });
+  const renderStaticBoxDrawingPreview = __s("renderStaticBoxDrawingPreview", createRenderStaticBoxDrawingPreview); Object.assign(__appScope, { renderStaticBoxDrawingPreview });
+  const startInteractiveStaticDrawing = __s("startInteractiveStaticDrawing", createStartInteractiveStaticDrawing); Object.assign(__appScope, { startInteractiveStaticDrawing });
+  const cancelInteractiveStaticDrawing = __s("cancelInteractiveStaticDrawing", createCancelInteractiveStaticDrawing); Object.assign(__appScope, { cancelInteractiveStaticDrawing });
+  const finishInteractiveStaticDrawing = __s("finishInteractiveStaticDrawing", createFinishInteractiveStaticDrawing); Object.assign(__appScope, { finishInteractiveStaticDrawing });
   const appendStaticDrawingPoint = createAppendStaticDrawingPoint(__appScope); Object.assign(__appScope, { appendStaticDrawingPoint });
   const updateInteractiveStaticDrawingPreview = createUpdateInteractiveStaticDrawingPreview(__appScope); Object.assign(__appScope, { updateInteractiveStaticDrawingPreview });
-  const renderInteractiveStaticDrawingPreview = createRenderInteractiveStaticDrawingPreview(__appScope); Object.assign(__appScope, { renderInteractiveStaticDrawingPreview });
-  const startLibraryDevicePlacement = createStartLibraryDevicePlacement(__appScope); Object.assign(__appScope, { startLibraryDevicePlacement });
-  const startLibraryGraphTemplatePlacement = createStartLibraryGraphTemplatePlacement(__appScope); Object.assign(__appScope, { startLibraryGraphTemplatePlacement });
-  const cancelLibraryPlacement = createCancelLibraryPlacement(__appScope); Object.assign(__appScope, { cancelLibraryPlacement });
+  const renderInteractiveStaticDrawingPreview = __s("renderInteractiveStaticDrawingPreview", createRenderInteractiveStaticDrawingPreview); Object.assign(__appScope, { renderInteractiveStaticDrawingPreview });
+  const startLibraryDevicePlacement = __s("startLibraryDevicePlacement", createStartLibraryDevicePlacement); Object.assign(__appScope, { startLibraryDevicePlacement });
+  const startLibraryGraphTemplatePlacement = __s("startLibraryGraphTemplatePlacement", createStartLibraryGraphTemplatePlacement); Object.assign(__appScope, { startLibraryGraphTemplatePlacement });
+  const cancelLibraryPlacement = __s("cancelLibraryPlacement", createCancelLibraryPlacement); Object.assign(__appScope, { cancelLibraryPlacement });
   const updateLibraryPlacementPreview = createUpdateLibraryPlacementPreview(__appScope); Object.assign(__appScope, { updateLibraryPlacementPreview });
-  const clearLibraryPlacementPreview = createClearLibraryPlacementPreview(__appScope); Object.assign(__appScope, { clearLibraryPlacementPreview });
-  const placeLibraryDeviceAtPoint = createPlaceLibraryDeviceAtPoint(__appScope); Object.assign(__appScope, { placeLibraryDeviceAtPoint });
+  const clearLibraryPlacementPreview = __s("clearLibraryPlacementPreview", createClearLibraryPlacementPreview); Object.assign(__appScope, { clearLibraryPlacementPreview });
+  const placeLibraryDeviceAtPoint = __s("placeLibraryDeviceAtPoint", createPlaceLibraryDeviceAtPoint); Object.assign(__appScope, { placeLibraryDeviceAtPoint });
   const commitLibraryPlacementAtPoint = createCommitLibraryPlacementAtPoint(__appScope); Object.assign(__appScope, { commitLibraryPlacementAtPoint });
-  const renderLibraryPlacementPreview = createRenderLibraryPlacementPreview(__appScope); Object.assign(__appScope, { renderLibraryPlacementPreview });
-  const startSidePanelResize = createStartSidePanelResize(__appScope); Object.assign(__appScope, { startSidePanelResize });
-  const startCanvasResize = createStartCanvasResize(__appScope); Object.assign(__appScope, { startCanvasResize });
-  const startCanvasResizeFromRightOverlay = createStartCanvasResizeFromRightOverlay(__appScope); Object.assign(__appScope, { startCanvasResizeFromRightOverlay });
-  const startCanvasResizeFromLeftOverlay = createStartCanvasResizeFromLeftOverlay(__appScope); Object.assign(__appScope, { startCanvasResizeFromLeftOverlay });
-  const startCanvasResizeFromBottomOverlay = createStartCanvasResizeFromBottomOverlay(__appScope); Object.assign(__appScope, { startCanvasResizeFromBottomOverlay });
-  const startCanvasResizeFromTopOverlay = createStartCanvasResizeFromTopOverlay(__appScope); Object.assign(__appScope, { startCanvasResizeFromTopOverlay });
-  const startStatusbarResize = createStartStatusbarResize(__appScope); Object.assign(__appScope, { startStatusbarResize });
-  const currentTopologyWarningPanelRect = createCurrentTopologyWarningPanelRect(__appScope); Object.assign(__appScope, { currentTopologyWarningPanelRect });
-  const startTopologyWarningPanelDrag = createStartTopologyWarningPanelDrag(__appScope); Object.assign(__appScope, { startTopologyWarningPanelDrag });
-  const startTopologyWarningPanelResize = createStartTopologyWarningPanelResize(__appScope); Object.assign(__appScope, { startTopologyWarningPanelResize });
-  const renderSidePanelModeControls = createRenderSidePanelModeControls(__appScope); Object.assign(__appScope, { renderSidePanelModeControls });
-  const renderSidePanelEdgeTrigger = createRenderSidePanelEdgeTrigger(__appScope); Object.assign(__appScope, { renderSidePanelEdgeTrigger });
+  const renderLibraryPlacementPreview = __s("renderLibraryPlacementPreview", createRenderLibraryPlacementPreview); Object.assign(__appScope, { renderLibraryPlacementPreview });
+  const startSidePanelResize = __s("startSidePanelResize", createStartSidePanelResize); Object.assign(__appScope, { startSidePanelResize });
+  const startCanvasResize = __s("startCanvasResize", createStartCanvasResize); Object.assign(__appScope, { startCanvasResize });
+  const startCanvasResizeFromRightOverlay = __s("startCanvasResizeFromRightOverlay", createStartCanvasResizeFromRightOverlay); Object.assign(__appScope, { startCanvasResizeFromRightOverlay });
+  const startCanvasResizeFromLeftOverlay = __s("startCanvasResizeFromLeftOverlay", createStartCanvasResizeFromLeftOverlay); Object.assign(__appScope, { startCanvasResizeFromLeftOverlay });
+  const startCanvasResizeFromBottomOverlay = __s("startCanvasResizeFromBottomOverlay", createStartCanvasResizeFromBottomOverlay); Object.assign(__appScope, { startCanvasResizeFromBottomOverlay });
+  const startCanvasResizeFromTopOverlay = __s("startCanvasResizeFromTopOverlay", createStartCanvasResizeFromTopOverlay); Object.assign(__appScope, { startCanvasResizeFromTopOverlay });
+  const startStatusbarResize = __s("startStatusbarResize", createStartStatusbarResize); Object.assign(__appScope, { startStatusbarResize });
+  const currentTopologyWarningPanelRect = __s("currentTopologyWarningPanelRect", createCurrentTopologyWarningPanelRect); Object.assign(__appScope, { currentTopologyWarningPanelRect });
+  const startTopologyWarningPanelDrag = __s("startTopologyWarningPanelDrag", createStartTopologyWarningPanelDrag); Object.assign(__appScope, { startTopologyWarningPanelDrag });
+  const startTopologyWarningPanelResize = __s("startTopologyWarningPanelResize", createStartTopologyWarningPanelResize); Object.assign(__appScope, { startTopologyWarningPanelResize });
+  const renderSidePanelModeControls = __s("renderSidePanelModeControls", createRenderSidePanelModeControls); Object.assign(__appScope, { renderSidePanelModeControls });
+  const renderSidePanelEdgeTrigger = __s("renderSidePanelEdgeTrigger", createRenderSidePanelEdgeTrigger); Object.assign(__appScope, { renderSidePanelEdgeTrigger });
   const normalizeScale = (value: number, fallback = 1) => normalizeScaleValue(value, fallback); Object.assign(__appScope, { normalizeScale });
   const signedScale = (value: number, signSource: number) => Math.abs(normalizeScale(value)) * (Math.sign(signSource) || 1); Object.assign(__appScope, { signedScale });
-  const normalizeStaticBoxDimension = createNormalizeStaticBoxDimension(__appScope); Object.assign(__appScope, { normalizeStaticBoxDimension });
-  const toLocalNodePoint = createToLocalNodePoint(__appScope); Object.assign(__appScope, { toLocalNodePoint });
+  const normalizeStaticBoxDimension = __s("normalizeStaticBoxDimension", createNormalizeStaticBoxDimension); Object.assign(__appScope, { normalizeStaticBoxDimension });
+  const toLocalNodePoint = __s("toLocalNodePoint", createToLocalNodePoint); Object.assign(__appScope, { toLocalNodePoint });
   const snapshotSingleTransformNode = (node: ModelNode): GroupTransformNodeSnapshot => ({
       position: { ...node.position },
       rotation: node.rotation,
@@ -2027,11 +2036,11 @@ export function useRenderBatch(__appScope: Record<string, any>) {
       scaleY: drag.originalNode.scaleY
     });
   Object.assign(__appScope, { singleTransformBaseNode });
-  const singleTransformNodeUpdate = createSingleTransformNodeUpdate(__appScope); Object.assign(__appScope, { singleTransformNodeUpdate });
-  const signedScaleFromRotatedHandleDelta = createSignedScaleFromRotatedHandleDelta(__appScope); Object.assign(__appScope, { signedScaleFromRotatedHandleDelta });
-  const signedScaleFromUprightHandleDelta = createSignedScaleFromUprightHandleDelta(__appScope); Object.assign(__appScope, { signedScaleFromUprightHandleDelta });
-  const proportionalSignedScaleFromHandleDelta = createProportionalSignedScaleFromHandleDelta(__appScope); Object.assign(__appScope, { proportionalSignedScaleFromHandleDelta });
-  const proportionalSignedScaleFromUprightHandleDelta = createProportionalSignedScaleFromUprightHandleDelta(__appScope); Object.assign(__appScope, { proportionalSignedScaleFromUprightHandleDelta });
+  const singleTransformNodeUpdate = __s("singleTransformNodeUpdate", createSingleTransformNodeUpdate); Object.assign(__appScope, { singleTransformNodeUpdate });
+  const signedScaleFromRotatedHandleDelta = __s("signedScaleFromRotatedHandleDelta", createSignedScaleFromRotatedHandleDelta); Object.assign(__appScope, { signedScaleFromRotatedHandleDelta });
+  const signedScaleFromUprightHandleDelta = __s("signedScaleFromUprightHandleDelta", createSignedScaleFromUprightHandleDelta); Object.assign(__appScope, { signedScaleFromUprightHandleDelta });
+  const proportionalSignedScaleFromHandleDelta = __s("proportionalSignedScaleFromHandleDelta", createProportionalSignedScaleFromHandleDelta); Object.assign(__appScope, { proportionalSignedScaleFromHandleDelta });
+  const proportionalSignedScaleFromUprightHandleDelta = __s("proportionalSignedScaleFromUprightHandleDelta", createProportionalSignedScaleFromUprightHandleDelta); Object.assign(__appScope, { proportionalSignedScaleFromUprightHandleDelta });
   const snapshotGroupTransformNodes = (unit: CanvasLayoutUnit) =>
       Object.fromEntries(
         unit.nodeIds.flatMap((nodeId) => {
@@ -2060,7 +2069,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
           ].filter((point): point is Point => Boolean(point))
         : [];
   Object.assign(__appScope, { edgeSnapshotFallbackPoints });
-  const currentStoredRoutePointsForEdge = createCurrentStoredRoutePointsForEdge(__appScope); Object.assign(__appScope, { currentStoredRoutePointsForEdge });
+  const currentStoredRoutePointsForEdge = __s("currentStoredRoutePointsForEdge", createCurrentStoredRoutePointsForEdge); Object.assign(__appScope, { currentStoredRoutePointsForEdge });
   const snapshotGroupTransformEdgeRoutes = (unit: CanvasLayoutUnit): GroupTransformEdgeRouteSnapshot[] =>
       unit.edgeIds.flatMap((edgeId: string) => {
         const routePoints = currentStoredRoutePointsForEdge(edgeById.get(edgeId));
@@ -2072,67 +2081,67 @@ export function useRenderBatch(__appScope: Record<string, any>) {
           : [];
       });
   Object.assign(__appScope, { snapshotGroupTransformEdgeRoutes });
-  const buildMirrorLayoutUnitEdgeUpdates = createBuildMirrorLayoutUnitEdgeUpdates(__appScope); Object.assign(__appScope, { buildMirrorLayoutUnitEdgeUpdates });
-  const buildRotateLayoutUnitEdgeUpdates = createBuildRotateLayoutUnitEdgeUpdates(__appScope); Object.assign(__appScope, { buildRotateLayoutUnitEdgeUpdates });
-  const buildGroupTransformEdgeUpdates = createBuildGroupTransformEdgeUpdates(__appScope); Object.assign(__appScope, { buildGroupTransformEdgeUpdates });
-  const overlayEdgeUpdatesForTransform = createOverlayEdgeUpdatesForTransform(__appScope); Object.assign(__appScope, { overlayEdgeUpdatesForTransform });
-  const startGroupTransformDrag = createStartGroupTransformDrag(__appScope); Object.assign(__appScope, { startGroupTransformDrag });
-  const startSingleTransformDrag = createStartSingleTransformDrag(__appScope); Object.assign(__appScope, { startSingleTransformDrag });
-  const startGroupMoveDrag = createStartGroupMoveDrag(__appScope); Object.assign(__appScope, { startGroupMoveDrag });
-  const buildGroupTransformNodeUpdates = createBuildGroupTransformNodeUpdates(__appScope); Object.assign(__appScope, { buildGroupTransformNodeUpdates });
-  const rotateLayoutUnitNodeUpdates = createRotateLayoutUnitNodeUpdates(__appScope); Object.assign(__appScope, { rotateLayoutUnitNodeUpdates });
-  const mirrorLayoutUnitNodeUpdates = createMirrorLayoutUnitNodeUpdates(__appScope); Object.assign(__appScope, { mirrorLayoutUnitNodeUpdates });
-  const busAnchorFromEvent = createBusAnchorFromEvent(__appScope); Object.assign(__appScope, { busAnchorFromEvent });
-  const busAnchorFromPoint = createBusAnchorFromPoint(__appScope); Object.assign(__appScope, { busAnchorFromPoint });
-  const isPointOnBus = createIsPointOnBus(__appScope); Object.assign(__appScope, { isPointOnBus });
-  const isPointNearBus = createIsPointNearBus(__appScope); Object.assign(__appScope, { isPointNearBus });
+  const buildMirrorLayoutUnitEdgeUpdates = __s("buildMirrorLayoutUnitEdgeUpdates", createBuildMirrorLayoutUnitEdgeUpdates); Object.assign(__appScope, { buildMirrorLayoutUnitEdgeUpdates });
+  const buildRotateLayoutUnitEdgeUpdates = __s("buildRotateLayoutUnitEdgeUpdates", createBuildRotateLayoutUnitEdgeUpdates); Object.assign(__appScope, { buildRotateLayoutUnitEdgeUpdates });
+  const buildGroupTransformEdgeUpdates = __s("buildGroupTransformEdgeUpdates", createBuildGroupTransformEdgeUpdates); Object.assign(__appScope, { buildGroupTransformEdgeUpdates });
+  const overlayEdgeUpdatesForTransform = __s("overlayEdgeUpdatesForTransform", createOverlayEdgeUpdatesForTransform); Object.assign(__appScope, { overlayEdgeUpdatesForTransform });
+  const startGroupTransformDrag = __s("startGroupTransformDrag", createStartGroupTransformDrag); Object.assign(__appScope, { startGroupTransformDrag });
+  const startSingleTransformDrag = __s("startSingleTransformDrag", createStartSingleTransformDrag); Object.assign(__appScope, { startSingleTransformDrag });
+  const startGroupMoveDrag = __s("startGroupMoveDrag", createStartGroupMoveDrag); Object.assign(__appScope, { startGroupMoveDrag });
+  const buildGroupTransformNodeUpdates = __s("buildGroupTransformNodeUpdates", createBuildGroupTransformNodeUpdates); Object.assign(__appScope, { buildGroupTransformNodeUpdates });
+  const rotateLayoutUnitNodeUpdates = __s("rotateLayoutUnitNodeUpdates", createRotateLayoutUnitNodeUpdates); Object.assign(__appScope, { rotateLayoutUnitNodeUpdates });
+  const mirrorLayoutUnitNodeUpdates = __s("mirrorLayoutUnitNodeUpdates", createMirrorLayoutUnitNodeUpdates); Object.assign(__appScope, { mirrorLayoutUnitNodeUpdates });
+  const busAnchorFromEvent = __s("busAnchorFromEvent", createBusAnchorFromEvent); Object.assign(__appScope, { busAnchorFromEvent });
+  const busAnchorFromPoint = __s("busAnchorFromPoint", createBusAnchorFromPoint); Object.assign(__appScope, { busAnchorFromPoint });
+  const isPointOnBus = __s("isPointOnBus", createIsPointOnBus); Object.assign(__appScope, { isPointOnBus });
+  const isPointNearBus = __s("isPointNearBus", createIsPointNearBus); Object.assign(__appScope, { isPointNearBus });
   const connectTargetSnapPoint = (target: ConnectTarget): Point =>
       target.point ?? getTerminalPoint(target.node, target.terminalId);
   Object.assign(__appScope, { connectTargetSnapPoint });
-  const findRewireTargetAtPoint = createFindRewireTargetAtPoint(__appScope); Object.assign(__appScope, { findRewireTargetAtPoint });
-  const findConnectTargetAtPoint = createFindConnectTargetAtPoint(__appScope); Object.assign(__appScope, { findConnectTargetAtPoint });
-  const findRoutableLineEndpointTargetAtPoint = createFindRoutableLineEndpointTargetAtPoint(__appScope); Object.assign(__appScope, { findRoutableLineEndpointTargetAtPoint });
-  const commitRoutableLineDevice = createCommitRoutableLineDevice(__appScope); Object.assign(__appScope, { commitRoutableLineDevice });
-  const startRoutableLineFromTerminal = createStartRoutableLineFromTerminal(__appScope); Object.assign(__appScope, { startRoutableLineFromTerminal });
-  const finishRoutableLineToTarget = createFinishRoutableLineToTarget(__appScope); Object.assign(__appScope, { finishRoutableLineToTarget });
-  const updateRoutableLineEndpointDrag = createUpdateRoutableLineEndpointDrag(__appScope); Object.assign(__appScope, { updateRoutableLineEndpointDrag });
-  const startRoutableLineEndpointDrag = createStartRoutableLineEndpointDrag(__appScope); Object.assign(__appScope, { startRoutableLineEndpointDrag });
-  const finishRoutableLineEndpointDrag = createFinishRoutableLineEndpointDrag(__appScope); Object.assign(__appScope, { finishRoutableLineEndpointDrag });
-  const commitNewConnectionEdge = createCommitNewConnectionEdge(__appScope); Object.assign(__appScope, { commitNewConnectionEdge });
-  const finishConnectToTarget = createFinishConnectToTarget(__appScope); Object.assign(__appScope, { finishConnectToTarget });
-  const finishRewiring = createFinishRewiring(__appScope); Object.assign(__appScope, { finishRewiring });
-  const handleDrop = createHandleDrop(__appScope); Object.assign(__appScope, { handleDrop });
-  const handleRoutableLineNodePointerDown = createHandleRoutableLineNodePointerDown(__appScope); Object.assign(__appScope, { handleRoutableLineNodePointerDown });
-  const handleNodePointerDown = createHandleNodePointerDown(__appScope); Object.assign(__appScope, { handleNodePointerDown });
-  const handleRoutableLineNodePathPointerDown = createHandleRoutableLineNodePathPointerDown(__appScope); Object.assign(__appScope, { handleRoutableLineNodePathPointerDown });
-  const handlePointerMove = createHandlePointerMove(__appScope); Object.assign(__appScope, { handlePointerMove });
-  const finishCanvasPanning = createFinishCanvasPanning(__appScope); Object.assign(__appScope, { finishCanvasPanning });
-  const startCanvasPanning = createStartCanvasPanning(__appScope); Object.assign(__appScope, { startCanvasPanning });
-  const handleCanvasPointerDownCapture = createHandleCanvasPointerDownCapture(__appScope); Object.assign(__appScope, { handleCanvasPointerDownCapture });
-  const clientPointInsideRenderedCanvas = createClientPointInsideRenderedCanvas(__appScope); Object.assign(__appScope, { clientPointInsideRenderedCanvas });
-  const focusCanvasKeyboardShortcutHost = createFocusCanvasKeyboardShortcutHost(__appScope); Object.assign(__appScope, { focusCanvasKeyboardShortcutHost });
-  const wheelZoomAnchorFromClient = createWheelZoomAnchorFromClient(__appScope); Object.assign(__appScope, { wheelZoomAnchorFromClient });
-  const flushPendingWheelZoom = createFlushPendingWheelZoom(__appScope); Object.assign(__appScope, { flushPendingWheelZoom });
-  const scheduleWheelZoom = createScheduleWheelZoom(__appScope); Object.assign(__appScope, { scheduleWheelZoom });
-  const zoomCanvasFromWheelEvent = createZoomCanvasFromWheelEvent(__appScope); Object.assign(__appScope, { zoomCanvasFromWheelEvent });
-  const handleWheel = createHandleWheel(__appScope); Object.assign(__appScope, { handleWheel });
-  const deleteSelected = createDeleteSelected(__appScope); Object.assign(__appScope, { deleteSelected });
-  const runContextMenuAction = createRunContextMenuAction(__appScope); Object.assign(__appScope, { runContextMenuAction });
-  const readjustMovedBusConnectionRoutes = createReadjustMovedBusConnectionRoutes(__appScope); Object.assign(__appScope, { readjustMovedBusConnectionRoutes });
-  const readjustActiveLayerBusEndpointRoutes = createReadjustActiveLayerBusEndpointRoutes(__appScope); Object.assign(__appScope, { readjustActiveLayerBusEndpointRoutes });
-  const cleanupStaleConnectionRoutes = createCleanupStaleConnectionRoutes(__appScope); Object.assign(__appScope, { cleanupStaleConnectionRoutes });
-  const commitLayoutNodePositions = createCommitLayoutNodePositions(__appScope); Object.assign(__appScope, { commitLayoutNodePositions });
-  const applySelectedNodeLayout = createApplySelectedNodeLayout(__appScope); Object.assign(__appScope, { applySelectedNodeLayout });
-  const autoSpreadCanvasGraphics = createAutoSpreadCanvasGraphics(__appScope); Object.assign(__appScope, { autoSpreadCanvasGraphics });
-  const autoAlignCanvasGraphics = createAutoAlignCanvasGraphics(__appScope); Object.assign(__appScope, { autoAlignCanvasGraphics });
+  const findRewireTargetAtPoint = __s("findRewireTargetAtPoint", createFindRewireTargetAtPoint); Object.assign(__appScope, { findRewireTargetAtPoint });
+  const findConnectTargetAtPoint = __s("findConnectTargetAtPoint", createFindConnectTargetAtPoint); Object.assign(__appScope, { findConnectTargetAtPoint });
+  const findRoutableLineEndpointTargetAtPoint = __s("findRoutableLineEndpointTargetAtPoint", createFindRoutableLineEndpointTargetAtPoint); Object.assign(__appScope, { findRoutableLineEndpointTargetAtPoint });
+  const commitRoutableLineDevice = __s("commitRoutableLineDevice", createCommitRoutableLineDevice); Object.assign(__appScope, { commitRoutableLineDevice });
+  const startRoutableLineFromTerminal = __s("startRoutableLineFromTerminal", createStartRoutableLineFromTerminal); Object.assign(__appScope, { startRoutableLineFromTerminal });
+  const finishRoutableLineToTarget = __s("finishRoutableLineToTarget", createFinishRoutableLineToTarget); Object.assign(__appScope, { finishRoutableLineToTarget });
+  const updateRoutableLineEndpointDrag = __s("updateRoutableLineEndpointDrag", createUpdateRoutableLineEndpointDrag); Object.assign(__appScope, { updateRoutableLineEndpointDrag });
+  const startRoutableLineEndpointDrag = __s("startRoutableLineEndpointDrag", createStartRoutableLineEndpointDrag); Object.assign(__appScope, { startRoutableLineEndpointDrag });
+  const finishRoutableLineEndpointDrag = __s("finishRoutableLineEndpointDrag", createFinishRoutableLineEndpointDrag); Object.assign(__appScope, { finishRoutableLineEndpointDrag });
+  const commitNewConnectionEdge = __s("commitNewConnectionEdge", createCommitNewConnectionEdge); Object.assign(__appScope, { commitNewConnectionEdge });
+  const finishConnectToTarget = __s("finishConnectToTarget", createFinishConnectToTarget); Object.assign(__appScope, { finishConnectToTarget });
+  const finishRewiring = __s("finishRewiring", createFinishRewiring); Object.assign(__appScope, { finishRewiring });
+  const handleDrop = __s("handleDrop", createHandleDrop); Object.assign(__appScope, { handleDrop });
+  const handleRoutableLineNodePointerDown = __s("handleRoutableLineNodePointerDown", createHandleRoutableLineNodePointerDown); Object.assign(__appScope, { handleRoutableLineNodePointerDown });
+  const handleNodePointerDown = __s("handleNodePointerDown", createHandleNodePointerDown); Object.assign(__appScope, { handleNodePointerDown });
+  const handleRoutableLineNodePathPointerDown = __s("handleRoutableLineNodePathPointerDown", createHandleRoutableLineNodePathPointerDown); Object.assign(__appScope, { handleRoutableLineNodePathPointerDown });
+  const handlePointerMove = __s("handlePointerMove", createHandlePointerMove); Object.assign(__appScope, { handlePointerMove });
+  const finishCanvasPanning = __s("finishCanvasPanning", createFinishCanvasPanning); Object.assign(__appScope, { finishCanvasPanning });
+  const startCanvasPanning = __s("startCanvasPanning", createStartCanvasPanning); Object.assign(__appScope, { startCanvasPanning });
+  const handleCanvasPointerDownCapture = __s("handleCanvasPointerDownCapture", createHandleCanvasPointerDownCapture); Object.assign(__appScope, { handleCanvasPointerDownCapture });
+  const clientPointInsideRenderedCanvas = __s("clientPointInsideRenderedCanvas", createClientPointInsideRenderedCanvas); Object.assign(__appScope, { clientPointInsideRenderedCanvas });
+  const focusCanvasKeyboardShortcutHost = __s("focusCanvasKeyboardShortcutHost", createFocusCanvasKeyboardShortcutHost); Object.assign(__appScope, { focusCanvasKeyboardShortcutHost });
+  const wheelZoomAnchorFromClient = __s("wheelZoomAnchorFromClient", createWheelZoomAnchorFromClient); Object.assign(__appScope, { wheelZoomAnchorFromClient });
+  const flushPendingWheelZoom = __s("flushPendingWheelZoom", createFlushPendingWheelZoom); Object.assign(__appScope, { flushPendingWheelZoom });
+  const scheduleWheelZoom = __s("scheduleWheelZoom", createScheduleWheelZoom); Object.assign(__appScope, { scheduleWheelZoom });
+  const zoomCanvasFromWheelEvent = __s("zoomCanvasFromWheelEvent", createZoomCanvasFromWheelEvent); Object.assign(__appScope, { zoomCanvasFromWheelEvent });
+  const handleWheel = __s("handleWheel", createHandleWheel); Object.assign(__appScope, { handleWheel });
+  const deleteSelected = __s("deleteSelected", createDeleteSelected); Object.assign(__appScope, { deleteSelected });
+  const runContextMenuAction = __s("runContextMenuAction", createRunContextMenuAction); Object.assign(__appScope, { runContextMenuAction });
+  const readjustMovedBusConnectionRoutes = __s("readjustMovedBusConnectionRoutes", createReadjustMovedBusConnectionRoutes); Object.assign(__appScope, { readjustMovedBusConnectionRoutes });
+  const readjustActiveLayerBusEndpointRoutes = __s("readjustActiveLayerBusEndpointRoutes", createReadjustActiveLayerBusEndpointRoutes); Object.assign(__appScope, { readjustActiveLayerBusEndpointRoutes });
+  const cleanupStaleConnectionRoutes = __s("cleanupStaleConnectionRoutes", createCleanupStaleConnectionRoutes); Object.assign(__appScope, { cleanupStaleConnectionRoutes });
+  const commitLayoutNodePositions = __s("commitLayoutNodePositions", createCommitLayoutNodePositions); Object.assign(__appScope, { commitLayoutNodePositions });
+  const applySelectedNodeLayout = __s("applySelectedNodeLayout", createApplySelectedNodeLayout); Object.assign(__appScope, { applySelectedNodeLayout });
+  const autoSpreadCanvasGraphics = __s("autoSpreadCanvasGraphics", createAutoSpreadCanvasGraphics); Object.assign(__appScope, { autoSpreadCanvasGraphics });
+  const autoAlignCanvasGraphics = __s("autoAlignCanvasGraphics", createAutoAlignCanvasGraphics); Object.assign(__appScope, { autoAlignCanvasGraphics });
   const voltageBaseSetOptions = useMemo(createAppHookCallback121(__appScope), [nodes]);
   Object.assign(__appScope, { voltageBaseSetOptions });
-  const defaultVoltageBaseSetValue = createDefaultVoltageBaseSetValue(__appScope); Object.assign(__appScope, { defaultVoltageBaseSetValue });
+  const defaultVoltageBaseSetValue = __s("defaultVoltageBaseSetValue", createDefaultVoltageBaseSetValue); Object.assign(__appScope, { defaultVoltageBaseSetValue });
   const voltageBaseSetCandidateNodes = useMemo(createAppHookCallback122(__appScope), [activeSelectedNodeIds, nodes]);
   Object.assign(__appScope, { voltageBaseSetCandidateNodes });
   const voltageBaseSetHasUniformTargets = voltageBaseSetCandidateNodes.some((node: ModelNode) => voltageBaseSettingModeForNode(node) === "uniform"); Object.assign(__appScope, { voltageBaseSetHasUniformTargets });
   const voltageBaseSetHasTerminalTargets = voltageBaseSetCandidateNodes.some((node: ModelNode) => voltageBaseSettingModeForNode(node) === "terminal"); Object.assign(__appScope, { voltageBaseSetHasTerminalTargets });
-  const recommendedVoltageBaseSetMode = createRecommendedVoltageBaseSetMode(__appScope); Object.assign(__appScope, { recommendedVoltageBaseSetMode });
+  const recommendedVoltageBaseSetMode = __s("recommendedVoltageBaseSetMode", createRecommendedVoltageBaseSetMode); Object.assign(__appScope, { recommendedVoltageBaseSetMode });
   const voltageBaseSetModeLabel =
       voltageBaseSetMode === "byDevice"
         ? "按设备类型自动设置"
@@ -2149,44 +2158,44 @@ export function useRenderBatch(__appScope: Record<string, any>) {
       ?? voltageBaseSetTerminalRows[0]
       ?? null;
   Object.assign(__appScope, { activeVoltageBaseTerminalRow });
-  const defaultVoltageBaseTerminalValues = createDefaultVoltageBaseTerminalValues(__appScope); Object.assign(__appScope, { defaultVoltageBaseTerminalValues });
-  const defaultVoltageBaseTerminalKey = createDefaultVoltageBaseTerminalKey(__appScope); Object.assign(__appScope, { defaultVoltageBaseTerminalKey });
+  const defaultVoltageBaseTerminalValues = __s("defaultVoltageBaseTerminalValues", createDefaultVoltageBaseTerminalValues); Object.assign(__appScope, { defaultVoltageBaseTerminalValues });
+  const defaultVoltageBaseTerminalKey = __s("defaultVoltageBaseTerminalKey", createDefaultVoltageBaseTerminalKey); Object.assign(__appScope, { defaultVoltageBaseTerminalKey });
   const hasVoltageBaseTerminalValues = (values: VoltageBaseTerminalValuesByNodeId) =>
       Object.values(values).some((terminalValues) =>
         Object.values(terminalValues).some((value) => value.trim().length > 0)
       );
   Object.assign(__appScope, { hasVoltageBaseTerminalValues });
-  const activeVoltageBaseTerminalValues = createActiveVoltageBaseTerminalValues(__appScope); Object.assign(__appScope, { activeVoltageBaseTerminalValues });
-  const setVoltageBaseTerminalValue = createSetVoltageBaseTerminalValue(__appScope); Object.assign(__appScope, { setVoltageBaseTerminalValue });
+  const activeVoltageBaseTerminalValues = __s("activeVoltageBaseTerminalValues", createActiveVoltageBaseTerminalValues); Object.assign(__appScope, { activeVoltageBaseTerminalValues });
+  const setVoltageBaseTerminalValue = __s("setVoltageBaseTerminalValue", createSetVoltageBaseTerminalValue); Object.assign(__appScope, { setVoltageBaseTerminalValue });
   const emptyVoltageBaseSetResult = () => ({ nodes, nodeUpdates: [], targetNodeIds: [], changedNodeIds: [] }); Object.assign(__appScope, { emptyVoltageBaseSetResult });
-  const mergeVoltageBaseSetResults = createMergeVoltageBaseSetResults(__appScope); Object.assign(__appScope, { mergeVoltageBaseSetResults });
-  const voltageBaseSetReady = createVoltageBaseSetReady(__appScope); Object.assign(__appScope, { voltageBaseSetReady });
+  const mergeVoltageBaseSetResults = __s("mergeVoltageBaseSetResults", createMergeVoltageBaseSetResults); Object.assign(__appScope, { mergeVoltageBaseSetResults });
+  const voltageBaseSetReady = __s("voltageBaseSetReady", createVoltageBaseSetReady); Object.assign(__appScope, { voltageBaseSetReady });
   const voltageBaseSetPreviewByScope = useMemo<Partial<Record<VoltageBaseSetScope, ReturnType<typeof setVoltageBaseValuesForScope>>>>(createAppHookCallback124(__appScope), [activeSelectedNodeIds, activeVoltageBaseTerminalKey, edges, nodes, voltageBaseSetDialogOpen, voltageBaseSetHasTerminalTargets, voltageBaseSetHasUniformTargets, voltageBaseSetMode, voltageBaseSetValue, voltageBaseTerminalValues]);
   Object.assign(__appScope, { voltageBaseSetPreviewByScope });
-  const voltageBaseSetResultForScope = createVoltageBaseSetResultForScope(__appScope); Object.assign(__appScope, { voltageBaseSetResultForScope });
-  const openVoltageBaseSetDialog = createOpenVoltageBaseSetDialog(__appScope); Object.assign(__appScope, { openVoltageBaseSetDialog });
+  const voltageBaseSetResultForScope = __s("voltageBaseSetResultForScope", createVoltageBaseSetResultForScope); Object.assign(__appScope, { voltageBaseSetResultForScope });
+  const openVoltageBaseSetDialog = __s("openVoltageBaseSetDialog", createOpenVoltageBaseSetDialog); Object.assign(__appScope, { openVoltageBaseSetDialog });
   useEffect(createAppHookCallback125(__appScope), [activeVoltageBaseTerminalKey, voltageBaseSetDialogOpen, voltageBaseSetTerminalRows]);
-  const confirmVoltageBaseSetDialog = createConfirmVoltageBaseSetDialog(__appScope); Object.assign(__appScope, { confirmVoltageBaseSetDialog });
+  const confirmVoltageBaseSetDialog = __s("confirmVoltageBaseSetDialog", createConfirmVoltageBaseSetDialog); Object.assign(__appScope, { confirmVoltageBaseSetDialog });
   const voltageBaseClearPreviewByScope = useMemo<Partial<Record<VoltageBaseClearScope, ReturnType<typeof clearVoltageBaseValuesForScope>>>>(createAppHookCallback126(__appScope), [activeSelectedNodeIds, edges, nodes, voltageBaseClearDialogOpen]);
   const voltageBaseClearResultForScope = (scope: VoltageBaseClearScope) =>
       voltageBaseClearPreviewByScope[scope] ?? clearVoltageBaseValuesForScope(nodes, edges, activeSelectedNodeIds, scope);
   Object.assign(__appScope, { voltageBaseClearResultForScope });
-  const openVoltageBaseClearDialog = createOpenVoltageBaseClearDialog(__appScope); Object.assign(__appScope, { openVoltageBaseClearDialog });
-  const confirmVoltageBaseClearDialog = createConfirmVoltageBaseClearDialog(__appScope); Object.assign(__appScope, { confirmVoltageBaseClearDialog });
-  const connectionRedrawViewportBounds = createConnectionRedrawViewportBounds(__appScope); Object.assign(__appScope, { connectionRedrawViewportBounds });
-  const connectionRedrawEdgeIdsForScope = createConnectionRedrawEdgeIdsForScope(__appScope); Object.assign(__appScope, { connectionRedrawEdgeIdsForScope });
-  const connectionRedrawLineNodeIdsForScope = createConnectionRedrawLineNodeIdsForScope(__appScope); Object.assign(__appScope, { connectionRedrawLineNodeIdsForScope });
-  const connectionRedrawTargetsForScope = createConnectionRedrawTargetsForScope(__appScope); Object.assign(__appScope, { connectionRedrawTargetsForScope });
-  const redrawConnectionRoutes = createRedrawConnectionRoutes(__appScope); Object.assign(__appScope, { redrawConnectionRoutes });
-  const openConnectionRedrawDialog = createOpenConnectionRedrawDialog(__appScope); Object.assign(__appScope, { openConnectionRedrawDialog });
-  const confirmConnectionRedrawDialog = createConfirmConnectionRedrawDialog(__appScope); Object.assign(__appScope, { confirmConnectionRedrawDialog });
-  const alignSelected = createAlignSelected(__appScope); Object.assign(__appScope, { alignSelected });
-  const distributeSelected = createDistributeSelected(__appScope); Object.assign(__appScope, { distributeSelected });
+  const openVoltageBaseClearDialog = __s("openVoltageBaseClearDialog", createOpenVoltageBaseClearDialog); Object.assign(__appScope, { openVoltageBaseClearDialog });
+  const confirmVoltageBaseClearDialog = __s("confirmVoltageBaseClearDialog", createConfirmVoltageBaseClearDialog); Object.assign(__appScope, { confirmVoltageBaseClearDialog });
+  const connectionRedrawViewportBounds = __s("connectionRedrawViewportBounds", createConnectionRedrawViewportBounds); Object.assign(__appScope, { connectionRedrawViewportBounds });
+  const connectionRedrawEdgeIdsForScope = __s("connectionRedrawEdgeIdsForScope", createConnectionRedrawEdgeIdsForScope); Object.assign(__appScope, { connectionRedrawEdgeIdsForScope });
+  const connectionRedrawLineNodeIdsForScope = __s("connectionRedrawLineNodeIdsForScope", createConnectionRedrawLineNodeIdsForScope); Object.assign(__appScope, { connectionRedrawLineNodeIdsForScope });
+  const connectionRedrawTargetsForScope = __s("connectionRedrawTargetsForScope", createConnectionRedrawTargetsForScope); Object.assign(__appScope, { connectionRedrawTargetsForScope });
+  const redrawConnectionRoutes = __s("redrawConnectionRoutes", createRedrawConnectionRoutes); Object.assign(__appScope, { redrawConnectionRoutes });
+  const openConnectionRedrawDialog = __s("openConnectionRedrawDialog", createOpenConnectionRedrawDialog); Object.assign(__appScope, { openConnectionRedrawDialog });
+  const confirmConnectionRedrawDialog = __s("confirmConnectionRedrawDialog", createConfirmConnectionRedrawDialog); Object.assign(__appScope, { confirmConnectionRedrawDialog });
+  const alignSelected = __s("alignSelected", createAlignSelected); Object.assign(__appScope, { alignSelected });
+  const distributeSelected = __s("distributeSelected", createDistributeSelected); Object.assign(__appScope, { distributeSelected });
   const findSchemeForProject = (projectId: string) =>
       findProjectRecordInSchemes(schemes, projectId)?.scheme;
   Object.assign(__appScope, { findSchemeForProject });
-  const toggleSchemeExpanded = createToggleSchemeExpanded(__appScope); Object.assign(__appScope, { toggleSchemeExpanded });
-  const promptUniqueRecordName = createPromptUniqueRecordName(__appScope); Object.assign(__appScope, { promptUniqueRecordName });
+  const toggleSchemeExpanded = __s("toggleSchemeExpanded", createToggleSchemeExpanded); Object.assign(__appScope, { toggleSchemeExpanded });
+  const promptUniqueRecordName = __s("promptUniqueRecordName", createPromptUniqueRecordName); Object.assign(__appScope, { promptUniqueRecordName });
   const cloneProjectRecord = (project: SavedProjectRecord, suffix = "副本", existingNames: string[] = []) =>
       copySavedProjectWithUniqueName(project, existingNames, suffix);
   Object.assign(__appScope, { cloneProjectRecord });
@@ -2194,103 +2203,103 @@ export function useRenderBatch(__appScope: Record<string, any>) {
       createSavedProject(name, project.project);
   Object.assign(__appScope, { cloneProjectRecordWithName });
   const hasSameName = (name: string, names: string[]) => names.some((item) => item.trim() === name.trim()); Object.assign(__appScope, { hasSameName });
-  const cloneProjectRecordForPaste = createCloneProjectRecordForPaste(__appScope); Object.assign(__appScope, { cloneProjectRecordForPaste });
-  const schemePathForScheme = createSchemePathForScheme(__appScope); Object.assign(__appScope, { schemePathForScheme });
-  const schemePathForProject = createSchemePathForProject(__appScope); Object.assign(__appScope, { schemePathForProject });
-  const schemePathForRecord = createSchemePathForRecord(__appScope); Object.assign(__appScope, { schemePathForRecord });
-  const cloneSchemeRecord = createCloneSchemeRecord(__appScope); Object.assign(__appScope, { cloneSchemeRecord });
-  const cloneSchemeRecordWithName = createCloneSchemeRecordWithName(__appScope); Object.assign(__appScope, { cloneSchemeRecordWithName });
-  const cloneSchemeRecordForPaste = createCloneSchemeRecordForPaste(__appScope); Object.assign(__appScope, { cloneSchemeRecordForPaste });
-  const clearActiveProjectDisplay = createClearActiveProjectDisplay(__appScope); Object.assign(__appScope, { clearActiveProjectDisplay });
-  const loadSavedProject = createLoadSavedProject(__appScope); Object.assign(__appScope, { loadSavedProject });
-  const loadSavedProjectRecord = createLoadSavedProjectRecord(__appScope); Object.assign(__appScope, { loadSavedProjectRecord });
-  const openProjectFromUrl = createOpenProjectFromUrl(__appScope); Object.assign(__appScope, { openProjectFromUrl });
-  const requestUnsavedChangeAction = createRequestUnsavedChangeAction(__appScope); Object.assign(__appScope, { requestUnsavedChangeAction });
-  const requestLoadSavedProject = createRequestLoadSavedProject(__appScope); Object.assign(__appScope, { requestLoadSavedProject });
-  const resolveUnsavedChangeAction = createResolveUnsavedChangeAction(__appScope); Object.assign(__appScope, { resolveUnsavedChangeAction });
-  const createSchemeRecord = createCreateSchemeRecord(__appScope); Object.assign(__appScope, { createSchemeRecord });
-  const renameSchemeRecord = createRenameSchemeRecord(__appScope); Object.assign(__appScope, { renameSchemeRecord });
-  const duplicateSchemeRecord = createDuplicateSchemeRecord(__appScope); Object.assign(__appScope, { duplicateSchemeRecord });
-  const deleteSchemeRecord = createDeleteSchemeRecord(__appScope); Object.assign(__appScope, { deleteSchemeRecord });
-  const copySelectedRecord = createCopySelectedRecord(__appScope); Object.assign(__appScope, { copySelectedRecord });
-  const deleteSelectedRecords = createDeleteSelectedRecords(__appScope); Object.assign(__appScope, { deleteSelectedRecords });
-  const copyProjectRecord = createCopyProjectRecord(__appScope); Object.assign(__appScope, { copyProjectRecord });
-  const copySchemeRecord = createCopySchemeRecord(__appScope); Object.assign(__appScope, { copySchemeRecord });
-  const pasteSchemeClipboardRecord = createPasteSchemeClipboardRecord(__appScope); Object.assign(__appScope, { pasteSchemeClipboardRecord });
-  const pasteProjectClipboardRecord = createPasteProjectClipboardRecord(__appScope); Object.assign(__appScope, { pasteProjectClipboardRecord });
-  const pasteSelectedRecord = createPasteSelectedRecord(__appScope); Object.assign(__appScope, { pasteSelectedRecord });
-  const commitProjectRecordMove = createCommitProjectRecordMove(__appScope); Object.assign(__appScope, { commitProjectRecordMove });
-  const resolveRecordPasteConflict = createResolveRecordPasteConflict(__appScope); Object.assign(__appScope, { resolveRecordPasteConflict });
-  const moveProjectRecordToScheme = createMoveProjectRecordToScheme(__appScope); Object.assign(__appScope, { moveProjectRecordToScheme });
-  const moveSchemeRecordToScheme = createMoveSchemeRecordToScheme(__appScope); Object.assign(__appScope, { moveSchemeRecordToScheme });
+  const cloneProjectRecordForPaste = __s("cloneProjectRecordForPaste", createCloneProjectRecordForPaste); Object.assign(__appScope, { cloneProjectRecordForPaste });
+  const schemePathForScheme = __s("schemePathForScheme", createSchemePathForScheme); Object.assign(__appScope, { schemePathForScheme });
+  const schemePathForProject = __s("schemePathForProject", createSchemePathForProject); Object.assign(__appScope, { schemePathForProject });
+  const schemePathForRecord = __s("schemePathForRecord", createSchemePathForRecord); Object.assign(__appScope, { schemePathForRecord });
+  const cloneSchemeRecord = __s("cloneSchemeRecord", createCloneSchemeRecord); Object.assign(__appScope, { cloneSchemeRecord });
+  const cloneSchemeRecordWithName = __s("cloneSchemeRecordWithName", createCloneSchemeRecordWithName); Object.assign(__appScope, { cloneSchemeRecordWithName });
+  const cloneSchemeRecordForPaste = __s("cloneSchemeRecordForPaste", createCloneSchemeRecordForPaste); Object.assign(__appScope, { cloneSchemeRecordForPaste });
+  const clearActiveProjectDisplay = __s("clearActiveProjectDisplay", createClearActiveProjectDisplay); Object.assign(__appScope, { clearActiveProjectDisplay });
+  const loadSavedProject = __s("loadSavedProject", createLoadSavedProject); Object.assign(__appScope, { loadSavedProject });
+  const loadSavedProjectRecord = __s("loadSavedProjectRecord", createLoadSavedProjectRecord); Object.assign(__appScope, { loadSavedProjectRecord });
+  const openProjectFromUrl = __s("openProjectFromUrl", createOpenProjectFromUrl); Object.assign(__appScope, { openProjectFromUrl });
+  const requestUnsavedChangeAction = __s("requestUnsavedChangeAction", createRequestUnsavedChangeAction); Object.assign(__appScope, { requestUnsavedChangeAction });
+  const requestLoadSavedProject = __s("requestLoadSavedProject", createRequestLoadSavedProject); Object.assign(__appScope, { requestLoadSavedProject });
+  const resolveUnsavedChangeAction = __s("resolveUnsavedChangeAction", createResolveUnsavedChangeAction); Object.assign(__appScope, { resolveUnsavedChangeAction });
+  const createSchemeRecord = __s("createSchemeRecord", createCreateSchemeRecord); Object.assign(__appScope, { createSchemeRecord });
+  const renameSchemeRecord = __s("renameSchemeRecord", createRenameSchemeRecord); Object.assign(__appScope, { renameSchemeRecord });
+  const duplicateSchemeRecord = __s("duplicateSchemeRecord", createDuplicateSchemeRecord); Object.assign(__appScope, { duplicateSchemeRecord });
+  const deleteSchemeRecord = __s("deleteSchemeRecord", createDeleteSchemeRecord); Object.assign(__appScope, { deleteSchemeRecord });
+  const copySelectedRecord = __s("copySelectedRecord", createCopySelectedRecord); Object.assign(__appScope, { copySelectedRecord });
+  const deleteSelectedRecords = __s("deleteSelectedRecords", createDeleteSelectedRecords); Object.assign(__appScope, { deleteSelectedRecords });
+  const copyProjectRecord = __s("copyProjectRecord", createCopyProjectRecord); Object.assign(__appScope, { copyProjectRecord });
+  const copySchemeRecord = __s("copySchemeRecord", createCopySchemeRecord); Object.assign(__appScope, { copySchemeRecord });
+  const pasteSchemeClipboardRecord = __s("pasteSchemeClipboardRecord", createPasteSchemeClipboardRecord); Object.assign(__appScope, { pasteSchemeClipboardRecord });
+  const pasteProjectClipboardRecord = __s("pasteProjectClipboardRecord", createPasteProjectClipboardRecord); Object.assign(__appScope, { pasteProjectClipboardRecord });
+  const pasteSelectedRecord = __s("pasteSelectedRecord", createPasteSelectedRecord); Object.assign(__appScope, { pasteSelectedRecord });
+  const commitProjectRecordMove = __s("commitProjectRecordMove", createCommitProjectRecordMove); Object.assign(__appScope, { commitProjectRecordMove });
+  const resolveRecordPasteConflict = __s("resolveRecordPasteConflict", createResolveRecordPasteConflict); Object.assign(__appScope, { resolveRecordPasteConflict });
+  const moveProjectRecordToScheme = __s("moveProjectRecordToScheme", createMoveProjectRecordToScheme); Object.assign(__appScope, { moveProjectRecordToScheme });
+  const moveSchemeRecordToScheme = __s("moveSchemeRecordToScheme", createMoveSchemeRecordToScheme); Object.assign(__appScope, { moveSchemeRecordToScheme });
   // 面板拖动排序的跨层级方案移动（带插入位；目标父级为空串 = 移到根层）。
-  const moveSchemeRecordToPosition = createMoveSchemeRecordToPosition(__appScope); Object.assign(__appScope, { moveSchemeRecordToPosition });
-  const saveActiveProjectPointer = createSaveActiveProjectPointer(__appScope); Object.assign(__appScope, { saveActiveProjectPointer });
-  const setActiveLayer = createSetActiveLayer(__appScope); Object.assign(__appScope, { setActiveLayer });
-  const nextDefaultModelLayerName = createNextDefaultModelLayerName(__appScope); Object.assign(__appScope, { nextDefaultModelLayerName });
-  const addModelLayer = createAddModelLayer(__appScope); Object.assign(__appScope, { addModelLayer });
-  const clearLayerNameDraft = createClearLayerNameDraft(__appScope); Object.assign(__appScope, { clearLayerNameDraft });
-  const commitModelLayerName = createCommitModelLayerName(__appScope); Object.assign(__appScope, { commitModelLayerName });
-  const handleLayerNameInputKeyDown = createHandleLayerNameInputKeyDown(__appScope); Object.assign(__appScope, { handleLayerNameInputKeyDown });
-  const toggleModelLayerVisibility = createToggleModelLayerVisibility(__appScope); Object.assign(__appScope, { toggleModelLayerVisibility });
-  const setAllModelLayersVisibility = createSetAllModelLayersVisibility(__appScope); Object.assign(__appScope, { setAllModelLayersVisibility });
-  const moveModelLayer = createMoveModelLayer(__appScope); Object.assign(__appScope, { moveModelLayer });
-  const deleteModelLayer = createDeleteModelLayer(__appScope); Object.assign(__appScope, { deleteModelLayer });
+  const moveSchemeRecordToPosition = __s("moveSchemeRecordToPosition", createMoveSchemeRecordToPosition); Object.assign(__appScope, { moveSchemeRecordToPosition });
+  const saveActiveProjectPointer = __s("saveActiveProjectPointer", createSaveActiveProjectPointer); Object.assign(__appScope, { saveActiveProjectPointer });
+  const setActiveLayer = __s("setActiveLayer", createSetActiveLayer); Object.assign(__appScope, { setActiveLayer });
+  const nextDefaultModelLayerName = __s("nextDefaultModelLayerName", createNextDefaultModelLayerName); Object.assign(__appScope, { nextDefaultModelLayerName });
+  const addModelLayer = __s("addModelLayer", createAddModelLayer); Object.assign(__appScope, { addModelLayer });
+  const clearLayerNameDraft = __s("clearLayerNameDraft", createClearLayerNameDraft); Object.assign(__appScope, { clearLayerNameDraft });
+  const commitModelLayerName = __s("commitModelLayerName", createCommitModelLayerName); Object.assign(__appScope, { commitModelLayerName });
+  const handleLayerNameInputKeyDown = __s("handleLayerNameInputKeyDown", createHandleLayerNameInputKeyDown); Object.assign(__appScope, { handleLayerNameInputKeyDown });
+  const toggleModelLayerVisibility = __s("toggleModelLayerVisibility", createToggleModelLayerVisibility); Object.assign(__appScope, { toggleModelLayerVisibility });
+  const setAllModelLayersVisibility = __s("setAllModelLayersVisibility", createSetAllModelLayersVisibility); Object.assign(__appScope, { setAllModelLayersVisibility });
+  const moveModelLayer = __s("moveModelLayer", createMoveModelLayer); Object.assign(__appScope, { moveModelLayer });
+  const deleteModelLayer = __s("deleteModelLayer", createDeleteModelLayer); Object.assign(__appScope, { deleteModelLayer });
   const renderLayerManager = createRenderLayerManager(__appScope);
   Object.assign(__appScope, { renderLayerManager });
-  const renderDeviceDefinitionMeasurementPanel = createRenderDeviceDefinitionMeasurementPanel(__appScope); Object.assign(__appScope, { renderDeviceDefinitionMeasurementPanel });
-  const renderMeasurementConfigDialog = createRenderMeasurementConfigDialog(__appScope); Object.assign(__appScope, { renderMeasurementConfigDialog });
-  const renderMeasurementEditorDialog = createRenderMeasurementEditorDialog(__appScope); Object.assign(__appScope, { renderMeasurementEditorDialog });
-  const saveCurrentProject = createSaveCurrentProject(__appScope); Object.assign(__appScope, { saveCurrentProject });
-  const renameProjectRecord = createRenameProjectRecord(__appScope); Object.assign(__appScope, { renameProjectRecord });
-  const duplicateProjectRecord = createDuplicateProjectRecord(__appScope); Object.assign(__appScope, { duplicateProjectRecord });
-  const duplicateSelectedProjectRecords = createDuplicateSelectedProjectRecords(__appScope); Object.assign(__appScope, { duplicateSelectedProjectRecords });
-  const duplicateSelectedSchemeRecords = createDuplicateSelectedSchemeRecords(__appScope); Object.assign(__appScope, { duplicateSelectedSchemeRecords });
-  const deleteProjectRecord = createDeleteProjectRecord(__appScope); Object.assign(__appScope, { deleteProjectRecord });
-  const createBlankProject = createCreateBlankProject(__appScope); Object.assign(__appScope, { createBlankProject });
-  const programmaticAddDevice = createProgrammaticAddDevice(__appScope); Object.assign(__appScope, { programmaticAddDevice });
-  const programmaticCreateScheme = createProgrammaticCreateScheme(__appScope); Object.assign(__appScope, { programmaticCreateScheme });
-  const programmaticCreateBlankProject = createProgrammaticCreateBlankProject(__appScope); Object.assign(__appScope, { programmaticCreateBlankProject });
-  const programmaticSelectDevices = createProgrammaticSelectDevices(__appScope); Object.assign(__appScope, { programmaticSelectDevices });
-  const programmaticGroupSelected = createProgrammaticGroupSelected(__appScope); Object.assign(__appScope, { programmaticGroupSelected });
-  const programmaticDeleteDevices = createProgrammaticDeleteDevices(__appScope); Object.assign(__appScope, { programmaticDeleteDevices });
-  const programmaticUpdateDeviceProperty = createProgrammaticUpdateDeviceProperty(__appScope); Object.assign(__appScope, { programmaticUpdateDeviceProperty });
-  const programmaticSave = createProgrammaticSave(__appScope); Object.assign(__appScope, { programmaticSave });
-  const programmaticSaveSelectionAsTemplate = createProgrammaticSaveSelectionAsTemplate(__appScope); Object.assign(__appScope, { programmaticSaveSelectionAsTemplate });
+  const renderDeviceDefinitionMeasurementPanel = __s("renderDeviceDefinitionMeasurementPanel", createRenderDeviceDefinitionMeasurementPanel); Object.assign(__appScope, { renderDeviceDefinitionMeasurementPanel });
+  const renderMeasurementConfigDialog = __s("renderMeasurementConfigDialog", createRenderMeasurementConfigDialog); Object.assign(__appScope, { renderMeasurementConfigDialog });
+  const renderMeasurementEditorDialog = __s("renderMeasurementEditorDialog", createRenderMeasurementEditorDialog); Object.assign(__appScope, { renderMeasurementEditorDialog });
+  const saveCurrentProject = __s("saveCurrentProject", createSaveCurrentProject); Object.assign(__appScope, { saveCurrentProject });
+  const renameProjectRecord = __s("renameProjectRecord", createRenameProjectRecord); Object.assign(__appScope, { renameProjectRecord });
+  const duplicateProjectRecord = __s("duplicateProjectRecord", createDuplicateProjectRecord); Object.assign(__appScope, { duplicateProjectRecord });
+  const duplicateSelectedProjectRecords = __s("duplicateSelectedProjectRecords", createDuplicateSelectedProjectRecords); Object.assign(__appScope, { duplicateSelectedProjectRecords });
+  const duplicateSelectedSchemeRecords = __s("duplicateSelectedSchemeRecords", createDuplicateSelectedSchemeRecords); Object.assign(__appScope, { duplicateSelectedSchemeRecords });
+  const deleteProjectRecord = __s("deleteProjectRecord", createDeleteProjectRecord); Object.assign(__appScope, { deleteProjectRecord });
+  const createBlankProject = __s("createBlankProject", createCreateBlankProject); Object.assign(__appScope, { createBlankProject });
+  const programmaticAddDevice = __s("programmaticAddDevice", createProgrammaticAddDevice); Object.assign(__appScope, { programmaticAddDevice });
+  const programmaticCreateScheme = __s("programmaticCreateScheme", createProgrammaticCreateScheme); Object.assign(__appScope, { programmaticCreateScheme });
+  const programmaticCreateBlankProject = __s("programmaticCreateBlankProject", createProgrammaticCreateBlankProject); Object.assign(__appScope, { programmaticCreateBlankProject });
+  const programmaticSelectDevices = __s("programmaticSelectDevices", createProgrammaticSelectDevices); Object.assign(__appScope, { programmaticSelectDevices });
+  const programmaticGroupSelected = __s("programmaticGroupSelected", createProgrammaticGroupSelected); Object.assign(__appScope, { programmaticGroupSelected });
+  const programmaticDeleteDevices = __s("programmaticDeleteDevices", createProgrammaticDeleteDevices); Object.assign(__appScope, { programmaticDeleteDevices });
+  const programmaticUpdateDeviceProperty = __s("programmaticUpdateDeviceProperty", createProgrammaticUpdateDeviceProperty); Object.assign(__appScope, { programmaticUpdateDeviceProperty });
+  const programmaticSave = __s("programmaticSave", createProgrammaticSave); Object.assign(__appScope, { programmaticSave });
+  const programmaticSaveSelectionAsTemplate = __s("programmaticSaveSelectionAsTemplate", createProgrammaticSaveSelectionAsTemplate); Object.assign(__appScope, { programmaticSaveSelectionAsTemplate });
   // 切空间 / 切模型：改「当前打开的是哪个空间 / 哪个模型」，不是当前模型的图元。
   // 无未保存修改才放行（有则回 bad-request，不弹模态框 —— 程序化调用方点不了）。
   const programmaticSwitchSpace = createProgrammaticSwitchSpace(__appScope); Object.assign(__appScope, { programmaticSwitchSpace });
-  const programmaticSwitchModel = createProgrammaticSwitchModel(__appScope); Object.assign(__appScope, { programmaticSwitchModel });
+  const programmaticSwitchModel = __s("programmaticSwitchModel", createProgrammaticSwitchModel); Object.assign(__appScope, { programmaticSwitchModel });
   const programmaticTopologyOperation = createProgrammaticTopologyOperation(__appScope); Object.assign(__appScope, { programmaticTopologyOperation });
-  const locateTopologyError = createLocateTopologyError(__appScope); Object.assign(__appScope, { locateTopologyError });
+  const locateTopologyError = __s("locateTopologyError", createLocateTopologyError); Object.assign(__appScope, { locateTopologyError });
   Object.assign(__appScope, { pushRecentGlyph });
   const runTopologyCalculation = createRunTopologyCalculation(__appScope); Object.assign(__appScope, { runTopologyCalculation });
-  const getEdgeEndpointPoint = createGetEdgeEndpointPoint(__appScope); Object.assign(__appScope, { getEdgeEndpointPoint });
-  const centerViewOnPoint = createCenterViewOnPoint(__appScope); Object.assign(__appScope, { centerViewOnPoint });
-  const viewportCenterAnchorForPoint = createViewportCenterAnchorForPoint(__appScope); Object.assign(__appScope, { viewportCenterAnchorForPoint });
-  const setViewBoxAtViewportCenter = createSetViewBoxAtViewportCenter(__appScope); Object.assign(__appScope, { setViewBoxAtViewportCenter });
-  const centerViewBoxOnPoint = createCenterViewBoxOnPoint(__appScope); Object.assign(__appScope, { centerViewBoxOnPoint });
-  const centerViewOnPointAtZoom = createCenterViewOnPointAtZoom(__appScope); Object.assign(__appScope, { centerViewOnPointAtZoom });
-  const zoomViewportAtCenter = createZoomViewportAtCenter(__appScope); Object.assign(__appScope, { zoomViewportAtCenter });
-  const resetViewportZoom = createResetViewportZoom(__appScope); Object.assign(__appScope, { resetViewportZoom });
-  const fitWholeCanvasToFrame = createFitWholeCanvasToFrame(__appScope); Object.assign(__appScope, { fitWholeCanvasToFrame });
-  const fitWholeCanvasFromBlankDoubleClick = createFitWholeCanvasFromBlankDoubleClick(__appScope); Object.assign(__appScope, { fitWholeCanvasFromBlankDoubleClick });
-  const fitViewToBounds = createFitViewToBounds(__appScope); Object.assign(__appScope, { fitViewToBounds });
-  const fitViewToContent = createFitViewToContent(__appScope); Object.assign(__appScope, { fitViewToContent });
-  const focusElementTreeItem = createFocusElementTreeItem(__appScope); Object.assign(__appScope, { focusElementTreeItem });
-  const jumpToElementTreeItem = createJumpToElementTreeItem(__appScope); Object.assign(__appScope, { jumpToElementTreeItem });
-  const openElementTreeItemContextMenu = createOpenElementTreeItemContextMenu(__appScope); Object.assign(__appScope, { openElementTreeItemContextMenu });
-  const setEdgeManualPoints = createSetEdgeManualPoints(__appScope); Object.assign(__appScope, { setEdgeManualPoints });
-  const routeManualPoints = createRouteManualPoints(__appScope); Object.assign(__appScope, { routeManualPoints });
-  const finishManualPathDrag = createFinishManualPathDrag(__appScope); Object.assign(__appScope, { finishManualPathDrag });
-  const tidySelectedEdgeRoute = createTidySelectedEdgeRoute(__appScope); Object.assign(__appScope, { tidySelectedEdgeRoute });
-  const tidyRoutableLineRoute = createTidyRoutableLineRoute(__appScope); Object.assign(__appScope, { tidyRoutableLineRoute });
-  const openEdgeContextMenu = createOpenEdgeContextMenu(__appScope); Object.assign(__appScope, { openEdgeContextMenu });
-  const captureCanvasPointer = createCaptureCanvasPointer(__appScope); Object.assign(__appScope, { captureCanvasPointer });
-  const startManualSegmentDrag = createStartManualSegmentDrag(__appScope); Object.assign(__appScope, { startManualSegmentDrag });
-  const startManualPointDrag = createStartManualPointDrag(__appScope); Object.assign(__appScope, { startManualPointDrag });
-  const routeSegmentPointerDistance = createRouteSegmentPointerDistance(__appScope); Object.assign(__appScope, { routeSegmentPointerDistance });
-  const findEditableRouteSegmentIndex = createFindEditableRouteSegmentIndex(__appScope); Object.assign(__appScope, { findEditableRouteSegmentIndex });
+  const getEdgeEndpointPoint = __s("getEdgeEndpointPoint", createGetEdgeEndpointPoint); Object.assign(__appScope, { getEdgeEndpointPoint });
+  const centerViewOnPoint = __s("centerViewOnPoint", createCenterViewOnPoint); Object.assign(__appScope, { centerViewOnPoint });
+  const viewportCenterAnchorForPoint = __s("viewportCenterAnchorForPoint", createViewportCenterAnchorForPoint); Object.assign(__appScope, { viewportCenterAnchorForPoint });
+  const setViewBoxAtViewportCenter = __s("setViewBoxAtViewportCenter", createSetViewBoxAtViewportCenter); Object.assign(__appScope, { setViewBoxAtViewportCenter });
+  const centerViewBoxOnPoint = __s("centerViewBoxOnPoint", createCenterViewBoxOnPoint); Object.assign(__appScope, { centerViewBoxOnPoint });
+  const centerViewOnPointAtZoom = __s("centerViewOnPointAtZoom", createCenterViewOnPointAtZoom); Object.assign(__appScope, { centerViewOnPointAtZoom });
+  const zoomViewportAtCenter = __s("zoomViewportAtCenter", createZoomViewportAtCenter); Object.assign(__appScope, { zoomViewportAtCenter });
+  const resetViewportZoom = __s("resetViewportZoom", createResetViewportZoom); Object.assign(__appScope, { resetViewportZoom });
+  const fitWholeCanvasToFrame = __s("fitWholeCanvasToFrame", createFitWholeCanvasToFrame); Object.assign(__appScope, { fitWholeCanvasToFrame });
+  const fitWholeCanvasFromBlankDoubleClick = __s("fitWholeCanvasFromBlankDoubleClick", createFitWholeCanvasFromBlankDoubleClick); Object.assign(__appScope, { fitWholeCanvasFromBlankDoubleClick });
+  const fitViewToBounds = __s("fitViewToBounds", createFitViewToBounds); Object.assign(__appScope, { fitViewToBounds });
+  const fitViewToContent = __s("fitViewToContent", createFitViewToContent); Object.assign(__appScope, { fitViewToContent });
+  const focusElementTreeItem = __s("focusElementTreeItem", createFocusElementTreeItem); Object.assign(__appScope, { focusElementTreeItem });
+  const jumpToElementTreeItem = __s("jumpToElementTreeItem", createJumpToElementTreeItem); Object.assign(__appScope, { jumpToElementTreeItem });
+  const openElementTreeItemContextMenu = __s("openElementTreeItemContextMenu", createOpenElementTreeItemContextMenu); Object.assign(__appScope, { openElementTreeItemContextMenu });
+  const setEdgeManualPoints = __s("setEdgeManualPoints", createSetEdgeManualPoints); Object.assign(__appScope, { setEdgeManualPoints });
+  const routeManualPoints = __s("routeManualPoints", createRouteManualPoints); Object.assign(__appScope, { routeManualPoints });
+  const finishManualPathDrag = __s("finishManualPathDrag", createFinishManualPathDrag); Object.assign(__appScope, { finishManualPathDrag });
+  const tidySelectedEdgeRoute = __s("tidySelectedEdgeRoute", createTidySelectedEdgeRoute); Object.assign(__appScope, { tidySelectedEdgeRoute });
+  const tidyRoutableLineRoute = __s("tidyRoutableLineRoute", createTidyRoutableLineRoute); Object.assign(__appScope, { tidyRoutableLineRoute });
+  const openEdgeContextMenu = __s("openEdgeContextMenu", createOpenEdgeContextMenu); Object.assign(__appScope, { openEdgeContextMenu });
+  const captureCanvasPointer = __s("captureCanvasPointer", createCaptureCanvasPointer); Object.assign(__appScope, { captureCanvasPointer });
+  const startManualSegmentDrag = __s("startManualSegmentDrag", createStartManualSegmentDrag); Object.assign(__appScope, { startManualSegmentDrag });
+  const startManualPointDrag = __s("startManualPointDrag", createStartManualPointDrag); Object.assign(__appScope, { startManualPointDrag });
+  const routeSegmentPointerDistance = __s("routeSegmentPointerDistance", createRouteSegmentPointerDistance); Object.assign(__appScope, { routeSegmentPointerDistance });
+  const findEditableRouteSegmentIndex = __s("findEditableRouteSegmentIndex", createFindEditableRouteSegmentIndex); Object.assign(__appScope, { findEditableRouteSegmentIndex });
   const findBendInsertRouteSegmentIndex = (routePoints: Point[], point: Point) =>
       routePoints
         .slice(0, -1)
@@ -2301,29 +2310,29 @@ export function useRenderBatch(__appScope: Record<string, any>) {
           return !nearest || distance < nearest.distance ? { index: candidate.segmentIndex, distance } : nearest;
         }, null)?.index ?? -1;
   Object.assign(__appScope, { findBendInsertRouteSegmentIndex });
-  const connectionHitTolerance = createConnectionHitTolerance(__appScope); Object.assign(__appScope, { connectionHitTolerance });
-  const findConnectionRouteHitAtPoint = createFindConnectionRouteHitAtPoint(__appScope); Object.assign(__appScope, { findConnectionRouteHitAtPoint });
-  const insertManualBendAtPoint = createInsertManualBendAtPoint(__appScope); Object.assign(__appScope, { insertManualBendAtPoint });
-  const insertManualBendFromPointer = createInsertManualBendFromPointer(__appScope); Object.assign(__appScope, { insertManualBendFromPointer });
-  const addManualBendFromContextMenu = createAddManualBendFromContextMenu(__appScope); Object.assign(__appScope, { addManualBendFromContextMenu });
-  const addRoutableLineBendFromContextMenu = createAddRoutableLineBendFromContextMenu(__appScope); Object.assign(__appScope, { addRoutableLineBendFromContextMenu });
-  const insertManualBendFromEdgePath = createInsertManualBendFromEdgePath(__appScope); Object.assign(__appScope, { insertManualBendFromEdgePath });
-  const handleEdgePathPointerDown = createHandleEdgePathPointerDown(__appScope); Object.assign(__appScope, { handleEdgePathPointerDown });
-  const deleteManualBendPoint = createDeleteManualBendPoint(__appScope); Object.assign(__appScope, { deleteManualBendPoint });
-  const setRoutableLineManualPathPoints = createSetRoutableLineManualPathPoints(__appScope); Object.assign(__appScope, { setRoutableLineManualPathPoints });
-  const insertRoutableLineBendAtPoint = createInsertRoutableLineBendAtPoint(__appScope); Object.assign(__appScope, { insertRoutableLineBendAtPoint });
-  const insertRoutableLineBendFromPointer = createInsertRoutableLineBendFromPointer(__appScope); Object.assign(__appScope, { insertRoutableLineBendFromPointer });
-  const startRoutableLineSegmentDrag = createStartRoutableLineSegmentDrag(__appScope); Object.assign(__appScope, { startRoutableLineSegmentDrag });
-  const startRoutableLinePointDrag = createStartRoutableLinePointDrag(__appScope); Object.assign(__appScope, { startRoutableLinePointDrag });
-  const deleteRoutableLineBendPoint = createDeleteRoutableLineBendPoint(__appScope); Object.assign(__appScope, { deleteRoutableLineBendPoint });
-  const startConnectFromTerminal = createStartConnectFromTerminal(__appScope); Object.assign(__appScope, { startConnectFromTerminal });
-  const finishTerminalPress = createFinishTerminalPress(__appScope); Object.assign(__appScope, { finishTerminalPress });
-  const handleTerminalPointerDown = createHandleTerminalPointerDown(__appScope); Object.assign(__appScope, { handleTerminalPointerDown });
-  const ensureSavedBeforeExport = createEnsureSavedBeforeExport(__appScope); Object.assign(__appScope, { ensureSavedBeforeExport });
+  const connectionHitTolerance = __s("connectionHitTolerance", createConnectionHitTolerance); Object.assign(__appScope, { connectionHitTolerance });
+  const findConnectionRouteHitAtPoint = __s("findConnectionRouteHitAtPoint", createFindConnectionRouteHitAtPoint); Object.assign(__appScope, { findConnectionRouteHitAtPoint });
+  const insertManualBendAtPoint = __s("insertManualBendAtPoint", createInsertManualBendAtPoint); Object.assign(__appScope, { insertManualBendAtPoint });
+  const insertManualBendFromPointer = __s("insertManualBendFromPointer", createInsertManualBendFromPointer); Object.assign(__appScope, { insertManualBendFromPointer });
+  const addManualBendFromContextMenu = __s("addManualBendFromContextMenu", createAddManualBendFromContextMenu); Object.assign(__appScope, { addManualBendFromContextMenu });
+  const addRoutableLineBendFromContextMenu = __s("addRoutableLineBendFromContextMenu", createAddRoutableLineBendFromContextMenu); Object.assign(__appScope, { addRoutableLineBendFromContextMenu });
+  const insertManualBendFromEdgePath = __s("insertManualBendFromEdgePath", createInsertManualBendFromEdgePath); Object.assign(__appScope, { insertManualBendFromEdgePath });
+  const handleEdgePathPointerDown = __s("handleEdgePathPointerDown", createHandleEdgePathPointerDown); Object.assign(__appScope, { handleEdgePathPointerDown });
+  const deleteManualBendPoint = __s("deleteManualBendPoint", createDeleteManualBendPoint); Object.assign(__appScope, { deleteManualBendPoint });
+  const setRoutableLineManualPathPoints = __s("setRoutableLineManualPathPoints", createSetRoutableLineManualPathPoints); Object.assign(__appScope, { setRoutableLineManualPathPoints });
+  const insertRoutableLineBendAtPoint = __s("insertRoutableLineBendAtPoint", createInsertRoutableLineBendAtPoint); Object.assign(__appScope, { insertRoutableLineBendAtPoint });
+  const insertRoutableLineBendFromPointer = __s("insertRoutableLineBendFromPointer", createInsertRoutableLineBendFromPointer); Object.assign(__appScope, { insertRoutableLineBendFromPointer });
+  const startRoutableLineSegmentDrag = __s("startRoutableLineSegmentDrag", createStartRoutableLineSegmentDrag); Object.assign(__appScope, { startRoutableLineSegmentDrag });
+  const startRoutableLinePointDrag = __s("startRoutableLinePointDrag", createStartRoutableLinePointDrag); Object.assign(__appScope, { startRoutableLinePointDrag });
+  const deleteRoutableLineBendPoint = __s("deleteRoutableLineBendPoint", createDeleteRoutableLineBendPoint); Object.assign(__appScope, { deleteRoutableLineBendPoint });
+  const startConnectFromTerminal = __s("startConnectFromTerminal", createStartConnectFromTerminal); Object.assign(__appScope, { startConnectFromTerminal });
+  const finishTerminalPress = __s("finishTerminalPress", createFinishTerminalPress); Object.assign(__appScope, { finishTerminalPress });
+  const handleTerminalPointerDown = __s("handleTerminalPointerDown", createHandleTerminalPointerDown); Object.assign(__appScope, { handleTerminalPointerDown });
+  const ensureSavedBeforeExport = __s("ensureSavedBeforeExport", createEnsureSavedBeforeExport); Object.assign(__appScope, { ensureSavedBeforeExport });
   const svgExportReferencedImageHrefById = createSvgExportReferencedImageHrefById(__appScope); Object.assign(__appScope, { svgExportReferencedImageHrefById });
-  const loadSvgImageExportPathById = createLoadSvgImageExportPathById(__appScope); Object.assign(__appScope, { loadSvgImageExportPathById });
-  const exportSvg = createExportSvg(__appScope); Object.assign(__appScope, { exportSvg });
-  const exportEFile = createExportEFile(__appScope); Object.assign(__appScope, { exportEFile });
+  const loadSvgImageExportPathById = __s("loadSvgImageExportPathById", createLoadSvgImageExportPathById); Object.assign(__appScope, { loadSvgImageExportPathById });
+  const exportSvg = __s("exportSvg", createExportSvg); Object.assign(__appScope, { exportSvg });
+  const exportEFile = __s("exportEFile", createExportEFile); Object.assign(__appScope, { exportEFile });
   const exportCimFile = async (...args: unknown[]) => {
     // CIM 导出为低频按需动作：触发时动态加载 src/cim/cim-export，避免占用首屏主包体积
     const { createCimExport } = await import("../cim/cim-export");
@@ -2341,60 +2350,60 @@ export function useRenderBatch(__appScope: Record<string, any>) {
     return (runner as (...runnerArgs: unknown[]) => unknown)(...args);
   };
   Object.assign(__appScope, { exportCimFile });
-  const exportSvgFile = createExportSvgFile(__appScope); Object.assign(__appScope, { exportSvgFile });
-  const exportJsonFile = createExportJsonFile(__appScope); Object.assign(__appScope, { exportJsonFile });
-  const exportEDeviceDefinitionFile = createExportEDeviceDefinitionFile(__appScope); Object.assign(__appScope, { exportEDeviceDefinitionFile });
-  const importEDeviceDefinitionFile = createImportEDeviceDefinitionFile(__appScope); Object.assign(__appScope, { importEDeviceDefinitionFile });
+  const exportSvgFile = __s("exportSvgFile", createExportSvgFile); Object.assign(__appScope, { exportSvgFile });
+  const exportJsonFile = __s("exportJsonFile", createExportJsonFile); Object.assign(__appScope, { exportJsonFile });
+  const exportEDeviceDefinitionFile = __s("exportEDeviceDefinitionFile", createExportEDeviceDefinitionFile); Object.assign(__appScope, { exportEDeviceDefinitionFile });
+  const importEDeviceDefinitionFile = __s("importEDeviceDefinitionFile", createImportEDeviceDefinitionFile); Object.assign(__appScope, { importEDeviceDefinitionFile });
   // 导出完成弹框对外通道：其余单文件导出（元件定义/全网拓扑/图元 Symbol/方案/空间/库/用户自定义…）
   // 统一经它报成功，才能拿到带【查看】的弹框，而不是各自一条 toast。
   const showStandaloneExportCompletion = (title: string, message: string, details: string[] = [], file: any = null) =>
     showStandaloneExportCompletionImpl(__appScope, title, message, details, file ?? null);
   Object.assign(__appScope, { showStandaloneExportCompletion });
-  const programmaticExportEDeviceDefinition = createProgrammaticExportEDeviceDefinition(__appScope); Object.assign(__appScope, { programmaticExportEDeviceDefinition });
-  const programmaticImportEDeviceDefinition = createProgrammaticImportEDeviceDefinition(__appScope); Object.assign(__appScope, { programmaticImportEDeviceDefinition });
+  const programmaticExportEDeviceDefinition = __s("programmaticExportEDeviceDefinition", createProgrammaticExportEDeviceDefinition); Object.assign(__appScope, { programmaticExportEDeviceDefinition });
+  const programmaticImportEDeviceDefinition = __s("programmaticImportEDeviceDefinition", createProgrammaticImportEDeviceDefinition); Object.assign(__appScope, { programmaticImportEDeviceDefinition });
   Object.assign(__appScope, { safeFilePart });
   Object.assign(__appScope, { serializeSchemeRecordForFile });
   Object.assign(__appScope, { isObjectRecord });
-  const isProjectFilePayload = createIsProjectFilePayload(__appScope); Object.assign(__appScope, { isProjectFilePayload });
-  const createImportedSchemeRecord = createCreateImportedSchemeRecord(__appScope); Object.assign(__appScope, { createImportedSchemeRecord });
-  const exportProjectRecordFile = createExportProjectRecordFile(__appScope); Object.assign(__appScope, { exportProjectRecordFile });
-  const exportCurrentModelFile = createExportCurrentModelFile(__appScope); Object.assign(__appScope, { exportCurrentModelFile });
-  const openModelImportFilePicker = createOpenModelImportFilePicker(__appScope); Object.assign(__appScope, { openModelImportFilePicker });
-  const openSvgModelImportFilePicker = createOpenSvgModelImportFilePicker(__appScope); Object.assign(__appScope, { openSvgModelImportFilePicker });
-  const openDotModelImportFilePicker = createOpenDotModelImportFilePicker(__appScope); Object.assign(__appScope, { openDotModelImportFilePicker });
-  const openSchemeImportFilePicker = createOpenSchemeImportFilePicker(__appScope); Object.assign(__appScope, { openSchemeImportFilePicker });
-  const mergeImportedSchemeIntoExisting = createMergeImportedSchemeIntoExisting(__appScope); Object.assign(__appScope, { mergeImportedSchemeIntoExisting });
-  const commitImportedSchemeRecord = createCommitImportedSchemeRecord(__appScope); Object.assign(__appScope, { commitImportedSchemeRecord });
-  const applyBackendSchemeArchiveImport = createApplyBackendSchemeArchiveImport(__appScope); Object.assign(__appScope, { applyBackendSchemeArchiveImport });
-  const importSchemeFile = createImportSchemeFile(__appScope); Object.assign(__appScope, { importSchemeFile });
-  const commitImportedModelRecord = createCommitImportedModelRecord(__appScope); Object.assign(__appScope, { commitImportedModelRecord });
-  const completeImportedModelFeedback = createCompleteImportedModelFeedback(__appScope); Object.assign(__appScope, { completeImportedModelFeedback });
-  const importModelFile = createImportModelFile(__appScope); Object.assign(__appScope, { importModelFile });
-  const importSvgModelFile = createImportSvgModelFile(__appScope); Object.assign(__appScope, { importSvgModelFile });
-  const importDotModelFile = createImportDotModelFile(__appScope); Object.assign(__appScope, { importDotModelFile });
-  const resolveDuplicateSchemeImport = createResolveDuplicateSchemeImport(__appScope); Object.assign(__appScope, { resolveDuplicateSchemeImport });
-  const resolveDuplicateModelImport = createResolveDuplicateModelImport(__appScope); Object.assign(__appScope, { resolveDuplicateModelImport });
-  const exportSchemeRecord = createExportSchemeRecord(__appScope); Object.assign(__appScope, { exportSchemeRecord });
-  const chooseImage = createChooseImage(__appScope); Object.assign(__appScope, { chooseImage });
-  const applyExistingImage = createApplyExistingImage(__appScope); Object.assign(__appScope, { applyExistingImage });
-  const applyIconLibraryCatalogIcon = createApplyIconLibraryCatalogIcon(__appScope); Object.assign(__appScope, { applyIconLibraryCatalogIcon });
-  const clearSelectedImage = createClearSelectedImage(__appScope); Object.assign(__appScope, { clearSelectedImage });
-  const clearSelectedImageForNode = createClearSelectedImageForNode(__appScope); Object.assign(__appScope, { clearSelectedImageForNode });
-  const createImageFolder = createCreateImageFolder(__appScope); Object.assign(__appScope, { createImageFolder });
-  const renameImageFolder = createRenameImageFolder(__appScope); Object.assign(__appScope, { renameImageFolder });
-  const deleteImageFolder = createDeleteImageFolder(__appScope); Object.assign(__appScope, { deleteImageFolder });
-  const startProjectRecordDrag = createStartProjectRecordDrag(__appScope); Object.assign(__appScope, { startProjectRecordDrag });
-  const finishProjectRecordDrag = createFinishProjectRecordDrag(__appScope); Object.assign(__appScope, { finishProjectRecordDrag });
+  const isProjectFilePayload = __s("isProjectFilePayload", createIsProjectFilePayload); Object.assign(__appScope, { isProjectFilePayload });
+  const createImportedSchemeRecord = __s("createImportedSchemeRecord", createCreateImportedSchemeRecord); Object.assign(__appScope, { createImportedSchemeRecord });
+  const exportProjectRecordFile = __s("exportProjectRecordFile", createExportProjectRecordFile); Object.assign(__appScope, { exportProjectRecordFile });
+  const exportCurrentModelFile = __s("exportCurrentModelFile", createExportCurrentModelFile); Object.assign(__appScope, { exportCurrentModelFile });
+  const openModelImportFilePicker = __s("openModelImportFilePicker", createOpenModelImportFilePicker); Object.assign(__appScope, { openModelImportFilePicker });
+  const openSvgModelImportFilePicker = __s("openSvgModelImportFilePicker", createOpenSvgModelImportFilePicker); Object.assign(__appScope, { openSvgModelImportFilePicker });
+  const openDotModelImportFilePicker = __s("openDotModelImportFilePicker", createOpenDotModelImportFilePicker); Object.assign(__appScope, { openDotModelImportFilePicker });
+  const openSchemeImportFilePicker = __s("openSchemeImportFilePicker", createOpenSchemeImportFilePicker); Object.assign(__appScope, { openSchemeImportFilePicker });
+  const mergeImportedSchemeIntoExisting = __s("mergeImportedSchemeIntoExisting", createMergeImportedSchemeIntoExisting); Object.assign(__appScope, { mergeImportedSchemeIntoExisting });
+  const commitImportedSchemeRecord = __s("commitImportedSchemeRecord", createCommitImportedSchemeRecord); Object.assign(__appScope, { commitImportedSchemeRecord });
+  const applyBackendSchemeArchiveImport = __s("applyBackendSchemeArchiveImport", createApplyBackendSchemeArchiveImport); Object.assign(__appScope, { applyBackendSchemeArchiveImport });
+  const importSchemeFile = __s("importSchemeFile", createImportSchemeFile); Object.assign(__appScope, { importSchemeFile });
+  const commitImportedModelRecord = __s("commitImportedModelRecord", createCommitImportedModelRecord); Object.assign(__appScope, { commitImportedModelRecord });
+  const completeImportedModelFeedback = __s("completeImportedModelFeedback", createCompleteImportedModelFeedback); Object.assign(__appScope, { completeImportedModelFeedback });
+  const importModelFile = __s("importModelFile", createImportModelFile); Object.assign(__appScope, { importModelFile });
+  const importSvgModelFile = __s("importSvgModelFile", createImportSvgModelFile); Object.assign(__appScope, { importSvgModelFile });
+  const importDotModelFile = __s("importDotModelFile", createImportDotModelFile); Object.assign(__appScope, { importDotModelFile });
+  const resolveDuplicateSchemeImport = __s("resolveDuplicateSchemeImport", createResolveDuplicateSchemeImport); Object.assign(__appScope, { resolveDuplicateSchemeImport });
+  const resolveDuplicateModelImport = __s("resolveDuplicateModelImport", createResolveDuplicateModelImport); Object.assign(__appScope, { resolveDuplicateModelImport });
+  const exportSchemeRecord = __s("exportSchemeRecord", createExportSchemeRecord); Object.assign(__appScope, { exportSchemeRecord });
+  const chooseImage = __s("chooseImage", createChooseImage); Object.assign(__appScope, { chooseImage });
+  const applyExistingImage = __s("applyExistingImage", createApplyExistingImage); Object.assign(__appScope, { applyExistingImage });
+  const applyIconLibraryCatalogIcon = __s("applyIconLibraryCatalogIcon", createApplyIconLibraryCatalogIcon); Object.assign(__appScope, { applyIconLibraryCatalogIcon });
+  const clearSelectedImage = __s("clearSelectedImage", createClearSelectedImage); Object.assign(__appScope, { clearSelectedImage });
+  const clearSelectedImageForNode = __s("clearSelectedImageForNode", createClearSelectedImageForNode); Object.assign(__appScope, { clearSelectedImageForNode });
+  const createImageFolder = __s("createImageFolder", createCreateImageFolder); Object.assign(__appScope, { createImageFolder });
+  const renameImageFolder = __s("renameImageFolder", createRenameImageFolder); Object.assign(__appScope, { renameImageFolder });
+  const deleteImageFolder = __s("deleteImageFolder", createDeleteImageFolder); Object.assign(__appScope, { deleteImageFolder });
+  const startProjectRecordDrag = __s("startProjectRecordDrag", createStartProjectRecordDrag); Object.assign(__appScope, { startProjectRecordDrag });
+  const finishProjectRecordDrag = __s("finishProjectRecordDrag", createFinishProjectRecordDrag); Object.assign(__appScope, { finishProjectRecordDrag });
   // 模型库方案树拖动排序（方案行 / 模型行）——必须在 renderProjectSchemeNode 之前装配。
-  const startProjectTreeSortDrag = createStartProjectTreeSortDrag(__appScope); Object.assign(__appScope, { startProjectTreeSortDrag });
-  const endProjectTreeSortDrag = createEndProjectTreeSortDrag(__appScope); Object.assign(__appScope, { endProjectTreeSortDrag });
-  const handleProjectTreeDragOver = createHandleProjectTreeDragOver(__appScope); Object.assign(__appScope, { handleProjectTreeDragOver });
-  const handleProjectTreeDragLeave = createHandleProjectTreeDragLeave(__appScope); Object.assign(__appScope, { handleProjectTreeDragLeave });
-  const handleProjectTreeDrop = createHandleProjectTreeDrop(__appScope); Object.assign(__appScope, { handleProjectTreeDrop });
-  const startSchemeRecordDrag = createStartSchemeRecordDrag(__appScope); Object.assign(__appScope, { startSchemeRecordDrag });
-  const finishSchemeRecordDrag = createFinishSchemeRecordDrag(__appScope); Object.assign(__appScope, { finishSchemeRecordDrag });
-  const renderProjectSchemeNode = createRenderProjectSchemeNode(__appScope); Object.assign(__appScope, { renderProjectSchemeNode });
-  const openBlankProjectLibraryContextMenu = createOpenBlankProjectLibraryContextMenu(__appScope); Object.assign(__appScope, { openBlankProjectLibraryContextMenu });
+  const startProjectTreeSortDrag = __s("startProjectTreeSortDrag", createStartProjectTreeSortDrag); Object.assign(__appScope, { startProjectTreeSortDrag });
+  const endProjectTreeSortDrag = __s("endProjectTreeSortDrag", createEndProjectTreeSortDrag); Object.assign(__appScope, { endProjectTreeSortDrag });
+  const handleProjectTreeDragOver = __s("handleProjectTreeDragOver", createHandleProjectTreeDragOver); Object.assign(__appScope, { handleProjectTreeDragOver });
+  const handleProjectTreeDragLeave = __s("handleProjectTreeDragLeave", createHandleProjectTreeDragLeave); Object.assign(__appScope, { handleProjectTreeDragLeave });
+  const handleProjectTreeDrop = __s("handleProjectTreeDrop", createHandleProjectTreeDrop); Object.assign(__appScope, { handleProjectTreeDrop });
+  const startSchemeRecordDrag = __s("startSchemeRecordDrag", createStartSchemeRecordDrag); Object.assign(__appScope, { startSchemeRecordDrag });
+  const finishSchemeRecordDrag = __s("finishSchemeRecordDrag", createFinishSchemeRecordDrag); Object.assign(__appScope, { finishSchemeRecordDrag });
+  const renderProjectSchemeNode = __s("renderProjectSchemeNode", createRenderProjectSchemeNode); Object.assign(__appScope, { renderProjectSchemeNode });
+  const openBlankProjectLibraryContextMenu = __s("openBlankProjectLibraryContextMenu", createOpenBlankProjectLibraryContextMenu); Object.assign(__appScope, { openBlankProjectLibraryContextMenu });
   const renderProjectPanel = createRenderProjectPanel(__appScope); Object.assign(__appScope, { renderProjectPanel });
   const customDraftTerminalTypes = customDeviceDraft.terminalTypes.slice(0, customDeviceDraft.terminalCount); Object.assign(__appScope, { customDraftTerminalTypes });
   const customDraftTerminalAssociations = normalizeContainerTerminalAssociations(
@@ -2565,7 +2574,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
         ? selectedCustomComponentTemplate ?? (selectedDefinitionKind ? selectedDefinitionTemplate : undefined)
         : undefined;
   Object.assign(__appScope, { customDevicePreviewSourceTemplate });
-  const customDeviceDefaultStateVisualDraft = createCustomDeviceDefaultStateVisualDraft(__appScope); Object.assign(__appScope, { customDeviceDefaultStateVisualDraft });
+  const customDeviceDefaultStateVisualDraft = __s("customDeviceDefaultStateVisualDraft", createCustomDeviceDefaultStateVisualDraft); Object.assign(__appScope, { customDeviceDefaultStateVisualDraft });
   const customStatePreviewRow = isDefaultStatePageId(customIconStatePageId)
       ? defaultStateDraftRow(customDeviceDraft.stateDefinitions, customDeviceDefaultStateVisualDraft())
       : activeStateDraftRow(customDeviceDraft.stateDefinitions, customIconStatePageId);
@@ -2630,13 +2639,13 @@ export function useRenderBatch(__appScope: Record<string, any>) {
   const formatCustomDeviceTerminalAnchorValue = (value: number) =>
       formatSvgNumber(customDeviceTerminalAnchorValue(value));
   Object.assign(__appScope, { formatCustomDeviceTerminalAnchorValue });
-  const snapCustomDeviceTerminalAnchor = createSnapCustomDeviceTerminalAnchor(__appScope); Object.assign(__appScope, { snapCustomDeviceTerminalAnchor });
-  const customDeviceTerminalConnectorSegment = createCustomDeviceTerminalConnectorSegment(__appScope); Object.assign(__appScope, { customDeviceTerminalConnectorSegment });
-  const updateCustomDeviceTerminalAnchor = createUpdateCustomDeviceTerminalAnchor(__appScope); Object.assign(__appScope, { updateCustomDeviceTerminalAnchor });
-  const updateCustomDeviceStateDraftRow = createUpdateCustomDeviceStateDraftRow(__appScope); Object.assign(__appScope, { updateCustomDeviceStateDraftRow });
-  const addCustomDeviceStateDraftRow = createAddCustomDeviceStateDraftRow(__appScope); Object.assign(__appScope, { addCustomDeviceStateDraftRow });
-  const deleteCustomDeviceStateDraftRow = createDeleteCustomDeviceStateDraftRow(__appScope); Object.assign(__appScope, { deleteCustomDeviceStateDraftRow });
-  const updateCustomDeviceTerminalAnchorFromPreview = createUpdateCustomDeviceTerminalAnchorFromPreview(__appScope); Object.assign(__appScope, { updateCustomDeviceTerminalAnchorFromPreview });
+  const snapCustomDeviceTerminalAnchor = __s("snapCustomDeviceTerminalAnchor", createSnapCustomDeviceTerminalAnchor); Object.assign(__appScope, { snapCustomDeviceTerminalAnchor });
+  const customDeviceTerminalConnectorSegment = __s("customDeviceTerminalConnectorSegment", createCustomDeviceTerminalConnectorSegment); Object.assign(__appScope, { customDeviceTerminalConnectorSegment });
+  const updateCustomDeviceTerminalAnchor = __s("updateCustomDeviceTerminalAnchor", createUpdateCustomDeviceTerminalAnchor); Object.assign(__appScope, { updateCustomDeviceTerminalAnchor });
+  const updateCustomDeviceStateDraftRow = __s("updateCustomDeviceStateDraftRow", createUpdateCustomDeviceStateDraftRow); Object.assign(__appScope, { updateCustomDeviceStateDraftRow });
+  const addCustomDeviceStateDraftRow = __s("addCustomDeviceStateDraftRow", createAddCustomDeviceStateDraftRow); Object.assign(__appScope, { addCustomDeviceStateDraftRow });
+  const deleteCustomDeviceStateDraftRow = __s("deleteCustomDeviceStateDraftRow", createDeleteCustomDeviceStateDraftRow); Object.assign(__appScope, { deleteCustomDeviceStateDraftRow });
+  const updateCustomDeviceTerminalAnchorFromPreview = __s("updateCustomDeviceTerminalAnchorFromPreview", createUpdateCustomDeviceTerminalAnchorFromPreview); Object.assign(__appScope, { updateCustomDeviceTerminalAnchorFromPreview });
   const definitionVisualPreviewWidth = Math.max(1, definitionVisualDraft?.size.width ?? selectedDefinitionTemplate?.size.width ?? 104); Object.assign(__appScope, { definitionVisualPreviewWidth });
   const definitionVisualPreviewHeight = Math.max(1, definitionVisualDraft?.size.height ?? selectedDefinitionTemplate?.size.height ?? 64); Object.assign(__appScope, { definitionVisualPreviewHeight });
   const definitionVisualTerminalAnchors = definitionVisualDraft
@@ -2647,7 +2656,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
       ? definitionVisualDraft.terminalTypes.slice(0, definitionVisualDraft.terminalCount)
       : [];
   Object.assign(__appScope, { definitionVisualTerminalTypes });
-  const definitionDefaultStateVisualDraft = createDefinitionDefaultStateVisualDraft(__appScope); Object.assign(__appScope, { definitionDefaultStateVisualDraft });
+  const definitionDefaultStateVisualDraft = __s("definitionDefaultStateVisualDraft", createDefinitionDefaultStateVisualDraft); Object.assign(__appScope, { definitionDefaultStateVisualDraft });
   const definitionStatePreviewRow = isDefaultStatePageId(definitionStatePageId)
       ? defaultStateDraftRow(definitionStateDraftRows, definitionDefaultStateVisualDraft())
       : activeStateDraftRow(definitionStateDraftRows, definitionStatePageId);
@@ -2657,12 +2666,12 @@ export function useRenderBatch(__appScope: Record<string, any>) {
       definitionVisualDraft?.backgroundImage ||
       "";
   Object.assign(__appScope, { definitionVisualPreviewImage });
-  const snapDefinitionTerminalAnchor = createSnapDefinitionTerminalAnchor(__appScope); Object.assign(__appScope, { snapDefinitionTerminalAnchor });
-  const definitionTerminalConnectorSegment = createDefinitionTerminalConnectorSegment(__appScope); Object.assign(__appScope, { definitionTerminalConnectorSegment });
-  const updateDefinitionTerminalAnchor = createUpdateDefinitionTerminalAnchor(__appScope); Object.assign(__appScope, { updateDefinitionTerminalAnchor });
-  const updateDefinitionTerminalAnchorFromPreview = createUpdateDefinitionTerminalAnchorFromPreview(__appScope); Object.assign(__appScope, { updateDefinitionTerminalAnchorFromPreview });
-  const loadDefinitionTemplateDraft = createLoadDefinitionTemplateDraft(__appScope); Object.assign(__appScope, { loadDefinitionTemplateDraft });
-  const finishDeviceLibraryDialogPointerOperation = createFinishDeviceLibraryDialogPointerOperation(__appScope); Object.assign(__appScope, { finishDeviceLibraryDialogPointerOperation });
+  const snapDefinitionTerminalAnchor = __s("snapDefinitionTerminalAnchor", createSnapDefinitionTerminalAnchor); Object.assign(__appScope, { snapDefinitionTerminalAnchor });
+  const definitionTerminalConnectorSegment = __s("definitionTerminalConnectorSegment", createDefinitionTerminalConnectorSegment); Object.assign(__appScope, { definitionTerminalConnectorSegment });
+  const updateDefinitionTerminalAnchor = __s("updateDefinitionTerminalAnchor", createUpdateDefinitionTerminalAnchor); Object.assign(__appScope, { updateDefinitionTerminalAnchor });
+  const updateDefinitionTerminalAnchorFromPreview = __s("updateDefinitionTerminalAnchorFromPreview", createUpdateDefinitionTerminalAnchorFromPreview); Object.assign(__appScope, { updateDefinitionTerminalAnchorFromPreview });
+  const loadDefinitionTemplateDraft = __s("loadDefinitionTemplateDraft", createLoadDefinitionTemplateDraft); Object.assign(__appScope, { loadDefinitionTemplateDraft });
+  const finishDeviceLibraryDialogPointerOperation = __s("finishDeviceLibraryDialogPointerOperation", createFinishDeviceLibraryDialogPointerOperation); Object.assign(__appScope, { finishDeviceLibraryDialogPointerOperation });
   const deviceLibraryDialogRefForKind = (kind: DeviceLibraryDialogKind) =>
       kind === "definition"
         ? deviceDefinitionDialogRef
@@ -2672,57 +2681,57 @@ export function useRenderBatch(__appScope: Record<string, any>) {
             ? measurementEditorDialogRef
           : customDeviceDialogRef;
   Object.assign(__appScope, { deviceLibraryDialogRefForKind });
-  const currentDeviceLibraryDialogRect = createCurrentDeviceLibraryDialogRect(__appScope); Object.assign(__appScope, { currentDeviceLibraryDialogRect });
-  const deviceLibraryDialogStyle = createDeviceLibraryDialogStyle(__appScope); Object.assign(__appScope, { deviceLibraryDialogStyle });
-  const startDeviceLibraryDialogDrag = createStartDeviceLibraryDialogDrag(__appScope); Object.assign(__appScope, { startDeviceLibraryDialogDrag });
-  const startDeviceLibraryDialogResize = createStartDeviceLibraryDialogResize(__appScope); Object.assign(__appScope, { startDeviceLibraryDialogResize });
-  const stopDeviceLibraryDialogEvent = createStopDeviceLibraryDialogEvent(__appScope); Object.assign(__appScope, { stopDeviceLibraryDialogEvent });
-  const openDeviceDefinitionDialog = createOpenDeviceDefinitionDialog(__appScope); Object.assign(__appScope, { openDeviceDefinitionDialog });
-  const closeDeviceDefinitionDialog = createCloseDeviceDefinitionDialog(__appScope); Object.assign(__appScope, { closeDeviceDefinitionDialog });
-  const closeCustomDeviceDialog = createCloseCustomDeviceDialog(__appScope); Object.assign(__appScope, { closeCustomDeviceDialog });
-  const setCustomDeviceDraftCleanBaseline = createSetCustomDeviceDraftCleanBaseline(__appScope); Object.assign(__appScope, { setCustomDeviceDraftCleanBaseline });
-  const customDeviceDraftHasUnsavedChanges = createCustomDeviceDraftHasUnsavedChanges(__appScope); Object.assign(__appScope, { customDeviceDraftHasUnsavedChanges });
-  const revertCustomDeviceDraftCurrentTab = createRevertCustomDeviceDraftCurrentTab(__appScope); Object.assign(__appScope, { revertCustomDeviceDraftCurrentTab });
-  const revertCustomDeviceDraftAll = createRevertCustomDeviceDraftAll(__appScope); Object.assign(__appScope, { revertCustomDeviceDraftAll });
-  const requestCustomDeviceDraftAction = createRequestCustomDeviceDraftAction(__appScope); Object.assign(__appScope, { requestCustomDeviceDraftAction });
-  const resolveCustomDeviceUnsavedPrompt = createResolveCustomDeviceUnsavedPrompt(__appScope); Object.assign(__appScope, { resolveCustomDeviceUnsavedPrompt });
-  const requestCustomDeviceDialogView = createRequestCustomDeviceDialogView(__appScope); Object.assign(__appScope, { requestCustomDeviceDialogView });
-  const requestCloseCustomDeviceDialog = createRequestCloseCustomDeviceDialog(__appScope); Object.assign(__appScope, { requestCloseCustomDeviceDialog });
-  const toggleDefinitionGroup = createToggleDefinitionGroup(__appScope); Object.assign(__appScope, { toggleDefinitionGroup });
-  const toggleDefinitionComponentLibrary = createToggleDefinitionComponentLibrary(__appScope); Object.assign(__appScope, { toggleDefinitionComponentLibrary });
-  const updateDefinitionComponentLibraryCommonParamExport = createUpdateDefinitionComponentLibraryCommonParamExport(__appScope); Object.assign(__appScope, { updateDefinitionComponentLibraryCommonParamExport });
-  const toggleElementTreeGroup = createToggleElementTreeGroup(__appScope); Object.assign(__appScope, { toggleElementTreeGroup });
-  const toggleElementTreeDeviceGroup = createToggleElementTreeDeviceGroup(__appScope); Object.assign(__appScope, { toggleElementTreeDeviceGroup });
-  const updateDefinitionDraftRow = createUpdateDefinitionDraftRow(__appScope); Object.assign(__appScope, { updateDefinitionDraftRow });
-  const addDefinitionDraftRow = createAddDefinitionDraftRow(__appScope); Object.assign(__appScope, { addDefinitionDraftRow });
-  const deleteDefinitionDraftRow = createDeleteDefinitionDraftRow(__appScope); Object.assign(__appScope, { deleteDefinitionDraftRow });
-  const updateDefinitionStateDraftRow = createUpdateDefinitionStateDraftRow(__appScope); Object.assign(__appScope, { updateDefinitionStateDraftRow });
-  const addDefinitionStateDraftRow = createAddDefinitionStateDraftRow(__appScope); Object.assign(__appScope, { addDefinitionStateDraftRow });
-  const deleteDefinitionStateDraftRow = createDeleteDefinitionStateDraftRow(__appScope); Object.assign(__appScope, { deleteDefinitionStateDraftRow });
-  const updateSelectedDefinitionResizePermission = createUpdateSelectedDefinitionResizePermission(__appScope); Object.assign(__appScope, { updateSelectedDefinitionResizePermission });
-  const saveDeviceDefinitionStateVisualDraft = createSaveDeviceDefinitionStateVisualDraft(__appScope); Object.assign(__appScope, { saveDeviceDefinitionStateVisualDraft });
-  const saveDeviceDefinitionVisualDraft = createSaveDeviceDefinitionVisualDraft(__appScope); Object.assign(__appScope, { saveDeviceDefinitionVisualDraft });
-  const saveDeviceDefinitionDraft = createSaveDeviceDefinitionDraft(__appScope); Object.assign(__appScope, { saveDeviceDefinitionDraft });
-  const resetDeviceDefinitionDraft = createResetDeviceDefinitionDraft(__appScope); Object.assign(__appScope, { resetDeviceDefinitionDraft });
-  const updateCustomDraftTerminalCount = createUpdateCustomDraftTerminalCount(__appScope); Object.assign(__appScope, { updateCustomDraftTerminalCount });
-  const chooseCustomDeviceBackground = createChooseCustomDeviceBackground(__appScope); Object.assign(__appScope, { chooseCustomDeviceBackground });
-  const chooseDefinitionTemplateIcon = createChooseDefinitionTemplateIcon(__appScope); Object.assign(__appScope, { chooseDefinitionTemplateIcon });
-  const chooseStateVisualImage = createChooseStateVisualImage(__appScope); Object.assign(__appScope, { chooseStateVisualImage });
-  const chooseStateIconDrawingImport = createChooseStateIconDrawingImport(__appScope); Object.assign(__appScope, { chooseStateIconDrawingImport });
-  const updateStateIconDrawingElement = createUpdateStateIconDrawingElement(__appScope); Object.assign(__appScope, { updateStateIconDrawingElement });
-  const updateStateIconDrawingElements = createUpdateStateIconDrawingElements(__appScope); Object.assign(__appScope, { updateStateIconDrawingElements });
+  const currentDeviceLibraryDialogRect = __s("currentDeviceLibraryDialogRect", createCurrentDeviceLibraryDialogRect); Object.assign(__appScope, { currentDeviceLibraryDialogRect });
+  const deviceLibraryDialogStyle = __s("deviceLibraryDialogStyle", createDeviceLibraryDialogStyle); Object.assign(__appScope, { deviceLibraryDialogStyle });
+  const startDeviceLibraryDialogDrag = __s("startDeviceLibraryDialogDrag", createStartDeviceLibraryDialogDrag); Object.assign(__appScope, { startDeviceLibraryDialogDrag });
+  const startDeviceLibraryDialogResize = __s("startDeviceLibraryDialogResize", createStartDeviceLibraryDialogResize); Object.assign(__appScope, { startDeviceLibraryDialogResize });
+  const stopDeviceLibraryDialogEvent = __s("stopDeviceLibraryDialogEvent", createStopDeviceLibraryDialogEvent); Object.assign(__appScope, { stopDeviceLibraryDialogEvent });
+  const openDeviceDefinitionDialog = __s("openDeviceDefinitionDialog", createOpenDeviceDefinitionDialog); Object.assign(__appScope, { openDeviceDefinitionDialog });
+  const closeDeviceDefinitionDialog = __s("closeDeviceDefinitionDialog", createCloseDeviceDefinitionDialog); Object.assign(__appScope, { closeDeviceDefinitionDialog });
+  const closeCustomDeviceDialog = __s("closeCustomDeviceDialog", createCloseCustomDeviceDialog); Object.assign(__appScope, { closeCustomDeviceDialog });
+  const setCustomDeviceDraftCleanBaseline = __s("setCustomDeviceDraftCleanBaseline", createSetCustomDeviceDraftCleanBaseline); Object.assign(__appScope, { setCustomDeviceDraftCleanBaseline });
+  const customDeviceDraftHasUnsavedChanges = __s("customDeviceDraftHasUnsavedChanges", createCustomDeviceDraftHasUnsavedChanges); Object.assign(__appScope, { customDeviceDraftHasUnsavedChanges });
+  const revertCustomDeviceDraftCurrentTab = __s("revertCustomDeviceDraftCurrentTab", createRevertCustomDeviceDraftCurrentTab); Object.assign(__appScope, { revertCustomDeviceDraftCurrentTab });
+  const revertCustomDeviceDraftAll = __s("revertCustomDeviceDraftAll", createRevertCustomDeviceDraftAll); Object.assign(__appScope, { revertCustomDeviceDraftAll });
+  const requestCustomDeviceDraftAction = __s("requestCustomDeviceDraftAction", createRequestCustomDeviceDraftAction); Object.assign(__appScope, { requestCustomDeviceDraftAction });
+  const resolveCustomDeviceUnsavedPrompt = __s("resolveCustomDeviceUnsavedPrompt", createResolveCustomDeviceUnsavedPrompt); Object.assign(__appScope, { resolveCustomDeviceUnsavedPrompt });
+  const requestCustomDeviceDialogView = __s("requestCustomDeviceDialogView", createRequestCustomDeviceDialogView); Object.assign(__appScope, { requestCustomDeviceDialogView });
+  const requestCloseCustomDeviceDialog = __s("requestCloseCustomDeviceDialog", createRequestCloseCustomDeviceDialog); Object.assign(__appScope, { requestCloseCustomDeviceDialog });
+  const toggleDefinitionGroup = __s("toggleDefinitionGroup", createToggleDefinitionGroup); Object.assign(__appScope, { toggleDefinitionGroup });
+  const toggleDefinitionComponentLibrary = __s("toggleDefinitionComponentLibrary", createToggleDefinitionComponentLibrary); Object.assign(__appScope, { toggleDefinitionComponentLibrary });
+  const updateDefinitionComponentLibraryCommonParamExport = __s("updateDefinitionComponentLibraryCommonParamExport", createUpdateDefinitionComponentLibraryCommonParamExport); Object.assign(__appScope, { updateDefinitionComponentLibraryCommonParamExport });
+  const toggleElementTreeGroup = __s("toggleElementTreeGroup", createToggleElementTreeGroup); Object.assign(__appScope, { toggleElementTreeGroup });
+  const toggleElementTreeDeviceGroup = __s("toggleElementTreeDeviceGroup", createToggleElementTreeDeviceGroup); Object.assign(__appScope, { toggleElementTreeDeviceGroup });
+  const updateDefinitionDraftRow = __s("updateDefinitionDraftRow", createUpdateDefinitionDraftRow); Object.assign(__appScope, { updateDefinitionDraftRow });
+  const addDefinitionDraftRow = __s("addDefinitionDraftRow", createAddDefinitionDraftRow); Object.assign(__appScope, { addDefinitionDraftRow });
+  const deleteDefinitionDraftRow = __s("deleteDefinitionDraftRow", createDeleteDefinitionDraftRow); Object.assign(__appScope, { deleteDefinitionDraftRow });
+  const updateDefinitionStateDraftRow = __s("updateDefinitionStateDraftRow", createUpdateDefinitionStateDraftRow); Object.assign(__appScope, { updateDefinitionStateDraftRow });
+  const addDefinitionStateDraftRow = __s("addDefinitionStateDraftRow", createAddDefinitionStateDraftRow); Object.assign(__appScope, { addDefinitionStateDraftRow });
+  const deleteDefinitionStateDraftRow = __s("deleteDefinitionStateDraftRow", createDeleteDefinitionStateDraftRow); Object.assign(__appScope, { deleteDefinitionStateDraftRow });
+  const updateSelectedDefinitionResizePermission = __s("updateSelectedDefinitionResizePermission", createUpdateSelectedDefinitionResizePermission); Object.assign(__appScope, { updateSelectedDefinitionResizePermission });
+  const saveDeviceDefinitionStateVisualDraft = __s("saveDeviceDefinitionStateVisualDraft", createSaveDeviceDefinitionStateVisualDraft); Object.assign(__appScope, { saveDeviceDefinitionStateVisualDraft });
+  const saveDeviceDefinitionVisualDraft = __s("saveDeviceDefinitionVisualDraft", createSaveDeviceDefinitionVisualDraft); Object.assign(__appScope, { saveDeviceDefinitionVisualDraft });
+  const saveDeviceDefinitionDraft = __s("saveDeviceDefinitionDraft", createSaveDeviceDefinitionDraft); Object.assign(__appScope, { saveDeviceDefinitionDraft });
+  const resetDeviceDefinitionDraft = __s("resetDeviceDefinitionDraft", createResetDeviceDefinitionDraft); Object.assign(__appScope, { resetDeviceDefinitionDraft });
+  const updateCustomDraftTerminalCount = __s("updateCustomDraftTerminalCount", createUpdateCustomDraftTerminalCount); Object.assign(__appScope, { updateCustomDraftTerminalCount });
+  const chooseCustomDeviceBackground = __s("chooseCustomDeviceBackground", createChooseCustomDeviceBackground); Object.assign(__appScope, { chooseCustomDeviceBackground });
+  const chooseDefinitionTemplateIcon = __s("chooseDefinitionTemplateIcon", createChooseDefinitionTemplateIcon); Object.assign(__appScope, { chooseDefinitionTemplateIcon });
+  const chooseStateVisualImage = __s("chooseStateVisualImage", createChooseStateVisualImage); Object.assign(__appScope, { chooseStateVisualImage });
+  const chooseStateIconDrawingImport = __s("chooseStateIconDrawingImport", createChooseStateIconDrawingImport); Object.assign(__appScope, { chooseStateIconDrawingImport });
+  const updateStateIconDrawingElement = __s("updateStateIconDrawingElement", createUpdateStateIconDrawingElement); Object.assign(__appScope, { updateStateIconDrawingElement });
+  const updateStateIconDrawingElements = __s("updateStateIconDrawingElements", createUpdateStateIconDrawingElements); Object.assign(__appScope, { updateStateIconDrawingElements });
   const stateIconDrawingPointer = createStateIconDrawingPointer(__appScope); Object.assign(__appScope, { stateIconDrawingPointer });
-  const stateIconDrawingSelection = createStateIconDrawingSelection(__appScope); Object.assign(__appScope, { stateIconDrawingSelection });
-  const computeStateIconDrawingSmartAlignmentSnap = createComputeStateIconDrawingSmartAlignmentSnap(__appScope); Object.assign(__appScope, { computeStateIconDrawingSmartAlignmentSnap });
-  const startStateIconDrawingDrag = createStartStateIconDrawingDrag(__appScope); Object.assign(__appScope, { startStateIconDrawingDrag });
+  const stateIconDrawingSelection = __s("stateIconDrawingSelection", createStateIconDrawingSelection); Object.assign(__appScope, { stateIconDrawingSelection });
+  const computeStateIconDrawingSmartAlignmentSnap = __s("computeStateIconDrawingSmartAlignmentSnap", createComputeStateIconDrawingSmartAlignmentSnap); Object.assign(__appScope, { computeStateIconDrawingSmartAlignmentSnap });
+  const startStateIconDrawingDrag = __s("startStateIconDrawingDrag", createStartStateIconDrawingDrag); Object.assign(__appScope, { startStateIconDrawingDrag });
   const dragStateIconDrawingSelection = createDragStateIconDrawingSelection(__appScope); Object.assign(__appScope, { dragStateIconDrawingSelection });
-  const stopStateIconDrawingDrag = createStopStateIconDrawingDrag(__appScope); Object.assign(__appScope, { stopStateIconDrawingDrag });
-  const deleteSelectedStateIconDrawingElements = createDeleteSelectedStateIconDrawingElements(__appScope); Object.assign(__appScope, { deleteSelectedStateIconDrawingElements });
-  const stateIconDrawingKeyDown = createStateIconDrawingKeyDown(__appScope); Object.assign(__appScope, { stateIconDrawingKeyDown });
-  const addStateIconDrawingElement = createAddStateIconDrawingElement(__appScope); Object.assign(__appScope, { addStateIconDrawingElement });
-  const deleteStateIconDrawingElement = createDeleteStateIconDrawingElement(__appScope); Object.assign(__appScope, { deleteStateIconDrawingElement });
-  const openStateIconDrawingDialog = createOpenStateIconDrawingDialog(__appScope); Object.assign(__appScope, { openStateIconDrawingDialog });
-  const applyStateIconDrawingDialog = createApplyStateIconDrawingDialog(__appScope); Object.assign(__appScope, { applyStateIconDrawingDialog });
+  const stopStateIconDrawingDrag = __s("stopStateIconDrawingDrag", createStopStateIconDrawingDrag); Object.assign(__appScope, { stopStateIconDrawingDrag });
+  const deleteSelectedStateIconDrawingElements = __s("deleteSelectedStateIconDrawingElements", createDeleteSelectedStateIconDrawingElements); Object.assign(__appScope, { deleteSelectedStateIconDrawingElements });
+  const stateIconDrawingKeyDown = __s("stateIconDrawingKeyDown", createStateIconDrawingKeyDown); Object.assign(__appScope, { stateIconDrawingKeyDown });
+  const addStateIconDrawingElement = __s("addStateIconDrawingElement", createAddStateIconDrawingElement); Object.assign(__appScope, { addStateIconDrawingElement });
+  const deleteStateIconDrawingElement = __s("deleteStateIconDrawingElement", createDeleteStateIconDrawingElement); Object.assign(__appScope, { deleteStateIconDrawingElement });
+  const openStateIconDrawingDialog = __s("openStateIconDrawingDialog", createOpenStateIconDrawingDialog); Object.assign(__appScope, { openStateIconDrawingDialog });
+  const applyStateIconDrawingDialog = __s("applyStateIconDrawingDialog", createApplyStateIconDrawingDialog); Object.assign(__appScope, { applyStateIconDrawingDialog });
   const stateIconDrawingDefaultDraftRow = (scope: StateIconDrawingTarget["scope"]): DeviceDefinitionStateDraftRow =>
       scope === "definition"
         ? defaultStateDraftRow(definitionStateDraftRows, definitionDefaultStateVisualDraft())
@@ -2985,40 +2994,40 @@ export function useRenderBatch(__appScope: Record<string, any>) {
   Object.assign(__appScope, { customComponentTreeTypeKey });
   const handleTreeCollapseChange = useCallback(createAppHookCallback127(__appScope), []);
   Object.assign(__appScope, { handleTreeCollapseChange });
-  const ensureCustomComponentTreeExpanded = createEnsureCustomComponentTreeExpanded(__appScope); Object.assign(__appScope, { ensureCustomComponentTreeExpanded });
-  const cancelPendingCustomComponentTemplateLoad = createCancelPendingCustomComponentTemplateLoad(__appScope); Object.assign(__appScope, { cancelPendingCustomComponentTemplateLoad });
-  const selectCustomCategoryLibrary = createSelectCustomCategoryLibrary(__appScope); Object.assign(__appScope, { selectCustomCategoryLibrary });
-  const selectCustomComponentLibrary = createSelectCustomComponentLibrary(__appScope); Object.assign(__appScope, { selectCustomComponentLibrary });
-  const selectCustomComponentTemplate = createSelectCustomComponentTemplate(__appScope); Object.assign(__appScope, { selectCustomComponentTemplate });
-  const startCustomComponentCreate = createStartCustomComponentCreate(__appScope); Object.assign(__appScope, { startCustomComponentCreate });
-  const copyCustomComponentTemplate = createCopyCustomComponentTemplate(__appScope); Object.assign(__appScope, { copyCustomComponentTemplate });
-  const pasteCustomComponentTemplate = createPasteCustomComponentTemplate(__appScope); Object.assign(__appScope, { pasteCustomComponentTemplate });
-  const exportCustomComponentTemplateSvg = createExportCustomComponentTemplateSvg(__appScope); Object.assign(__appScope, { exportCustomComponentTemplateSvg });
-  const exportComponentSymbols = createExportComponentSymbols(__appScope); Object.assign(__appScope, { exportComponentSymbols });
-  const exportComponentSymbolsStandalone = createExportComponentSymbolsStandalone(__appScope); Object.assign(__appScope, { exportComponentSymbolsStandalone });
-  const loadSymbolExportSchemes = createLoadSymbolExportSchemes(__appScope); Object.assign(__appScope, { loadSymbolExportSchemes });
-  const saveSymbolExportScheme = createSaveSymbolExportScheme(__appScope); Object.assign(__appScope, { saveSymbolExportScheme });
-  const deleteSymbolExportScheme = createDeleteSymbolExportScheme(__appScope); Object.assign(__appScope, { deleteSymbolExportScheme });
-  const openCustomComponentSvgImport = createOpenCustomComponentSvgImport(__appScope); Object.assign(__appScope, { openCustomComponentSvgImport });
-  const importCustomComponentSvg = createImportCustomComponentSvg(__appScope); Object.assign(__appScope, { importCustomComponentSvg });
-  const confirmCustomLibraryCreateDialog = createConfirmCustomLibraryCreateDialog(__appScope); Object.assign(__appScope, { confirmCustomLibraryCreateDialog });
-  const nextCustomCategoryLibraryName = createNextCustomCategoryLibraryName(__appScope); Object.assign(__appScope, { nextCustomCategoryLibraryName });
-  const createCustomCategoryLibrary = createCreateCustomCategoryLibrary(__appScope); Object.assign(__appScope, { createCustomCategoryLibrary });
-  const deleteCustomCategoryLibrary = createDeleteCustomCategoryLibrary(__appScope); Object.assign(__appScope, { deleteCustomCategoryLibrary });
-  const nextCustomComponentLibraryName = createNextCustomComponentLibraryName(__appScope); Object.assign(__appScope, { nextCustomComponentLibraryName });
-  const createCustomComponentLibrary = createCreateCustomComponentLibrary(__appScope); Object.assign(__appScope, { createCustomComponentLibrary });
-  const deleteCustomComponentLibrary = createDeleteCustomComponentLibrary(__appScope); Object.assign(__appScope, { deleteCustomComponentLibrary });
-  const renameSelectedCustomDeviceTreeItem = createRenameSelectedCustomDeviceTreeItem(__appScope); Object.assign(__appScope, { renameSelectedCustomDeviceTreeItem });
-  const deleteSelectedCustomDeviceTreeItem = createDeleteSelectedCustomDeviceTreeItem(__appScope); Object.assign(__appScope, { deleteSelectedCustomDeviceTreeItem });
-  const nextCustomTemplateKind = createNextCustomTemplateKind(__appScope); Object.assign(__appScope, { nextCustomTemplateKind });
-  const saveCustomDeviceTemplate = createSaveCustomDeviceTemplate(__appScope); Object.assign(__appScope, { saveCustomDeviceTemplate });
-  const saveBuiltinDeviceDefinitionFromCustomDraft = createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope); Object.assign(__appScope, { saveBuiltinDeviceDefinitionFromCustomDraft });
-  const saveComponentLibraryDefinition = createSaveComponentLibraryDefinition(__appScope); Object.assign(__appScope, { saveComponentLibraryDefinition });
-  const saveCustomDeviceDefinitionDialog = createSaveCustomDeviceDefinitionDialog(__appScope); Object.assign(__appScope, { saveCustomDeviceDefinitionDialog });
-  const renderStateVisualPager = createRenderStateVisualPager(__appScope); Object.assign(__appScope, { renderStateVisualPager });
-  const renderDeviceDefinitionVisualPanel = createRenderDeviceDefinitionVisualPanel(__appScope); Object.assign(__appScope, { renderDeviceDefinitionVisualPanel });
+  const ensureCustomComponentTreeExpanded = __s("ensureCustomComponentTreeExpanded", createEnsureCustomComponentTreeExpanded); Object.assign(__appScope, { ensureCustomComponentTreeExpanded });
+  const cancelPendingCustomComponentTemplateLoad = __s("cancelPendingCustomComponentTemplateLoad", createCancelPendingCustomComponentTemplateLoad); Object.assign(__appScope, { cancelPendingCustomComponentTemplateLoad });
+  const selectCustomCategoryLibrary = __s("selectCustomCategoryLibrary", createSelectCustomCategoryLibrary); Object.assign(__appScope, { selectCustomCategoryLibrary });
+  const selectCustomComponentLibrary = __s("selectCustomComponentLibrary", createSelectCustomComponentLibrary); Object.assign(__appScope, { selectCustomComponentLibrary });
+  const selectCustomComponentTemplate = __s("selectCustomComponentTemplate", createSelectCustomComponentTemplate); Object.assign(__appScope, { selectCustomComponentTemplate });
+  const startCustomComponentCreate = __s("startCustomComponentCreate", createStartCustomComponentCreate); Object.assign(__appScope, { startCustomComponentCreate });
+  const copyCustomComponentTemplate = __s("copyCustomComponentTemplate", createCopyCustomComponentTemplate); Object.assign(__appScope, { copyCustomComponentTemplate });
+  const pasteCustomComponentTemplate = __s("pasteCustomComponentTemplate", createPasteCustomComponentTemplate); Object.assign(__appScope, { pasteCustomComponentTemplate });
+  const exportCustomComponentTemplateSvg = __s("exportCustomComponentTemplateSvg", createExportCustomComponentTemplateSvg); Object.assign(__appScope, { exportCustomComponentTemplateSvg });
+  const exportComponentSymbols = __s("exportComponentSymbols", createExportComponentSymbols); Object.assign(__appScope, { exportComponentSymbols });
+  const exportComponentSymbolsStandalone = __s("exportComponentSymbolsStandalone", createExportComponentSymbolsStandalone); Object.assign(__appScope, { exportComponentSymbolsStandalone });
+  const loadSymbolExportSchemes = __s("loadSymbolExportSchemes", createLoadSymbolExportSchemes); Object.assign(__appScope, { loadSymbolExportSchemes });
+  const saveSymbolExportScheme = __s("saveSymbolExportScheme", createSaveSymbolExportScheme); Object.assign(__appScope, { saveSymbolExportScheme });
+  const deleteSymbolExportScheme = __s("deleteSymbolExportScheme", createDeleteSymbolExportScheme); Object.assign(__appScope, { deleteSymbolExportScheme });
+  const openCustomComponentSvgImport = __s("openCustomComponentSvgImport", createOpenCustomComponentSvgImport); Object.assign(__appScope, { openCustomComponentSvgImport });
+  const importCustomComponentSvg = __s("importCustomComponentSvg", createImportCustomComponentSvg); Object.assign(__appScope, { importCustomComponentSvg });
+  const confirmCustomLibraryCreateDialog = __s("confirmCustomLibraryCreateDialog", createConfirmCustomLibraryCreateDialog); Object.assign(__appScope, { confirmCustomLibraryCreateDialog });
+  const nextCustomCategoryLibraryName = __s("nextCustomCategoryLibraryName", createNextCustomCategoryLibraryName); Object.assign(__appScope, { nextCustomCategoryLibraryName });
+  const createCustomCategoryLibrary = __s("createCustomCategoryLibrary", createCreateCustomCategoryLibrary); Object.assign(__appScope, { createCustomCategoryLibrary });
+  const deleteCustomCategoryLibrary = __s("deleteCustomCategoryLibrary", createDeleteCustomCategoryLibrary); Object.assign(__appScope, { deleteCustomCategoryLibrary });
+  const nextCustomComponentLibraryName = __s("nextCustomComponentLibraryName", createNextCustomComponentLibraryName); Object.assign(__appScope, { nextCustomComponentLibraryName });
+  const createCustomComponentLibrary = __s("createCustomComponentLibrary", createCreateCustomComponentLibrary); Object.assign(__appScope, { createCustomComponentLibrary });
+  const deleteCustomComponentLibrary = __s("deleteCustomComponentLibrary", createDeleteCustomComponentLibrary); Object.assign(__appScope, { deleteCustomComponentLibrary });
+  const renameSelectedCustomDeviceTreeItem = __s("renameSelectedCustomDeviceTreeItem", createRenameSelectedCustomDeviceTreeItem); Object.assign(__appScope, { renameSelectedCustomDeviceTreeItem });
+  const deleteSelectedCustomDeviceTreeItem = __s("deleteSelectedCustomDeviceTreeItem", createDeleteSelectedCustomDeviceTreeItem); Object.assign(__appScope, { deleteSelectedCustomDeviceTreeItem });
+  const nextCustomTemplateKind = __s("nextCustomTemplateKind", createNextCustomTemplateKind); Object.assign(__appScope, { nextCustomTemplateKind });
+  const saveCustomDeviceTemplate = __s("saveCustomDeviceTemplate", createSaveCustomDeviceTemplate); Object.assign(__appScope, { saveCustomDeviceTemplate });
+  const saveBuiltinDeviceDefinitionFromCustomDraft = __s("saveBuiltinDeviceDefinitionFromCustomDraft", createSaveBuiltinDeviceDefinitionFromCustomDraft); Object.assign(__appScope, { saveBuiltinDeviceDefinitionFromCustomDraft });
+  const saveComponentLibraryDefinition = __s("saveComponentLibraryDefinition", createSaveComponentLibraryDefinition); Object.assign(__appScope, { saveComponentLibraryDefinition });
+  const saveCustomDeviceDefinitionDialog = __s("saveCustomDeviceDefinitionDialog", createSaveCustomDeviceDefinitionDialog); Object.assign(__appScope, { saveCustomDeviceDefinitionDialog });
+  const renderStateVisualPager = __s("renderStateVisualPager", createRenderStateVisualPager); Object.assign(__appScope, { renderStateVisualPager });
+  const renderDeviceDefinitionVisualPanel = __s("renderDeviceDefinitionVisualPanel", createRenderDeviceDefinitionVisualPanel); Object.assign(__appScope, { renderDeviceDefinitionVisualPanel });
   const renderLibraryDefinitionActions = createRenderLibraryDefinitionActions(__appScope); Object.assign(__appScope, { renderLibraryDefinitionActions });
-  const renderGraphTemplatePreview = createRenderGraphTemplatePreview(__appScope); Object.assign(__appScope, { renderGraphTemplatePreview });
+  const renderGraphTemplatePreview = __s("renderGraphTemplatePreview", createRenderGraphTemplatePreview); Object.assign(__appScope, { renderGraphTemplatePreview });
   const renderGraphTemplateButton = createRenderGraphTemplateButton(__appScope); Object.assign(__appScope, { renderGraphTemplateButton });
   const renderGraphTemplateFlyout = createRenderGraphTemplateFlyout(__appScope); Object.assign(__appScope, { renderGraphTemplateFlyout });
   const renderTemplateLibraryPanel = () => (
@@ -3121,7 +3130,9 @@ export function useRenderBatch(__appScope: Record<string, any>) {
                 onMouseEnter={() => {
                   if (templateLibraryDisplayMode === "right" && !templateLibrarySearchNeedle) {
                     clearLibraryFlyoutCloseTimer();
-                    setHoveredGraphTemplateType(typeName);
+                    if (hoveredGraphTemplateType !== typeName) {
+                      setHoveredGraphTemplateType(typeName);
+                    }
                   }
                 }}
                 onMouseLeave={() => {
@@ -3182,8 +3193,8 @@ export function useRenderBatch(__appScope: Record<string, any>) {
       </div>
     );
   Object.assign(__appScope, { renderTemplateLibraryPanel });
-  const renderLibraryTemplateButton = createRenderLibraryTemplateButton(__appScope); Object.assign(__appScope, { renderLibraryTemplateButton });
-  const renderLibraryFlyout = createRenderLibraryFlyout(__appScope); Object.assign(__appScope, { renderLibraryFlyout });
+  const renderLibraryTemplateButton = __s("renderLibraryTemplateButton", createRenderLibraryTemplateButton); Object.assign(__appScope, { renderLibraryTemplateButton });
+  const renderLibraryFlyout = __s("renderLibraryFlyout", createRenderLibraryFlyout); Object.assign(__appScope, { renderLibraryFlyout });
   // ── 图元库面板树拖动排序（一级类别库 / 二级类）──────────────────────────────────
   // 顺序覆盖存在 libraryTreeOrder（本机 UI 偏好，localStorage）；未拖动过的项按原始顺序垫底。
   // 拖动身份走 React 状态（libraryTreeDragKey）而非 dataTransfer.getData —— dragover 期间
@@ -3456,7 +3467,9 @@ export function useRenderBatch(__appScope: Record<string, any>) {
                           onMouseEnter={() => {
                             if (!libraryExpanded) {
                               clearLibraryFlyoutCloseTimer();
-                              setHoveredCategoryLibraryComponentLibrary(componentLibraryKey);
+                              if (hoveredCategoryLibraryComponentLibrary !== componentLibraryKey) {
+                                setHoveredCategoryLibraryComponentLibrary(componentLibraryKey);
+                              }
                             }
                           }}
                           onMouseLeave={() => {
@@ -3464,7 +3477,9 @@ export function useRenderBatch(__appScope: Record<string, any>) {
                               if (libraryFlyout) {
                                 scheduleLibraryFlyoutClose(group, componentLibraryKey);
                               } else {
-                                setHoveredCategoryLibraryComponentLibrary((current: string[]) => (current: string) => current === componentLibraryKey ? "" : current);
+                                setHoveredCategoryLibraryComponentLibrary((current: string) =>
+                                  current === componentLibraryKey ? "" : current
+                                );
                               }
                             }
                           }}
@@ -3652,13 +3667,13 @@ export function useRenderBatch(__appScope: Record<string, any>) {
       visibleNodeById
     ]);
   Object.assign(__appScope, { lodSelectedNodeMarkup });
-  const lodNodeFromEvent = createLodNodeFromEvent(__appScope); Object.assign(__appScope, { lodNodeFromEvent });
-  const lodTerminalIdFromEvent = createLodTerminalIdFromEvent(__appScope); Object.assign(__appScope, { lodTerminalIdFromEvent });
-  const handleLodNodePointerDown = createHandleLodNodePointerDown(__appScope); Object.assign(__appScope, { handleLodNodePointerDown });
-  const handleLodNodeContextMenu = createHandleLodNodeContextMenu(__appScope); Object.assign(__appScope, { handleLodNodeContextMenu });
-  const openNodeDoubleClickEditor = createOpenNodeDoubleClickEditor(__appScope); Object.assign(__appScope, { openNodeDoubleClickEditor });
-  const jumpToAssociatedModel = createJumpToAssociatedModel(__appScope); Object.assign(__appScope, { jumpToAssociatedModel });
-  const handleLodNodeDoubleClick = createHandleLodNodeDoubleClick(__appScope); Object.assign(__appScope, { handleLodNodeDoubleClick });
+  const lodNodeFromEvent = __s("lodNodeFromEvent", createLodNodeFromEvent); Object.assign(__appScope, { lodNodeFromEvent });
+  const lodTerminalIdFromEvent = __s("lodTerminalIdFromEvent", createLodTerminalIdFromEvent); Object.assign(__appScope, { lodTerminalIdFromEvent });
+  const handleLodNodePointerDown = __s("handleLodNodePointerDown", createHandleLodNodePointerDown); Object.assign(__appScope, { handleLodNodePointerDown });
+  const handleLodNodeContextMenu = __s("handleLodNodeContextMenu", createHandleLodNodeContextMenu); Object.assign(__appScope, { handleLodNodeContextMenu });
+  const openNodeDoubleClickEditor = __s("openNodeDoubleClickEditor", createOpenNodeDoubleClickEditor); Object.assign(__appScope, { openNodeDoubleClickEditor });
+  const jumpToAssociatedModel = __s("jumpToAssociatedModel", createJumpToAssociatedModel); Object.assign(__appScope, { jumpToAssociatedModel });
+  const handleLodNodeDoubleClick = __s("handleLodNodeDoubleClick", createHandleLodNodeDoubleClick); Object.assign(__appScope, { handleLodNodeDoubleClick });
   const connectPreviewDom = connectPreviewDomRef.current; Object.assign(__appScope, { connectPreviewDom });
   const layerAssignmentUnchanged = activeSelectedNodeIds.length > 0 && activeSelectedNodeIds.every(
       (nodeId: string) => (nodeById.get(nodeId)?.layerId ?? DEFAULT_MODEL_LAYER_ID) === layerAssignmentTargetId
@@ -3775,12 +3790,12 @@ export function useRenderBatch(__appScope: Record<string, any>) {
       bottom: canvasDisplayOffsetY + (floatingToolbarViewportCanvas.y + floatingToolbarViewportCanvas.height) * canvasScrollScale.y
     };
   Object.assign(__appScope, { floatingToolbarViewport });
-  const clampFloatingToolbarPosition = createClampFloatingToolbarPosition(__appScope); Object.assign(__appScope, { clampFloatingToolbarPosition });
-  const floatingToolbarBounds = createFloatingToolbarBounds(__appScope);
+  const clampFloatingToolbarPosition = __s("clampFloatingToolbarPosition", createClampFloatingToolbarPosition); Object.assign(__appScope, { clampFloatingToolbarPosition });
+  const floatingToolbarBounds = __s("floatingToolbarBounds", createFloatingToolbarBounds);
   Object.assign(__appScope, { floatingToolbarBounds });
-  const toolbarOverlapArea = createToolbarOverlapArea(__appScope); Object.assign(__appScope, { toolbarOverlapArea });
-  const canvasRectToSurfaceCssRect = createCanvasRectToSurfaceCssRect(__appScope); Object.assign(__appScope, { canvasRectToSurfaceCssRect });
-  const rotateControlAvoidRectFromCanvasPoints = createRotateControlAvoidRectFromCanvasPoints(__appScope); Object.assign(__appScope, { rotateControlAvoidRectFromCanvasPoints });
+  const toolbarOverlapArea = __s("toolbarOverlapArea", createToolbarOverlapArea); Object.assign(__appScope, { toolbarOverlapArea });
+  const canvasRectToSurfaceCssRect = __s("canvasRectToSurfaceCssRect", createCanvasRectToSurfaceCssRect); Object.assign(__appScope, { canvasRectToSurfaceCssRect });
+  const rotateControlAvoidRectFromCanvasPoints = __s("rotateControlAvoidRectFromCanvasPoints", createRotateControlAvoidRectFromCanvasPoints); Object.assign(__appScope, { rotateControlAvoidRectFromCanvasPoints });
   const rotateControlAvoidRectFromCanvas = createRotateControlAvoidRectFromCanvas(__appScope);
   Object.assign(__appScope, { rotateControlAvoidRectFromCanvas });
   const selectedRotateControlAvoidRects: RenderViewportBounds[] = [];
@@ -3813,7 +3828,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
         )
       : null;
   Object.assign(__appScope, { selectedFloatingToolbarAvoidRect });
-  const placeFloatingToolbar = createPlaceFloatingToolbar(__appScope); Object.assign(__appScope, { placeFloatingToolbar });
+  const placeFloatingToolbar = __s("placeFloatingToolbar", createPlaceFloatingToolbar); Object.assign(__appScope, { placeFloatingToolbar });
   const nodeFloatingToolbar =
       isEditMode && !selectedToolbarHidden && activeSelectedNodeIds.length > 0 && selectedFloatingToolbarBounds
         ? (() => {
@@ -3863,7 +3878,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
   Object.assign(__appScope, { edgeFloatingToolbar });
   const floatingToolbarWrapperStyle = createFloatingToolbarWrapperStyle(__appScope);
   Object.assign(__appScope, { floatingToolbarWrapperStyle });
-  const renderMeasurementGroup = createRenderMeasurementGroup(__appScope); Object.assign(__appScope, { renderMeasurementGroup });
+  const renderMeasurementGroup = __s("renderMeasurementGroup", createRenderMeasurementGroup); Object.assign(__appScope, { renderMeasurementGroup });
   const resizeSizeHint =
       transformDrag && transformDrag.kind !== "rotate"
         ? (() => {
@@ -3918,25 +3933,25 @@ export function useRenderBatch(__appScope: Record<string, any>) {
   const minimapViewportTop = clampNumber(minimapOffsetY + canvasVisibleViewBox.y * minimapScale, minimapOffsetY, minimapOffsetY + minimapContentHeight); Object.assign(__appScope, { minimapViewportTop });
   const minimapViewportRight = clampNumber(minimapOffsetX + (canvasVisibleViewBox.x + canvasVisibleViewBox.width) * minimapScale, minimapOffsetX, minimapOffsetX + minimapContentWidth); Object.assign(__appScope, { minimapViewportRight });
   const minimapViewportBottom = clampNumber(minimapOffsetY + (canvasVisibleViewBox.y + canvasVisibleViewBox.height) * minimapScale, minimapOffsetY, minimapOffsetY + minimapContentHeight); Object.assign(__appScope, { minimapViewportBottom });
-  const handleMinimapNavigate = createHandleMinimapNavigate(__appScope); Object.assign(__appScope, { handleMinimapNavigate });
-  const centerSelectedInView = createCenterSelectedInView(__appScope); Object.assign(__appScope, { centerSelectedInView });
-  const fitViewToSelection = createFitViewToSelection(__appScope); Object.assign(__appScope, { fitViewToSelection });
+  const handleMinimapNavigate = __s("handleMinimapNavigate", createHandleMinimapNavigate); Object.assign(__appScope, { handleMinimapNavigate });
+  const centerSelectedInView = __s("centerSelectedInView", createCenterSelectedInView); Object.assign(__appScope, { centerSelectedInView });
+  const fitViewToSelection = __s("fitViewToSelection", createFitViewToSelection); Object.assign(__appScope, { fitViewToSelection });
   Object.assign(__appScope, { isStaticButtonEnabledForNode });
-  const clearStaticButtonFeedbackTimer = createClearStaticButtonFeedbackTimer(__appScope); Object.assign(__appScope, { clearStaticButtonFeedbackTimer });
-  const setStaticButtonFeedback = createSetStaticButtonFeedback(__appScope); Object.assign(__appScope, { setStaticButtonFeedback });
-  const clearStaticButtonFeedback = createClearStaticButtonFeedback(__appScope); Object.assign(__appScope, { clearStaticButtonFeedback });
-  const beginStaticButtonPointerFeedback = createBeginStaticButtonPointerFeedback(__appScope); Object.assign(__appScope, { beginStaticButtonPointerFeedback });
-  const resolveStaticButtonTargetProject = createResolveStaticButtonTargetProject(__appScope); Object.assign(__appScope, { resolveStaticButtonTargetProject });
-  const executeStaticButtonCommand = createExecuteStaticButtonCommand(__appScope); Object.assign(__appScope, { executeStaticButtonCommand });
-  const executeStaticButtonAction = createExecuteStaticButtonAction(__appScope); Object.assign(__appScope, { executeStaticButtonAction });
-  const handleStaticButtonClick = createHandleStaticButtonClick(__appScope); Object.assign(__appScope, { handleStaticButtonClick });
+  const clearStaticButtonFeedbackTimer = __s("clearStaticButtonFeedbackTimer", createClearStaticButtonFeedbackTimer); Object.assign(__appScope, { clearStaticButtonFeedbackTimer });
+  const setStaticButtonFeedback = __s("setStaticButtonFeedback", createSetStaticButtonFeedback); Object.assign(__appScope, { setStaticButtonFeedback });
+  const clearStaticButtonFeedback = __s("clearStaticButtonFeedback", createClearStaticButtonFeedback); Object.assign(__appScope, { clearStaticButtonFeedback });
+  const beginStaticButtonPointerFeedback = __s("beginStaticButtonPointerFeedback", createBeginStaticButtonPointerFeedback); Object.assign(__appScope, { beginStaticButtonPointerFeedback });
+  const resolveStaticButtonTargetProject = __s("resolveStaticButtonTargetProject", createResolveStaticButtonTargetProject); Object.assign(__appScope, { resolveStaticButtonTargetProject });
+  const executeStaticButtonCommand = __s("executeStaticButtonCommand", createExecuteStaticButtonCommand); Object.assign(__appScope, { executeStaticButtonCommand });
+  const executeStaticButtonAction = __s("executeStaticButtonAction", createExecuteStaticButtonAction); Object.assign(__appScope, { executeStaticButtonAction });
+  const handleStaticButtonClick = __s("handleStaticButtonClick", createHandleStaticButtonClick); Object.assign(__appScope, { handleStaticButtonClick });
   useEffect(createAppHookCallback140(__appScope), [activeProjectKey, backgroundProjectId, backgroundProjectRecord]);
   const backgroundPageFrameRender = useMemo(createAppHookCallback141(__appScope), [activeProjectKey, backgroundProjectId, backgroundProjectRecord, canvasHeight, canvasWidth, imageAssets]);
   Object.assign(__appScope, { backgroundPageFrameRender });
   const backgroundPageRender = useMemo(createAppHookCallback142(__appScope), [backgroundLayerIds, backgroundPageFrameRender, backgroundPageRenderReady]);
   Object.assign(__appScope, { backgroundPageRender });
-  const beginReadonlyBackgroundStaticButtonPointerFeedback = createBeginReadonlyBackgroundStaticButtonPointerFeedback(__appScope); Object.assign(__appScope, { beginReadonlyBackgroundStaticButtonPointerFeedback });
-  const renderReadonlyBackgroundPage = createRenderReadonlyBackgroundPage(__appScope); Object.assign(__appScope, { renderReadonlyBackgroundPage });
+  const beginReadonlyBackgroundStaticButtonPointerFeedback = __s("beginReadonlyBackgroundStaticButtonPointerFeedback", createBeginReadonlyBackgroundStaticButtonPointerFeedback); Object.assign(__appScope, { beginReadonlyBackgroundStaticButtonPointerFeedback });
+  const renderReadonlyBackgroundPage = __s("renderReadonlyBackgroundPage", createRenderReadonlyBackgroundPage); Object.assign(__appScope, { renderReadonlyBackgroundPage });
   const viewportOverlayStyle = {
       // 悬浮工具条永远水平居中：居中基准是"可用区"（视口去掉两侧面板让位后的中间），
       // 与适配视图同一口径 —— 面板显隐或拖宽时会跟着重算，视觉上始终居中
@@ -3948,7 +3963,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
     } as CSSProperties;
   Object.assign(__appScope, { viewportOverlayStyle });
   const topologyWarningPanelVisible = inspectorTopologyErrors.length > 0 && !topologyWarningPanelClosed; Object.assign(__appScope, { topologyWarningPanelVisible });
-  const openTopologyWarningPanel = createOpenTopologyWarningPanel(__appScope); Object.assign(__appScope, { openTopologyWarningPanel });
+  const openTopologyWarningPanel = __s("openTopologyWarningPanel", createOpenTopologyWarningPanel); Object.assign(__appScope, { openTopologyWarningPanel });
   const topologyWarningPanelDefaultRight =
       (rightPanelVisible ? rightPanelWidth + 28 : 16) + CANVAS_MINIMAP_WIDTH + TOPOLOGY_WARNING_PANEL_MARGIN; Object.assign(__appScope, { topologyWarningPanelDefaultRight });
   const topologyWarningPanelStyle = topologyWarningPanelPosition
