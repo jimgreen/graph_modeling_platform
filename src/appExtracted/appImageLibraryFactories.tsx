@@ -4,6 +4,7 @@
  * 注意：createChooseImage 保留自由标识符 showGlobalMessage 调用，以兼容测试的 globalThis 钉桩隔离。
  */
 
+import type { ImageLibraryScope } from "./appScopeTypes";
 import type { ChangeEvent } from "react";
 import { STATE_ICON_DRAFT_FRAME } from "./appDeviceDefinitionEInterface";
 import { apiPath } from "../config";
@@ -54,7 +55,7 @@ export function imageLibraryFileMatchesImportKind(fileName: string, importKind: 
   return isArchive || isImage;
 }
 
-export function createChooseImage(__appScope: Record<string, any>) {
+export function createChooseImage(__appScope: ImageLibraryScope) {
   return (event: ChangeEvent<HTMLInputElement>) => {
   const { activeImageFolderId, imageTarget, importBackendIconLibraryFile, randomSource: injectedRandomSource, refreshImageFolders, saveImageAsset, setImageAssetList, setImageAssets, uploadBackendImage } = __appScope;
     // 兜底 id 会流进 localStorage 与节点 params（见 createImageUploadFallbackAssetId 的追踪注释），
@@ -125,7 +126,7 @@ export function createChooseImage(__appScope: Record<string, any>) {
   };
 }
 
-export function createApplyExistingImage(__appScope: Record<string, any>) {
+export function createApplyExistingImage(__appScope: ImageLibraryScope) {
   return async (assetId: string) => {
   const { createEditableStateIconElementsFromSvgSource, createImportedStateIconElement, imageAssetList, imageAssets, imageTarget, libraryTemplateByKind, pushUndoSnapshot, setCanvasBackgroundImage, setCanvasBackgroundImageAssetId, setImageTarget, setStateIconDrawingDialog, startLibraryDevicePlacement, stateIconDrawingHistoryRef, svgSourceFromDataUrl, updateGraphNodeById, writeOperationLog } = __appScope;
     const asset = imageAssetList.find((item: ImageAsset) => item.id === assetId);
@@ -226,7 +227,7 @@ export function createApplyExistingImage(__appScope: Record<string, any>) {
   };
 }
 
-export function createApplyIconLibraryCatalogIcon(__appScope: Record<string, any>) {
+export function createApplyIconLibraryCatalogIcon(__appScope: ImageLibraryScope) {
   return async (iconEntryId: string) => {
   const { createEditableStateIconElementsFromSvgSource, createImportedStateIconElement, iconLibraryPicker, imageTarget, libraryTemplateByKind, pushUndoSnapshot, setCanvasBackgroundImage, setCanvasBackgroundImageAssetId, setImageTarget, setStateIconDrawingDialog, startLibraryDevicePlacement, stateIconDrawingHistoryRef, updateGraphNodeById, writeOperationLog } = __appScope;
     if (!imageTarget) {
@@ -339,7 +340,7 @@ export function createApplyIconLibraryCatalogIcon(__appScope: Record<string, any
   };
 }
 
-export function createClearSelectedImage(__appScope: Record<string, any>) {
+export function createClearSelectedImage(__appScope: ImageLibraryScope) {
   return () => {
   const { imageTarget, pushUndoSnapshot, setCanvasBackgroundImage, setCanvasBackgroundImageAssetId, setCanvasBackgroundImageFit, setImageTarget, setStateIconDrawingDialog, updateGraphNodeById } = __appScope;
     if (!imageTarget) {
@@ -399,7 +400,7 @@ export function createClearSelectedImage(__appScope: Record<string, any>) {
   };
 }
 
-export function createClearSelectedImageForNode(__appScope: Record<string, any>) {
+export function createClearSelectedImageForNode(__appScope: ImageLibraryScope) {
   return (nodeId: string, target: "background" | "foreground") => {
   const { pushUndoSnapshot, updateGraphNodeById } = __appScope;
     pushUndoSnapshot();
@@ -413,7 +414,7 @@ export function createClearSelectedImageForNode(__appScope: Record<string, any>)
   };
 }
 
-export function createCreateImageFolder(__appScope: Record<string, any>) {
+export function createCreateImageFolder(__appScope: ImageLibraryScope) {
   return async () => {
   const { createBackendImageFolder, refreshImageFolders, setActiveImageFolderId } = __appScope;
     const inputName = await promptText("请输入图片文件夹名称", "新建文件夹");
@@ -435,7 +436,7 @@ export function createCreateImageFolder(__appScope: Record<string, any>) {
   };
 }
 
-export function createRenameImageFolder(__appScope: Record<string, any>) {
+export function createRenameImageFolder(__appScope: ImageLibraryScope) {
   return async () => {
   const { activeImageFolderId, imageFolders, refreshImageFolders, renameBackendImageFolder } = __appScope;
     const folder = imageFolders.find((item: any) => item.id === activeImageFolderId);
@@ -461,7 +462,7 @@ export function createRenameImageFolder(__appScope: Record<string, any>) {
   };
 }
 
-export function createDeleteImageFolder(__appScope: Record<string, any>) {
+export function createDeleteImageFolder(__appScope: ImageLibraryScope) {
   return async () => {
   const { activeImageFolderId, deleteBackendImageFolder, imageFolders, refreshImageFolders, setActiveImageFolderId } = __appScope;
     const folder = imageFolders.find((item: any) => item.id === activeImageFolderId);

@@ -52,6 +52,10 @@ import {
   writeInterfaceCustomizationConfig
 } from "./interfaceCustomization.mjs";
 import { readZipEntriesAsync } from "./asyncZip.mjs";
+import { createNativeExportHandlers } from "./routes/nativeExportHandlers.mjs";
+import { createGlobalLineHandlers } from "./routes/globalLineHandlers.mjs";
+import { createSchemeHttpHandlers } from "./routes/schemeHttpHandlers.mjs";
+import { createConfigAndStaticHandlers } from "./routes/configAndStaticHandlers.mjs";
 import {
   eSectionColumns,
   inferESection,
@@ -1031,74 +1035,17 @@ async function readJsonBody(request, maxBodyBytes = maxImageBodyBytes, oversizeM
   }
 }
 
-async function handleSelectNativeExportFile(request, response, nativeExportSaveService) {
-  if (!isAllowedNativeExportOrigin(request)) {
-    sendError(response, 403, "仅允许本机页面调用快速另存为接口。");
-    return;
-  }
-  const payload = await readJsonBody(request, 64 * 1024, "另存为参数过大。");
-  try {
-    const result = await nativeExportSaveService.selectFile(payload);
-    if (!result.supported) {
-      sendError(response, 501, "当前运行环境不支持本地快速另存为。");
-      return;
-    }
-    sendJson(response, 200, result);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "打开系统另存为窗口失败。";
-    sendError(response, 500, message);
-  }
-}
-
-async function handleWriteNativeExportText(url, request, response, nativeExportSaveService) {
-  if (!isAllowedNativeExportOrigin(request)) {
-    sendError(response, 403, "仅允许本机页面调用快速另存为接口。");
-    return;
-  }
-  const token = String(url.searchParams.get("token") ?? "").trim();
-  if (!token) {
-    sendError(response, 400, "缺少另存为目标令牌。");
-    return;
-  }
-  const bytes = await readRawBody(request, maxSchemeBodyBytes, "导出文件过大，最大支持 64MB。");
-  try {
-    const result = await nativeExportSaveService.writeText(token, bytes);
-    sendJson(response, 200, { ok: true, ...result });
-  } catch (error) {
-    if (error instanceof NativeExportSaveError && error.code === "invalid-token") {
-      sendError(response, 404, error.message);
-      return;
-    }
-    const message = error instanceof Error ? error.message : "写入导出文件失败。";
-    sendError(response, 500, message);
-  }
-}
-
-// 「查看」导出文件：令牌是 write-text 刚落盘时发的，服务端只认自己写过的路径，
-// 不接受前端回传任意路径 —— 否则这台本地服务就成了一台「让网页打开任意本地文件」的机器。
-// 用 POST 而非 GET：它有副作用（拉起本机程序），不该被预取/收藏触发。
-async function handleOpenNativeExportFile(url, request, response, nativeExportSaveService) {
-  if (!isAllowedNativeExportOrigin(request)) {
-    sendError(response, 403, "仅允许本机页面调用导出文件查看接口。");
-    return;
-  }
-  const token = String(url.searchParams.get("token") ?? "").trim();
-  if (!token) {
-    sendError(response, 400, "缺少导出文件令牌。");
-    return;
-  }
-  try {
-    const result = await nativeExportSaveService.openWrittenFile(token);
-    sendJson(response, 200, { ok: true, ...result });
-  } catch (error) {
-    if (error instanceof NativeExportSaveError && error.code === "invalid-token") {
-      sendError(response, 404, error.message);
-      return;
-    }
-    const message = error instanceof Error ? error.message : "打开导出文件失败。";
-    sendError(response, 500, message);
-  }
-}
+const {
+  handleSelectNativeExportFile,
+  handleWriteNativeExportText,
+  handleOpenNativeExportFile
+} = createNativeExportHandlers({
+  readJsonBody,
+  readRawBody,
+  sendJson,
+  sendError,
+  maxSchemeBodyBytes
+});
 
 function parseDataUrl(dataUrl) {
   const match = /^data:([^;,]+);base64,(.+)$/u.exec(dataUrl);
@@ -2448,712 +2395,91 @@ async function handleDeleteImageAsset(id, response, paths) {
   });
 }
 
-async function handleGlobalLineRegistryOperation(response, operation, successStatus = 200) {
-  try {
-    const result = await operation();
-    sendJson(response, successStatus, result);
-  } catch (error) {
-    if (error instanceof GlobalLineRegistryError) {
-      sendError(response, error.statusCode, error.message);
-      return;
-    }
-    throw error;
-  }
-}
+const {
+  handleListGlobalLines,
+  handleAttachGlobalLine,
+  handleDetachGlobalLine,
+  handleUpdateGlobalLine,
+  handleDeleteEmptyGlobalLine,
+  handleSyncGlobalLineProject
+} = createGlobalLineHandlers({
+  registryFor,
+  readJsonBody,
+  sendJson,
+  sendError,
+  maxMeasurementConfigBodyBytes,
+  maxSchemeBodyBytes
+});
 
-async function handleListGlobalLines(response, paths) {
-  await handleGlobalLineRegistryOperation(response, async () => ({
-    ok: true,
-    records: await registryFor(paths).list()
-  }));
-}
+const {
+  trySnapshotSavedModels,
+  publishModelChangesSince,
+  publishSavedModelChange,
+  handleSaveSchemes,
+  handleReadSchemeProject,
+  handleSaveSchemeProject,
+  handleDeleteSchemeProject,
+  handleSaveSchemeRecord,
+  handleDeleteSchemeRecord,
+  handleExportSchemeArchive,
+  handleImportSchemeArchive,
+  handleExportSpaceArchive,
+  spaceNameRejectMessage,
+  sendSpaceNameConflict,
+  handleImportSpaceArchive
+} = createSchemeHttpHandlers({
+  readSchemes,
+  writeSchemes,
+  readSchemeProjectRecord,
+  saveSchemeProjectRecord,
+  deleteSchemeProjectRecord,
+  saveSchemeRecordDirectory,
+  deleteSchemeRecordDirectory,
+  resolveSchemePathForSelector,
+  parseSchemePathParam,
+  schemePathOrDefault,
+  createSchemeArchiveBuffer,
+  importSchemeArchiveBuffer,
+  assertZipUncompressedSizeWithinLimit,
+  zipRootNameFor,
+  extractSpaceZipToDirectory,
+  retiredSpaceRoots,
+  evictRegistry,
+  readJsonBody,
+  readRawBody,
+  sendJson,
+  sendError,
+  maxSchemeBodyBytes,
+  maxSchemeZipBodyBytes
+});
 
-async function handleAttachGlobalLine(request, response, paths) {
-  const payload = await readJsonBody(request, maxMeasurementConfigBodyBytes, "全局线路数据过大，最大支持 1MB。");
-  await handleGlobalLineRegistryOperation(response, async () => ({
-    ok: true,
-    record: await registryFor(paths).attach(payload)
-  }), 201);
-}
+const {
+  handleSaveColorConfig,
+  handleSaveMeasurementConfig,
+  handleSaveDeviceLibrary,
+  handleSaveSymbolExportSchemes,
+  handleSymbolExport,
+  handleStandaloneSymbolExport,
+  serveStaticAsset,
+  serveIconLibraryAsset
+} = createConfigAndStaticHandlers({
+  readJsonBody,
+  sendJson,
+  sendError,
+  writeColorConfig,
+  writeMeasurementConfig,
+  writeDeviceLibraryConfig,
+  mkdirInSpace,
+  pipeFileToResponse,
+  getIconLibraryPublicDir: () => join(repoRoot, "public", "icon-library"),
+  maxColorConfigBodyBytes,
+  maxMeasurementConfigBodyBytes,
+  maxDeviceLibraryBodyBytes,
+  maxSymbolExportSchemesBodyBytes,
+  maxSymbolExportBodyBytes
+});
 
-async function handleDetachGlobalLine(request, response, paths) {
-  const payload = await readJsonBody(request, maxMeasurementConfigBodyBytes, "全局线路数据过大，最大支持 1MB。");
-  await handleGlobalLineRegistryOperation(response, async () => ({
-    ok: true,
-    record: await registryFor(paths).detach(payload)
-  }));
-}
-
-async function handleUpdateGlobalLine(request, response, paths) {
-  const payload = await readJsonBody(request, maxMeasurementConfigBodyBytes, "全局线路数据过大，最大支持 1MB。");
-  await handleGlobalLineRegistryOperation(response, async () => ({
-    ok: true,
-    record: await registryFor(paths).update(payload)
-  }));
-}
-
-async function handleDeleteEmptyGlobalLine(request, response, paths) {
-  const payload = await readJsonBody(request, maxMeasurementConfigBodyBytes, "全局线路数据过大，最大支持 1MB。");
-  await handleGlobalLineRegistryOperation(response, async () => ({
-    ok: true,
-    record: await registryFor(paths).deleteEmpty(payload)
-  }));
-}
-
-async function handleSyncGlobalLineProject(request, response, paths) {
-  const payload = await readJsonBody(request, maxSchemeBodyBytes, "模型全局线路数据过大，最大支持 64MB。");
-  await handleGlobalLineRegistryOperation(response, async () => ({
-    ok: true,
-    ...(await registryFor(paths).syncProject(payload))
-  }));
-}
-
-async function snapshotSavedModels(paths) {
-  const schemes = await readSchemes({ includeProjects: true, paths });
-  const snapshot = new Map();
-  const visit = (records, parentPath = []) => {
-    for (const scheme of records ?? []) {
-      const schemePath = [...parentPath, String(scheme?.name ?? "")];
-      for (const record of scheme?.projects ?? []) {
-        const project = record?.project && typeof record.project === "object" ? record.project : {};
-        const name = String(record?.name ?? project.name ?? "");
-        const modelIndex = Number(project.idx);
-        const stableModelId = Number.isSafeInteger(modelIndex) && modelIndex > 0 ? modelIndex : null;
-        const key = stableModelId ? `idx:${stableModelId}` : `path:${JSON.stringify([...schemePath, name])}`;
-        const savedRecord = {
-          name,
-          updatedAt: String(record?.updatedAt ?? ""),
-          project
-        };
-        snapshot.set(key, {
-          modelId: stableModelId,
-          schemePath,
-          record: savedRecord,
-          fingerprint: JSON.stringify([schemePath, savedRecord.updatedAt, project])
-        });
-      }
-      visit(scheme?.children, schemePath);
-    }
-  };
-  visit(schemes);
-  return snapshot;
-}
-
-async function trySnapshotSavedModels(paths) {
-  try {
-    return await snapshotSavedModels(paths);
-  } catch (error) {
-    console.warn(`[model-update] 保存前快照读取失败，跳过本次批量通知：${error?.message ?? error}`);
-    return null;
-  }
-}
-
-async function publishModelChangesSince(service, spaceId, paths, before) {
-  if (!(before instanceof Map)) return;
-  try {
-    const after = await snapshotSavedModels(paths);
-    for (const [key, model] of after) {
-      const previous = before.get(key);
-      if (!previous || previous.fingerprint !== model.fingerprint) {
-        await service.publishModelChanged({ spaceId, schemePath: model.schemePath, record: model.record, paths });
-      }
-    }
-    for (const [key, model] of before) {
-      if (!after.has(key) && model.modelId) service.removeModel(spaceId, model.modelId);
-    }
-  } catch (error) {
-    console.warn(`[model-update] 批量模型变更通知失败：${error?.message ?? error}`);
-  }
-}
-
-async function publishSavedModelChange(service, event) {
-  try {
-    const persistedRecord = await readSchemeProjectRecord({
-      paths: event.paths,
-      schemePath: event.schemePath,
-      name: event.record?.name ?? event.record?.project?.name
-    });
-    if (!persistedRecord) return;
-    await service.publishModelChanged({ ...event, record: persistedRecord });
-  } catch (error) {
-    console.warn(`[model-update] 模型变更通知失败：${error?.message ?? error}`);
-  }
-}
-
-async function handleSaveSchemes(request, response, paths, spaceId, modelUpdateService) {
-  const payload = await readJsonBody(request, maxSchemeBodyBytes, "方案/模型数据过大，最大支持 64MB。");
-  const schemes = Array.isArray(payload) ? payload : payload.schemes;
-  if (!Array.isArray(schemes)) {
-    sendError(response, 400, "缺少方案/模型数据。");
-    return;
-  }
-  const normalized = normalizeSchemesForStorage(schemes);
-  const before = await trySnapshotSavedModels(paths);
-  const savedSchemes = await writeSchemes(normalized, { paths });
-  await publishModelChangesSince(modelUpdateService, spaceId, paths, before);
-  sendJson(response, 200, { ok: true, schemes: savedSchemes, savedAt: new Date().toISOString() });
-}
-
-async function handleReadSchemeProject(url, response, paths) {
-  const name = url.searchParams.get("name") || url.searchParams.get("projectName") || "";
-  if (!name.trim()) {
-    sendError(response, 400, "缺少模型名称。");
-    return;
-  }
-  const schemePath = await resolveSchemePathForSelector({
-    schemePath: parseSchemePathParam(url.searchParams.get("schemePath")),
-    schemeId: url.searchParams.get("schemeId"),
-    paths
-  });
-  const project = await readSchemeProjectRecord({
-    schemePath,
-    name,
-    paths
-  });
-  if (!project) {
-    sendError(response, 404, "模型文件不存在。");
-    return;
-  }
-  sendJson(response, 200, { ok: true, project });
-}
-
-async function handleSaveSchemeProject(request, response, paths, spaceId, modelUpdateService) {
-  const payload = await readJsonBody(request, maxSchemeBodyBytes, "模型数据过大，最大支持 64MB。");
-  const record = payload.record ?? {
-    name: payload.name || payload.project?.name,
-    updatedAt: payload.updatedAt,
-    project: payload.project
-  };
-  if (!record?.project || typeof record.project !== "object") {
-    sendError(response, 400, "缺少模型数据。");
-    return;
-  }
-  const savedRecord = await saveSchemeProjectRecord({
-    schemePath: payload.schemePath,
-    schemeId: payload.schemeId,
-    record,
-    previousName: payload.previousName,
-    paths
-  });
-  const savedSchemePath = schemePathOrDefault(await resolveSchemePathForSelector({
-    schemePath: payload.schemePath,
-    schemeId: payload.schemeId,
-    paths
-  }));
-  await publishSavedModelChange(modelUpdateService, {
-    spaceId,
-    schemePath: savedSchemePath,
-    record: savedRecord,
-    paths
-  });
-  sendJson(response, 200, { ok: true, project: savedRecord, savedAt: new Date().toISOString() });
-}
-
-async function handleDeleteSchemeProject(request, response, paths, spaceId, modelUpdateService) {
-  const payload = await readJsonBody(request, maxSchemeBodyBytes, "模型数据过大，最大支持 64MB。");
-  if (!payload.name && !payload.projectName) {
-    sendError(response, 400, "缺少模型名称。");
-    return;
-  }
-  const schemePath = schemePathOrDefault(await resolveSchemePathForSelector({
-    schemePath: payload.schemePath,
-    schemeId: payload.schemeId,
-    paths
-  }));
-  const name = payload.name || payload.projectName;
-  const existing = await readSchemeProjectRecord({ paths, schemePath, name });
-  await deleteSchemeProjectRecord({
-    schemePath,
-    schemeId: payload.schemeId,
-    name,
-    paths
-  });
-  if (existing?.project?.idx) modelUpdateService.removeModel(spaceId, existing.project.idx);
-  sendJson(response, 200, { ok: true, savedAt: new Date().toISOString() });
-}
-
-async function handleSaveSchemeRecord(request, response, paths) {
-  const payload = await readJsonBody(request, maxSchemeBodyBytes, "方案数据过大，最大支持 64MB。");
-  if (!Array.isArray(payload.schemePath) || payload.schemePath.length === 0) {
-    sendError(response, 400, "缺少方案路径。");
-    return;
-  }
-  const schemeId = await saveSchemeRecordDirectory({
-    schemePath: payload.schemePath,
-    previousSchemePath: payload.previousSchemePath,
-    schemeId: payload.schemeId,
-    paths
-  });
-  sendJson(response, 200, { ok: true, schemeId, savedAt: new Date().toISOString() });
-}
-
-async function handleDeleteSchemeRecord(request, response, paths) {
-  const payload = await readJsonBody(request, maxSchemeBodyBytes, "方案数据过大，最大支持 64MB。");
-  if ((payload.schemeId === undefined || payload.schemeId === null) && (!Array.isArray(payload.schemePath) || payload.schemePath.length === 0)) {
-    sendError(response, 400, "缺少方案路径。");
-    return;
-  }
-  await deleteSchemeRecordDirectory({
-    schemePath: payload.schemePath,
-    schemeId: payload.schemeId,
-    paths
-  });
-  sendJson(response, 200, { ok: true, savedAt: new Date().toISOString() });
-}
-
-async function handleExportSchemeArchive(url, response, paths) {
-  const schemePath = await resolveSchemePathForSelector({
-    schemePath: parseSchemePathParam(url.searchParams.get("schemePath")),
-    schemeId: url.searchParams.get("schemeId"),
-    paths
-  });
-  const templateName = (url.searchParams.get("template") ?? "").trim();
-  if (templateName && !Object.hasOwn(PREDEFINED_E_DEVICE_TEMPLATES, templateName)) {
-    sendError(response, 400, `未知模板：${templateName}。可用模板：${Object.keys(PREDEFINED_E_DEVICE_TEMPLATES).join("、")}`);
-    return;
-  }
-  try {
-    // 只传 paths：Task 5 的守卫要求枚举根与渲染根同源，且渲染适配层只跟随 paths
-    const { buffer, filename } = await createSchemeArchiveBuffer({ paths, schemePath, templateName });
-    response.writeHead(200, {
-      "content-type": "application/zip",
-      "content-length": String(buffer.length),
-      "content-disposition": contentDispositionAttachment(filename),
-      "cache-control": "no-store",
-      ...accessControlHeaders
-    });
-    response.end(buffer);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "导出方案压缩包失败。";
-    if (message.includes("缺少方案路径")) {
-      sendError(response, 400, message);
-      return;
-    }
-    if (message.includes("方案目录不存在")) {
-      sendError(response, 404, message);
-      return;
-    }
-    sendError(response, 500, message);
-  }
-}
-
-async function handleImportSchemeArchive(url, request, response, paths, spaceId, modelUpdateService) {
-  const parentPath = parseSchemePathParam(url.searchParams.get("parentPath"));
-  const parentSchemeId = url.searchParams.get("parentSchemeId");
-  const fileName = url.searchParams.get("fileName") || "导入方案.zip";
-  const mode = url.searchParams.get("mode") === "overwrite" ? "overwrite" : "check";
-  const targetName = url.searchParams.get("targetName") || "";
-  const buffer = await readRawBody(request, maxSchemeZipBodyBytes, "方案压缩包过大，最大支持 256MB。");
-  if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
-    sendError(response, 400, "缺少方案压缩包。");
-    return;
-  }
-  let zip;
-  try {
-    zip = await readZipEntriesAsync(buffer, { label: "方案压缩包" });
-  } catch (error) {
-    if (error instanceof Error && /总大小超过/.test(error.message)) {
-      sendError(response, 400, error.message);
-      return;
-    }
-    sendError(response, 400, "zip 文件格式不正确。");
-    return;
-  }
-  const before = await trySnapshotSavedModels(paths);
-  try {
-    const result = await importSchemeArchiveBuffer({ paths, buffer, zip, parentPath, parentSchemeId, fileName, mode, targetName });
-    if (result.conflict) {
-      sendJson(response, 409, { error: "方案目录已存在。", ...result });
-      return;
-    }
-    const schemes = normalizeSchemesForStorage(await readSchemes({ paths }));
-    await publishModelChangesSince(modelUpdateService, spaceId, paths, before);
-    sendJson(response, 200, {
-      ok: true,
-      schemes,
-      importedName: result.importedName,
-      importedPath: result.importedPath,
-      schemeId: result.schemeId,
-      savedAt: new Date().toISOString()
-    });
-  } catch (error) {
-    const status = Number.isInteger(error?.statusCode) ? error.statusCode : 400;
-    sendError(response, status, error instanceof Error ? error.message : "导入方案压缩包失败。");
-  }
-}
-
-async function handleExportSpaceArchive(response, paths, spaceName, archiveRootName) {
-  try {
-    const { buffer, filename } = await buildSpaceArchiveBuffer({ paths, spaceName, archiveRootName });
-    response.writeHead(200, {
-      "content-type": "application/zip",
-      "content-length": String(buffer.length),
-      "content-disposition": contentDispositionAttachment(filename),
-      "cache-control": "no-store",
-      ...accessControlHeaders
-    });
-    response.end(buffer);
-  } catch (error) {
-    sendError(response, 500, error instanceof Error ? error.message : "导出空间压缩包失败。");
-  }
-}
-
-/** 拒绝原因文案：可接受返回 ""。空名沿用既有文案（有既有用例逐字钉着），其余给一条说清规则的说明。 */
-function spaceNameRejectMessage(normalized) {
-  if (!normalized) {
-    return "空间名不能为空。";
-  }
-  if (!isAcceptableSpaceName(normalized)) {
-    return `空间名不合法：只能含字母/数字/下划线/短横线，且不超过 ${MAX_SPACE_NAME_LENGTH} 个字符。`;
-  }
-  return "";
-}
-
-/**
- * 空间名冲突的统一出口：`spaceStore` 在锁内判重（见 create/rename 的 onDuplicate），
- * HTTP 层只把那个错误码翻成 409 —— 三个入口（新建 / 改名 / 导入）共用这一份，
- * 并在响应里带上**冲突者的 id 与名字**，前端才能弹「覆盖 / 重命名」询问。
- * 返回 true 表示已应答（调用方直接 return）。
- */
-function sendSpaceNameConflict(response, error) {
-  if (error?.code !== SPACE_NAME_DUPLICATE) {
-    return false;
-  }
-  sendJson(response, 409, {
-    error: { code: SPACE_NAME_DUPLICATE, message: error.message },
-    name: error.spaceName,
-    conflictId: error.spaceId
-  });
-  return true;
-}
-
-// 导入的三种意图（`?mode=`）：
-// - create（缺省）：包内名撞车 → 409 + 冲突信息，由前端弹询问后再带 mode 重发；
-// - overwrite：先按 DELETE 的次序删掉同名空间（目录归档进 trash-spaces/，可手工找回），再建；
-// - rename：以 `?name=` 给的新名建（新名仍撞车 → 同样是 409，前端可再问一次）。
-// spaceStore 是 createImageServer 的闭包局部量（本函数在闭包外），与 paths 同口径显式透传。
-async function handleImportSpaceArchive(request, response, spaceStore, url, modelUpdateHooks = {}) {
-  const mode = String(url?.searchParams?.get("mode") ?? "").trim();
-  const renameName = normalizeSpaceName(url?.searchParams?.get("name") ?? "");
-  if (mode && mode !== "overwrite" && mode !== "rename") {
-    sendError(response, 400, `未知的导入方式：${mode}。`, "SPACE_IMPORT_MODE_INVALID");
-    return;
-  }
-  if (mode === "rename" && !isAcceptableSpaceName(renameName)) {
-    // 明确要求了改名却给不出合格名字：不静默回退成包内名（那等于把用户的意图悄悄换掉）
-    sendError(response, 400, spaceNameRejectMessage(renameName), "SPACE_NAME_INVALID");
-    return;
-  }
-  const buffer = await readRawBody(request, maxSchemeZipBodyBytes, "空间压缩包过大，最大支持 256MB。");
-  if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
-    sendError(response, 400, "缺少空间压缩包。");
-    return;
-  }
-  let zip;
-  try {
-    zip = await readZipEntriesAsync(buffer, { label: "空间压缩包" });
-  } catch (error) {
-    if (error instanceof Error && /总大小超过/.test(error.message)) {
-      sendError(response, 400, error.message);
-      return;
-    }
-    sendError(response, 400, "zip 文件格式不正确。");
-    return;
-  }
-  let space = null;
-  let spaceRoot = null;
-  let replacedSpaceId = "";
-  let previousModelSnapshot = null;
-  try {
-    assertZipUncompressedSizeWithinLimit(zip, "空间压缩包");
-    const entries = zip.getEntries();
-    const zipRootName = zipRootNameFor(entries, "导入空间", "空间");
-    // 名字取 meta 里的原名：空间名不进任何路径（目录名走 spaceIdFromName 另算的 id），
-    // 在这里做 safeFilePart 只会让「带/斜杠」往返后变成「带_斜杠」。但 meta 来自**不可信压缩包**，
-    // 故候选名与**回退名都**要过与 POST /spaces 同一条规则（单源在 spaceId.mjs），都不合格才落到常量。
-    // 回退名为什么也要过：zipRootName 的净化上限是 80 码元（sanitizeSegment），比空间名上限宽，
-    // 「包内顶层目录名超长 + meta 缺失/超长」否则就能从导入侧造出 POST 侧 400 的名字。
-    // **全程不截断**：截断等于把名字悄悄改掉，也与「能被创建的名字一定无损往返」冲突。
-    const metaName = normalizeSpaceName(readSpaceArchiveName(zip, zipRootName));
-    const fallbackName = normalizeSpaceName(zipRootName);
-    const packedName = isAcceptableSpaceName(metaName)
-      ? metaName
-      : (isAcceptableSpaceName(fallbackName) ? fallbackName : "导入空间");
-    const name = mode === "rename" ? renameName : packedName;
-    if (mode === "overwrite") {
-      // 覆盖 = 先删同名空间再建。三步次序照搬 DELETE 分支，不能换位（那里有完整理由）：
-      // 登记退休 → 排空并驱逐注册表 → remove。少了排空这一步，队列里的原子写会按旧绝对路径落进
-      // 紧接着被复用的同一个根，把刚解包出来的内容盖成旧空间的残影。
-      // 名字唯一 ⇒ 至多一个同名者（大小写折叠不做，故按归一化名精确匹配）。
-      const clash = (await spaceStore.list()).find((item) => normalizeSpaceName(item.name) === name);
-      if (clash) {
-        replacedSpaceId = clash.id;
-        previousModelSnapshot = await modelUpdateHooks.capture?.(spaceStore.resolvePaths(clash.id));
-        const clashRoot = spaceStore.resolvePaths(clash.id).root;
-        retiredSpaceRoots.add(clashRoot);
-        await evictRegistry(clashRoot);
-        await spaceStore.remove(clash.id);
-      }
-    }
-    // reject 而非 allow：唯一性归 store 在锁内判，这里撞车（含并发插入）一律走 409，不静默加后缀
-    space = await spaceStore.create(name, { onDuplicate: "reject" });
-    spaceRoot = spaceStore.resolvePaths(space.id).root;
-    // 同名空间会复用刚被删掉的 id（即同一个根）：撤下退休登记，否则它一建出来就被拒写
-    retiredSpaceRoots.delete(spaceRoot);
-    await extractSpaceZipToDirectory(zip, spaceRoot, zipRootName);
-  } catch (error) {
-    // 失败不留半成品空间：撤掉刚建的那个（目录会进 trash-spaces/，可手工清）。
-    // 撤掉后必须把退休登记**加回去**：该 id 若是复用一个刚被删掉的空间，它的根在本次导入前就
-    // 处于「已退休」态；remove 只改名目录 + 摘注册表，够不着本模块级的 retiredSpaceRoots，
-    // 留下「未登记、未注册」的根，那条卡在读体、拿着旧根的在飞写请求就能把骨架重建出来，
-    // 并被 scanWorkspaces 登记成幽灵空间。次序照 DELETE 分支：先 remove，再按「空间是否还在」判。
-    if (space) {
-      await spaceStore.remove(space.id).catch((removeError) => {
-        // 回滚失败（Windows 上目录句柄占用会让 rename EPERM/EBUSY，同 DELETE 分支）时半成品空间会
-        // 留在注册表里 —— 不能吞得一点线索不留
-        console.warn(`[space-import] 回滚空间「${space.id}」失败：${removeError.message}`);
-      });
-      if (spaceRoot && !spaceStore.has(space.id)) {
-        retiredSpaceRoots.add(spaceRoot);
-      }
-    }
-    // 覆盖模式下被顶掉的那个空间在 create 之前就已删除：回滚只能撤掉新空间，
-    // 旧空间留在 trash-spaces/ 里等手工找回 —— 这是「覆盖」的固有代价，询问框里已写明。
-    if (replacedSpaceId && !spaceStore.has(replacedSpaceId)) {
-      modelUpdateHooks.closeSpace?.(replacedSpaceId);
-    }
-    if (sendSpaceNameConflict(response, error)) return;
-    sendError(response, 400, error instanceof Error ? error.message : "导入空间压缩包失败。");
-    return;
-  }
-  if (replacedSpaceId) {
-    if (space.id === replacedSpaceId) {
-      await modelUpdateHooks.publish?.(
-        space.id,
-        spaceStore.resolvePaths(space.id),
-        previousModelSnapshot
-      );
-    } else {
-      modelUpdateHooks.closeSpace?.(replacedSpaceId);
-    }
-  }
-  const spaces = await spaceStore.list();
-  sendJson(response, 200, { ok: true, space, spaces, savedAt: new Date().toISOString() });
-}
-
-async function handleSaveColorConfig(request, response, paths) {
-  const payload = await readJsonBody(request, maxColorConfigBodyBytes, "配色配置数据过大，最大支持 1MB。");
-  const normalized = await writeColorConfig(payload, { paths });
-  sendJson(response, 200, { ok: true, ...normalized });
-}
-
-async function handleSaveMeasurementConfig(request, response, paths) {
-  const payload = await readJsonBody(request, maxMeasurementConfigBodyBytes, "动态量测配置数据过大，最大支持 1MB。");
-  const normalized = await writeMeasurementConfig(payload, { paths });
-  sendJson(response, 200, { ok: true, ...normalized });
-}
-
-async function handleSaveDeviceLibrary(request, response, paths) {
-  const payload = await readJsonBody(request, maxDeviceLibraryBodyBytes, "图元库数据过大，最大支持 16MB。");
-  const normalized = await writeDeviceLibraryConfig(payload, { paths });
-  sendJson(response, 200, { ok: true, ...normalized });
-}
-
-// 图元 Symbol 导出方案：ensureDirectory 传 mkdirInSpace，使「删除空间期间在飞的写请求」
-// 走同一道退休空间判定（否则 atomicWriteFile 内部的裸 mkdir 会把已删空间的 settings/ 建回来）。
-async function handleSaveSymbolExportSchemes(request, response, paths) {
-  const payload = await readJsonBody(request, maxSymbolExportSchemesBodyBytes, "导出方案数据过大，最大支持 1MB。");
-  const normalized = await writeSymbolExportSchemes(payload, { paths, ensureDirectory: mkdirInSpace });
-  sendJson(response, 200, { ok: true, ...normalized });
-}
-
-// 图元 Symbol 导出的错误码 → HTTP 状态：三者都是「换个选择就能成功」的客户端问题，
-// 故不落到 500，前端可以据此给出不同措辞。
-const symbolExportErrorStatus = {
-  "invalid-request": 400,
-  "template-not-found": 404,
-  "empty-symbol": 422
-};
-
-// 图元 Symbol 导出：后端合成「只含 <style> 与 <defs><symbol>」的 SVG。
-// 动态 import 适配层（与 svgExport.mjs 同法）：该模块回读 server.mjs 的 readDeviceLibraryConfig，
-// 静态 import 会形成初始化期循环，动态 import 在 server.mjs 完成初始化后才发生。
-async function handleSymbolExport(request, response, paths) {
-  const payload = await readJsonBody(request, maxSymbolExportBodyBytes, "导出图元请求过大，最大支持 1MB。");
-  const { renderSymbolExportSvg } = await import("./symbolExport.mjs");
-  const result = await renderSymbolExportSvg({ kinds: payload?.kinds, paths });
-  if (result.error) {
-    sendError(response, symbolExportErrorStatus[result.error.code] ?? 400, result.error.message, result.error.code);
-    return;
-  }
-  sendJson(response, 200, {
-    ok: true,
-    svg: result.svg,
-    symbolCount: result.symbolCount,
-    exportedKinds: result.exportedKinds,
-    skippedKinds: result.skippedKinds,
-    missingKinds: result.missingKinds,
-    fileName: result.fileName
-  });
-}
-
-// 独立图元 SVG 导出：每个图元一份自包含 SVG（非 symbol 形式），多图元打包为 ZIP。
-//
-// 单图元直接回单个 .svg —— 用户拿到就是图元定义本身，不必为了一个文件先解压。
-// 多图元回 application/zip 二进制（与 /v1/schemes/export 的方案归档同法：Content-Disposition
-// 同时给 ASCII 名与 RFC 5987 的 UTF-8 名，中文/大小写敏感客户端都能正确落盘）。
-//
-// 两种产物的计数元信息（导出了哪些 kind、跳过了哪些）走响应头回传 —— 二进制响应体里放不下 JSON。
-async function handleStandaloneSymbolExport(request, response, paths) {
-  const payload = await readJsonBody(request, maxSymbolExportBodyBytes, "导出图元请求过大，最大支持 1MB。");
-  const { renderStandaloneSymbolExportZip } = await import("./symbolExport.mjs");
-  const result = await renderStandaloneSymbolExportZip({ kinds: payload?.kinds, paths });
-  if (result.error) {
-    sendError(response, symbolExportErrorStatus[result.error.code] ?? 400, result.error.message, result.error.code);
-    return;
-  }
-  const disposition = contentDispositionAttachment(result.fileName);
-  const metaHeaders = {
-    "content-disposition": disposition,
-    "cache-control": "no-store",
-    ...accessControlOriginOnly,
-    "x-symbol-export-file-count": String(result.fileCount),
-    // 逗号分隔：kind 本身不含逗号（kind 只用小写字母/数字/连字符）。
-    "x-symbol-export-exported-kinds": result.exportedKinds.join(","),
-    "x-symbol-export-skipped-kinds": result.skippedKinds.join(","),
-    "x-symbol-export-missing-kinds": result.missingKinds.join(",")
-  };
-  if (result.kind === "svg") {
-    const body = Buffer.from(result.svg, "utf-8");
-    response.writeHead(200, {
-      "content-type": "image/svg+xml; charset=utf-8",
-      "content-length": String(body.length),
-      ...metaHeaders
-    });
-    response.end(body);
-    return;
-  }
-  response.writeHead(200, {
-    "content-type": "application/zip",
-    "content-length": String(result.buffer.length),
-    ...metaHeaders
-  });
-  response.end(result.buffer);
-}
-
-const staticAssetMimeTypes = {
-  ".html": "text/html; charset=utf-8",
-  ".js": "application/javascript; charset=utf-8",
-  ".mjs": "application/javascript; charset=utf-8",
-  ".css": "text/css; charset=utf-8",
-  ".json": "application/json; charset=utf-8",
-  ".svg": "image/svg+xml",
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".gif": "image/gif",
-  ".webp": "image/webp",
-  ".ico": "image/x-icon",
-  ".woff": "font/woff",
-  ".woff2": "font/woff2",
-  ".ttf": "font/ttf",
-  ".map": "application/json; charset=utf-8",
-  ".md": "text/markdown; charset=utf-8"
-};
-
-function isPathInsideStaticRoot(targetPath, staticRoot) {
-  return isPathInside(staticRoot, targetPath);
-}
-
-// prod 静态资源托管：dist/ 存在时，非 /api、/ws 请求走静态文件 + SPA fallback。
-// dev 模式 staticRoot 为空，跳过（Vite 自处理前端）。
-export async function serveStaticAsset(request, response, url, staticRoot) {
-  if (!staticRoot) {
-    return false;
-  }
-  const pathname = url.pathname;
-  // /api、/ws 不走静态托管
-  if (pathname === apiPath("/ws") || pathname.startsWith(apiPrefix + "/")) {
-    return false;
-  }
-  const safePathname = pathname === "/" ? "/index.html" : pathname;
-  const filePath = join(staticRoot, safePathname);
-  if (!isPathInsideStaticRoot(filePath, staticRoot)) {
-    sendError(response, 404, "资源不存在。");
-    return true;
-  }
-  try {
-    const info = await stat(filePath);
-    if (info.isFile()) {
-      const ext = extname(filePath).toLowerCase();
-      response.writeHead(200, {
-        "content-type": staticAssetMimeTypes[ext] ?? "application/octet-stream",
-        "cache-control": "public, max-age=0, must-revalidate",
-        ...accessControlHeaders
-      });
-      pipeFileToResponse(filePath, response);
-      return true;
-    }
-  } catch (error) {
-    if (error?.code !== "ENOENT") {
-      throw error;
-    }
-  }
-  // SPA fallback：未命中文件的非越界请求返回 index.html（越界已在上方拦截）
-  const indexPath = join(staticRoot, "index.html");
-  try {
-    const info = await stat(indexPath);
-    if (info.isFile()) {
-      response.writeHead(200, {
-        "content-type": "text/html; charset=utf-8",
-        "cache-control": "no-cache",
-        ...accessControlHeaders
-      });
-      pipeFileToResponse(indexPath, response);
-      return true;
-    }
-  } catch (error) {
-    if (error?.code !== "ENOENT") {
-      throw error;
-    }
-  }
-  return false;
-}
-
-// icon-library 静态资源：从 public/icon-library/ 读取，dev/prod 通用。
-// 前端 URL 经 frontendPath() 拼接（含 frontendPrefix），后端 stripFrontendBase 剥前缀后命中此处。
-const iconLibraryPublicDir = join(repoRoot, "public", "icon-library");
-
-export async function serveIconLibraryAsset(request, response, url) {
-  const prefix = "/icon-library/";
-  if (!url.pathname.startsWith(prefix)) {
-    return false;
-  }
-  const relativePath = url.pathname.slice(prefix.length);
-  const filePath = join(iconLibraryPublicDir, relativePath);
-  if (!isPathInsideStaticRoot(filePath, iconLibraryPublicDir)) {
-    sendError(response, 404, "资源不存在。");
-    return true;
-  }
-  try {
-    const info = await stat(filePath);
-    if (info.isFile()) {
-      const ext = extname(filePath).toLowerCase();
-      response.writeHead(200, {
-        "content-type": staticAssetMimeTypes[ext] ?? "application/octet-stream",
-        "cache-control": "public, max-age=3600",
-        ...accessControlHeaders
-      });
-      pipeFileToResponse(filePath, response);
-      return true;
-    }
-  } catch (error) {
-    if (error?.code !== "ENOENT") {
-      throw error;
-    }
-  }
-  return false;
-}
+export { serveStaticAsset, serveIconLibraryAsset };
 
 export async function createImageServer({
   port = 5174,

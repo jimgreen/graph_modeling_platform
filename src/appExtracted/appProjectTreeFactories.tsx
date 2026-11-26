@@ -4,12 +4,13 @@
  * 注意：GripVertical 图标直接在本模块导入，避免写入 appStaticScope 引发循环依赖。
  */
 
+import type { ProjectTreeScope } from "./appScopeTypes";
 import type { CSSProperties, DragEvent, MouseEvent, ReactNode } from "react";
 import { MODEL_TYPE_META, type SavedProjectRecord, type SavedSchemeRecord } from "../model";
 import { moveKeyToEdge, sortByKeyOrder, writeLibraryTreeOrder } from "../libraryTreeOrder";
 import { GripVertical } from "lucide-react";
 
-export function createStartProjectRecordDrag(__appScope: Record<string, any>) {
+export function createStartProjectRecordDrag(__appScope: ProjectTreeScope) {
   return (event: DragEvent<HTMLDivElement>, projectId: string) => {
   const { projectRecordDragActiveRef } = __appScope;
     projectRecordDragActiveRef.current = true;
@@ -18,14 +19,14 @@ export function createStartProjectRecordDrag(__appScope: Record<string, any>) {
   };
 }
 
-export function createFinishProjectRecordDrag(__appScope: Record<string, any>) {
+export function createFinishProjectRecordDrag(__appScope: ProjectTreeScope) {
   return () => {
   const { projectRecordDragActiveRef } = __appScope;
     projectRecordDragActiveRef.current = false;
   };
 }
 
-export function createStartSchemeRecordDrag(__appScope: Record<string, any>) {
+export function createStartSchemeRecordDrag(__appScope: ProjectTreeScope) {
   return (event: DragEvent<HTMLDivElement>, schemeId: string) => {
   const { schemeRecordDragActiveRef } = __appScope;
     schemeRecordDragActiveRef.current = true;
@@ -34,7 +35,7 @@ export function createStartSchemeRecordDrag(__appScope: Record<string, any>) {
   };
 }
 
-export function createFinishSchemeRecordDrag(__appScope: Record<string, any>) {
+export function createFinishSchemeRecordDrag(__appScope: ProjectTreeScope) {
   return () => {
   const { schemeRecordDragActiveRef } = __appScope;
     schemeRecordDragActiveRef.current = false;
@@ -253,7 +254,7 @@ export function projectTreeSchemeContainsId(
   return contains(ancestor.children ?? []);
 }
 
-export function createStartProjectTreeSortDrag(__appScope: Record<string, any>) {
+export function createStartProjectTreeSortDrag(__appScope: ProjectTreeScope) {
   return (event: DragEvent<HTMLSpanElement>, dragKey: string) => {
     const { projectTreeDragKeyRef, projectTreeDragSuppressClickRef, schemes, setProjectTreeDragKey } = __appScope;
     // 方案 id 带 "scheme:"，模型运行期 id 带 "project:"（兼容旧 "model:"），
@@ -290,7 +291,7 @@ export function createStartProjectTreeSortDrag(__appScope: Record<string, any>) 
   };
 }
 
-export function createEndProjectTreeSortDrag(__appScope: Record<string, any>) {
+export function createEndProjectTreeSortDrag(__appScope: ProjectTreeScope) {
   return () => {
     const { projectTreeDragKeyRef, projectTreeDragSuppressClickRef, setProjectTreeDragKey, setProjectTreeDropKey } = __appScope;
     clearProjectTreeDragExpandTimer(__appScope);
@@ -349,7 +350,7 @@ export function scheduleProjectTreeDragExpand(scope: Record<string, any>, scheme
  * 否则插入线会残留在上一次的位置上。
  * 与图元库的 handleLibraryTreeDragLeave 同款，但清的是模型库自己的状态。
  */
-export function createHandleProjectTreeDragLeave(__appScope: Record<string, any>) {
+export function createHandleProjectTreeDragLeave(__appScope: ProjectTreeScope) {
   return (event: DragEvent<HTMLElement>) => {
     const scope = (__appScope.__appScopeRef?.current ?? __appScope) as Record<string, any>;
     const { setProjectTreeDropKey } = scope;
@@ -360,7 +361,7 @@ export function createHandleProjectTreeDragLeave(__appScope: Record<string, any>
   };
 }
 
-export function createHandleProjectTreeDragOver(__appScope: Record<string, any>) {
+export function createHandleProjectTreeDragOver(__appScope: ProjectTreeScope) {
   // **__appScope 每帧重建**（App.tsx:661），工厂闭包捕获的引用会冻结在首帧 ——
   // 拖动键/顺序表必须从 __appScopeRef.current（当前帧的 scope）读，否则永远是首帧快照。
   return (event: DragEvent<HTMLElement>, dropKey: string, forcedEdge?: "inside" | "before" | "after") => {
@@ -451,7 +452,7 @@ function projectTreeInsertEdge(
   return "after";
 }
 
-export function createHandleProjectTreeDrop(__appScope: Record<string, any>) {
+export function createHandleProjectTreeDrop(__appScope: ProjectTreeScope) {
   return (
     event: DragEvent<HTMLElement>,
     dropKey: string,
@@ -659,7 +660,7 @@ export function projectTreeNextSiblingId(
   return siblings[index + 1] ?? "";
 }
 
-export function createRenderProjectSchemeNode(__appScope: Record<string, any>) {
+export function createRenderProjectSchemeNode(__appScope: ProjectTreeScope) {
   return (scheme: SavedSchemeRecord, depth = 0, showRootEndLine = false): ReactNode => {
   // __appScope 每帧重建，本工厂闭包捕获的是首帧 scope —— 拖动态（projectTreeDropKey）与
   // 顺序覆盖（libraryTreeOrder）必须从当前帧 scope 读，否则指示线与新顺序不会反映到 DOM。
@@ -946,7 +947,7 @@ export function createRenderProjectSchemeNode(__appScope: Record<string, any>) {
   };
 }
 
-export function createOpenBlankProjectLibraryContextMenu(__appScope: Record<string, any>) {
+export function createOpenBlankProjectLibraryContextMenu(__appScope: ProjectTreeScope) {
   return (event: MouseEvent<HTMLElement>) => {
   const { setProjectMenu } = __appScope;
     const target = event.target as HTMLElement | null;

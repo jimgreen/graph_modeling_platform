@@ -191,7 +191,6 @@ import {
   flattenIconLibraryManifest,
 } from "../iconLibraryCatalog";
 import { imagePickerUsesLibraryTabs } from "./appView";
-import { createCimExport } from "../cim/cim-export";
 import { apiPath } from "../config";
 // 本文件引用了却从未 import 的类型（此前被 @ts-nocheck 遮住）：按真实出处补齐，均为 type-only import。
 import type { ChangeEvent, CSSProperties, PointerEvent as ReactPointerEvent } from "react";
@@ -2325,7 +2324,10 @@ export function useRenderBatch(__appScope: Record<string, any>) {
   const loadSvgImageExportPathById = createLoadSvgImageExportPathById(__appScope); Object.assign(__appScope, { loadSvgImageExportPathById });
   const exportSvg = createExportSvg(__appScope); Object.assign(__appScope, { exportSvg });
   const exportEFile = createExportEFile(__appScope); Object.assign(__appScope, { exportEFile });
-  const exportCimFile = createCimExport({
+  const exportCimFile = async (...args: unknown[]) => {
+    // CIM 导出为低频按需动作：触发时动态加载 src/cim/cim-export，避免占用首屏主包体积
+    const { createCimExport } = await import("../cim/cim-export");
+    const runner = createCimExport({
       ...__appScope,
       schemePath: schemePathForScheme(activeSchemeKey),
       apiPath,
@@ -2336,6 +2338,8 @@ export function useRenderBatch(__appScope: Record<string, any>) {
       // 透传 details / file：告警清单与【查看】凭据都要到弹框里
       showStandaloneExportCompletion: (title: string, message: string, details?: string[], file?: any) => showStandaloneExportCompletionImpl(__appScope, title, message, details ?? [], file ?? null)
     });
+    return (runner as (...runnerArgs: unknown[]) => unknown)(...args);
+  };
   Object.assign(__appScope, { exportCimFile });
   const exportSvgFile = createExportSvgFile(__appScope); Object.assign(__appScope, { exportSvgFile });
   const exportJsonFile = createExportJsonFile(__appScope); Object.assign(__appScope, { exportJsonFile });

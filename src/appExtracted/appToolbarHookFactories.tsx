@@ -1,3 +1,4 @@
+import type { ToolbarHookScope } from "./appScopeTypes";
 import { canvasFitCenterOffsetX, clampNumber } from "../canvasViewport";
 import { canvasFitSideInsetsFromDom, resolveContainerModelPanelParamKeys } from "./appCoreCanvasUtilities";
 import { mergeBuiltinSharedIconAssets } from "../sharedIconLibrary";
@@ -44,7 +45,7 @@ import type { CSSProperties, PointerEvent as ReactPointerEvent, MouseEvent as Re
 
 // 关联图元跳转：解析 node 的 model_id → 目标模型，找到唯一目标即加载该模型。
 // 与双击（browse 模式）共用，供右键菜单/浮动工具栏【跳转】复用。
-function attemptJumpToAssociatedModel(__appScope: Record<string, any>, node: ModelNode) {
+function attemptJumpToAssociatedModel(__appScope: ToolbarHookScope, node: ModelNode) {
   const { flattenSavedSchemes, modelAssociationModelTypeForKind, requestLoadSavedProject, schemes, showGlobalMessage = globalThis.showGlobalMessage, writeOperationLog } = __appScope;
   const targetModelType = modelAssociationModelTypeForKind(node.kind);
   if (!targetModelType) {
@@ -76,13 +77,13 @@ function attemptJumpToAssociatedModel(__appScope: Record<string, any>, node: Mod
   requestLoadSavedProject(target.project, target.scheme.id);
 }
 
-export function createJumpToAssociatedModel(__appScope: Record<string, any>) {
+export function createJumpToAssociatedModel(__appScope: ToolbarHookScope) {
   return (node: ModelNode) => {
     attemptJumpToAssociatedModel(__appScope, node);
   };
 }
 
-export function createOpenNodeDoubleClickEditor(__appScope: Record<string, any>) {
+export function createOpenNodeDoubleClickEditor(__appScope: ToolbarHookScope) {
   return (node: ModelNode) => {
   // 审查 T11-P0-2：showGlobalMessage 纳入 scope 解构（test-setup 有全局桩兜底，但显式依赖可测试）
   const { NODE_DOUBLE_CLICK_DIALOG_DEDUPE_MS, activeLayerNodeIdSet, cloneNodeForDoubleClickDraft, doubleClickDialogKindForNode, flattenSavedSchemes, flushSync, isEditMode, modelAssociationModelTypeForKind, nodeDoubleClickCloseSuppressUntilRef, nodeDoubleClickDialog, nodeDoubleClickOpenGuardRef, requestLoadSavedProject, schemes, selectCanvasGraphics, setContextMenu, setImageTarget, setNodeDoubleClickDialog, setNodeDoubleClickDraft, showGlobalMessage = globalThis.showGlobalMessage, writeOperationLog } = __appScope;
@@ -129,7 +130,7 @@ export function createOpenNodeDoubleClickEditor(__appScope: Record<string, any>)
   };
 }
 
-export function createHandleLodNodeDoubleClick(__appScope: Record<string, any>) {
+export function createHandleLodNodeDoubleClick(__appScope: ToolbarHookScope) {
   return (event: ReactMouseEvent<SVGGElement>) => {
   const { lodNodeFromEvent, openNodeDoubleClickEditor } = __appScope;
     const node = lodNodeFromEvent(event);
@@ -141,7 +142,7 @@ export function createHandleLodNodeDoubleClick(__appScope: Record<string, any>) 
   };
 }
 
-export function createClampFloatingToolbarPosition(__appScope: Record<string, any>) {
+export function createClampFloatingToolbarPosition(__appScope: ToolbarHookScope) {
   return (x: number, y: number, width: number, height: number) => {
   const { clampNumber, floatingToolbarPadding, floatingToolbarViewport } = __appScope;
     const minX = floatingToolbarViewport.left + floatingToolbarPadding;
@@ -155,7 +156,7 @@ export function createClampFloatingToolbarPosition(__appScope: Record<string, an
   };
 }
 
-export function createToolbarOverlapArea(__appScope: Record<string, any>) {
+export function createToolbarOverlapArea(__appScope: ToolbarHookScope) {
   return (first: RenderViewportBounds, second: RenderViewportBounds) => {
   const { boxesIntersect } = __appScope;
     if (!boxesIntersect(first, second)) {
@@ -166,7 +167,7 @@ export function createToolbarOverlapArea(__appScope: Record<string, any>) {
   };
 }
 
-export function createCanvasRectToSurfaceCssRect(__appScope: Record<string, any>) {
+export function createCanvasRectToSurfaceCssRect(__appScope: ToolbarHookScope) {
   return (rect: RenderViewportBounds, padding = 0): RenderViewportBounds => {
   const { canvasPointToSurfaceCss } = __appScope;
     const topLeft = canvasPointToSurfaceCss({ x: rect.left, y: rect.top });
@@ -180,7 +181,7 @@ export function createCanvasRectToSurfaceCssRect(__appScope: Record<string, any>
   };
 }
 
-export function createRotateControlAvoidRectFromCanvasPoints(__appScope: Record<string, any>) {
+export function createRotateControlAvoidRectFromCanvasPoints(__appScope: ToolbarHookScope) {
   return (points: Point[]): RenderViewportBounds => {
   const { canvasRectToSurfaceCssRect, floatingToolbarScreenScale } = __appScope;
     const xs = points.map((point) => point.x);
@@ -194,7 +195,7 @@ export function createRotateControlAvoidRectFromCanvasPoints(__appScope: Record<
   };
 }
 
-export function createPlaceFloatingToolbar(__appScope: Record<string, any>) {
+export function createPlaceFloatingToolbar(__appScope: ToolbarHookScope) {
   return (
     candidates: Point[],
     width: number,
@@ -225,7 +226,7 @@ export function createPlaceFloatingToolbar(__appScope: Record<string, any>) {
   };
 }
 
-export function createRenderMeasurementGroup(__appScope: Record<string, any>) {
+export function createRenderMeasurementGroup(__appScope: ToolbarHookScope) {
   return (group: MeasurementGroup) => {
   const { beginMeasurementDrag, finishMeasurementDrag, dragging, draggingNodeIdSet, formatSvgNumber, g, measurementGroupBackgroundColor, measurementGroupBorderColor, measurementGroupBorderDashArray, measurementGroupBorderWidth, measurementGroupCanvasPosition, measurementGroupRenderMetrics, openMeasurementEditorForNode, rect, selectedMeasurementGroup, text, themeMode, themedMeasurementTextColor, title, visibleNodeById } = __appScope;
 
@@ -355,7 +356,7 @@ export function createRenderMeasurementGroup(__appScope: Record<string, any>) {
   };
 }
 
-export function createHandleMinimapNavigate(__appScope: Record<string, any>) {
+export function createHandleMinimapNavigate(__appScope: ToolbarHookScope) {
   return (event: ReactPointerEvent<SVGSVGElement>) => {
   const { canvasHeight, canvasWidth, centerViewBoxOnPoint, clampNumber, minimapOffsetX, minimapOffsetY, minimapScale } = __appScope;
     event.preventDefault();
@@ -369,7 +370,7 @@ export function createHandleMinimapNavigate(__appScope: Record<string, any>) {
   };
 }
 
-export function createCenterSelectedInView(__appScope: Record<string, any>) {
+export function createCenterSelectedInView(__appScope: ToolbarHookScope) {
   return () => {
   const { centerViewBoxOnPoint, selectedCanvasBounds, selectionRectCenter } = __appScope;
     if (!selectedCanvasBounds) {
@@ -379,14 +380,14 @@ export function createCenterSelectedInView(__appScope: Record<string, any>) {
   };
 }
 
-export function createFitViewToSelection(__appScope: Record<string, any>) {
+export function createFitViewToSelection(__appScope: ToolbarHookScope) {
   return () => {
   const { FIT_SELECTION_MAX_ZOOM_PERCENT, fitViewToBounds, selectedCanvasBounds } = __appScope;
     fitViewToBounds(selectedCanvasBounds, 80, FIT_SELECTION_MAX_ZOOM_PERCENT);
   };
 }
 
-export function createClearStaticButtonFeedbackTimer(__appScope: Record<string, any>) {
+export function createClearStaticButtonFeedbackTimer(__appScope: ToolbarHookScope) {
   return () => {
   const { staticButtonFeedbackTimeoutRef } = __appScope;
     if (staticButtonFeedbackTimeoutRef.current !== null) {
@@ -396,7 +397,7 @@ export function createClearStaticButtonFeedbackTimer(__appScope: Record<string, 
   };
 }
 
-export function createSetStaticButtonFeedback(__appScope: Record<string, any>) {
+export function createSetStaticButtonFeedback(__appScope: ToolbarHookScope) {
   return (nodeId: string, state: StaticButtonVisualState) => {
   const { clearStaticButtonFeedbackTimer, setStaticButtonVisual } = __appScope;
     clearStaticButtonFeedbackTimer();
@@ -404,7 +405,7 @@ export function createSetStaticButtonFeedback(__appScope: Record<string, any>) {
   };
 }
 
-export function createClearStaticButtonFeedback(__appScope: Record<string, any>) {
+export function createClearStaticButtonFeedback(__appScope: ToolbarHookScope) {
   return (nodeId?: string) => {
   const { clearStaticButtonFeedbackTimer, setStaticButtonVisual } = __appScope;
     clearStaticButtonFeedbackTimer();
@@ -412,7 +413,7 @@ export function createClearStaticButtonFeedback(__appScope: Record<string, any>)
   };
 }
 
-export function createBeginStaticButtonPointerFeedback(__appScope: Record<string, any>) {
+export function createBeginStaticButtonPointerFeedback(__appScope: ToolbarHookScope) {
   return (event: ReactPointerEvent<SVGGElement>, node: ModelNode) => {
   const { connectSource, isStaticButtonEnabledForNode, mode, setStaticButtonFeedback, staticButtonPointerRef, staticDrawing } = __appScope;
     if (!isStaticButtonEnabledForNode(node) || staticDrawing || connectSource || mode === "connect") {
@@ -428,7 +429,7 @@ export function createBeginStaticButtonPointerFeedback(__appScope: Record<string
   };
 }
 
-export function createResolveStaticButtonTargetProject(__appScope: Record<string, any>) {
+export function createResolveStaticButtonTargetProject(__appScope: ToolbarHookScope) {
   return (node: ModelNode) => {
   const { flattenSavedSchemes, schemes } = __appScope;
     const targetProjectId = node.params.buttonTargetProjectId?.trim();
@@ -453,7 +454,7 @@ export function createResolveStaticButtonTargetProject(__appScope: Record<string
   };
 }
 
-export function createExecuteStaticButtonCommand(__appScope: Record<string, any>) {
+export function createExecuteStaticButtonCommand(__appScope: ToolbarHookScope) {
   return (command: string) => {
   const { centerSelectedInView, fitViewToSelection, fitWholeCanvasToFrame, resetViewportZoom, runTopologyCalculation, saveCurrentProject, selectedCanvasBounds, zoomViewportAtCenter } = __appScope;
     if (command === "save") {
@@ -500,7 +501,7 @@ export function createExecuteStaticButtonCommand(__appScope: Record<string, any>
   };
 }
 
-export function createExecuteStaticButtonAction(__appScope: Record<string, any>) {
+export function createExecuteStaticButtonAction(__appScope: ToolbarHookScope) {
   return (node: ModelNode) => {
   const { STATIC_BUTTON_COMMAND_LABELS, executeStaticButtonCommand, isStaticButtonEnabledForNode, layers, requestLoadSavedProject, resolveStaticButtonTargetLayers, resolveStaticButtonTargetProject, setActiveLayerId, setLayers, writeOperationLog } = __appScope;
     if (!isStaticButtonEnabledForNode(node)) {
@@ -540,7 +541,7 @@ export function createExecuteStaticButtonAction(__appScope: Record<string, any>)
   };
 }
 
-export function createHandleStaticButtonClick(__appScope: Record<string, any>) {
+export function createHandleStaticButtonClick(__appScope: ToolbarHookScope) {
   return (event: ReactMouseEvent<SVGGElement>, node: ModelNode) => {
   const { clearStaticButtonFeedback, executeStaticButtonAction, isStaticButtonEnabledForNode, setStaticButtonFeedback, setStaticButtonVisual, staticButtonFeedbackTimeoutRef, staticButtonPointerRef } = __appScope;
     if (!isStaticButtonEnabledForNode(node)) {
@@ -568,7 +569,7 @@ export function createHandleStaticButtonClick(__appScope: Record<string, any>) {
   };
 }
 
-export function createBeginReadonlyBackgroundStaticButtonPointerFeedback(__appScope: Record<string, any>) {
+export function createBeginReadonlyBackgroundStaticButtonPointerFeedback(__appScope: ToolbarHookScope) {
   return (event: ReactPointerEvent<SVGGElement>, node: ModelNode) => {
   const { beginStaticButtonPointerFeedback } = __appScope;
     event.preventDefault();
@@ -577,7 +578,7 @@ export function createBeginReadonlyBackgroundStaticButtonPointerFeedback(__appSc
   };
 }
 
-export function createRenderReadonlyBackgroundPage(__appScope: Record<string, any>) {
+export function createRenderReadonlyBackgroundPage(__appScope: ToolbarHookScope) {
   return () => {
   const { DEFAULT_CANVAS_BACKGROUND, MemoDeviceGlyph, backgroundPageRender, beginReadonlyBackgroundStaticButtonPointerFeedback, circle, clearStaticButtonFeedback, clipPath, colorDisplayMode, colorPalette, themeMode, deviceLabelsVisible, g, getConnectionStrokeColor, getNodeScaleX, getNodeScaleY, getTerminalDisplayColor, handleStaticButtonClick, image, isBusNode, isRoutableLineDeviceKind, isStaticButtonEnabledForNode, isStaticNode, line, nodeForegroundImage, nodeGeometryTransform, nodeImage, nodeImageContentTransform, nodeLabelShouldRender, nodeLabelText, nodeLabelTextAnchor, nodeLabelTextStyle, nodeLabelTransform, nodeLabelVertical, nodeLabelVerticalSegments, nodeLabelVerticalTokenStyle, nodeLabelVerticalTokenY, path, rect, resolveNodeStateVisual, setStaticButtonFeedback, staticButtonPointerRef, staticButtonVisual, svgStrokeDashArray, terminalRenderLocalPoint, terminalStubSegment, terminalStubStrokeWidth, text, title } = __appScope;
     if (!backgroundPageRender) {
@@ -833,7 +834,7 @@ export function createRenderReadonlyBackgroundPage(__appScope: Record<string, an
   };
 }
 
-export function createOpenTopologyWarningPanel(__appScope: Record<string, any>) {
+export function createOpenTopologyWarningPanel(__appScope: ToolbarHookScope) {
   return () => {
   const { setTopologyWarningPanelClosed, topologyErrors } = __appScope;
     if (topologyErrors.length === 0) {
@@ -843,7 +844,7 @@ export function createOpenTopologyWarningPanel(__appScope: Record<string, any>) 
   };
 }
 
-export function createAppHookCallback1(__appScope: Record<string, any>) {
+export function createAppHookCallback1(__appScope: ToolbarHookScope) {
   return () => {
   const { readRefreshRecoveryProject } = __appScope;
     const refreshRecovery = readRefreshRecoveryProject();
@@ -854,7 +855,7 @@ export function createAppHookCallback1(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback2(__appScope: Record<string, any>) {
+export function createAppHookCallback2(__appScope: ToolbarHookScope) {
   return () => {
   const { assignMissingDeviceIndexes, initialDraft, initialLayeredProject } = __appScope;
     const indexed = assignMissingDeviceIndexes(initialLayeredProject.nodes, initialDraft?.deviceIndexCounters);
@@ -863,7 +864,7 @@ export function createAppHookCallback2(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback4(__appScope: Record<string, any>) {
+export function createAppHookCallback4(__appScope: ToolbarHookScope) {
   return () => {
   const { contextMenu, contextMenuRef, contextMenuSize, projectMenu, setContextMenuSize, templateMenu } = __appScope;
     if (!contextMenu && !projectMenu && !templateMenu) {
@@ -887,7 +888,7 @@ export function createAppHookCallback4(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback5(__appScope: Record<string, any>) {
+export function createAppHookCallback5(__appScope: ToolbarHookScope) {
   return () => {
   const { inferMissingRoutableLineDeviceEndpointRefs, isRoutableLineDeviceKind, nodes, routableLineDeviceEndpointRefs } = __appScope;
     const index = new Map<string, string[]>();
@@ -912,7 +913,7 @@ export function createAppHookCallback5(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback6(__appScope: Record<string, any>) {
+export function createAppHookCallback6(__appScope: ToolbarHookScope) {
   return () => {
   const { allModelLayersVisible, buildNodeSpatialIndex, edges, graphStore, layers, nodes, normalizeModelLayers } = __appScope;
     const normalizedLayers = normalizeModelLayers(layers, nodes);
@@ -973,7 +974,7 @@ export function createAppHookCallback6(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback7(__appScope: Record<string, any>) {
+export function createAppHookCallback7(__appScope: ToolbarHookScope) {
   return () => {
   const { edges, graphStore, visibleEdges } = __appScope;
     if (visibleEdges === edges) {
@@ -1000,7 +1001,7 @@ export function createAppHookCallback7(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback8(__appScope: Record<string, any>) {
+export function createAppHookCallback8(__appScope: ToolbarHookScope) {
   return () => {
   const { activeLayer, activeLayerId, graphStore, nodes, visibleNodeIdSet, visibleNodes } = __appScope;
     if (!activeLayer?.visible) {
@@ -1011,7 +1012,7 @@ export function createAppHookCallback8(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback9(__appScope: Record<string, any>) {
+export function createAppHookCallback9(__appScope: ToolbarHookScope) {
   return () => {
   const { activeLayerNodes, componentLibraryDisplayName, filterSelectionComponentLibraryKey, filterSelectionItemKey, filterSelectionSpecificTypeKey, filterSelectionTemplateLabelByKind } = __appScope;
     const optionMap = new Map<string, FilterSelectionTypeOption>();
@@ -1072,7 +1073,7 @@ export function createAppHookCallback9(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback10(__appScope: Record<string, any>) {
+export function createAppHookCallback10(__appScope: ToolbarHookScope) {
   return () => {
   const { EMPTY_CANVAS_SELECTION, activeLayerGroups, canvasSelectionScope, isEditMode, rawActiveSelectedEdgeIds, rawActiveSelectedNodeIds, resolveCanvasSelection } = __appScope;
       if (rawActiveSelectedNodeIds.length === 0 && rawActiveSelectedEdgeIds.length === 0) {
@@ -1085,7 +1086,7 @@ export function createAppHookCallback10(__appScope: Record<string, any>) {
     };
 }
 
-export function createAppHookCallback11(__appScope: Record<string, any>) {
+export function createAppHookCallback11(__appScope: ToolbarHookScope) {
   return () => {
   const { activeCanvasSelection, activeLayerGroups, isEditMode, rawActiveSelectedEdgeIds, rawActiveSelectedNodeIds, resolveCanvasSelection } = __appScope;
       if (!isEditMode || (rawActiveSelectedNodeIds.length === 0 && rawActiveSelectedEdgeIds.length === 0)) {
@@ -1095,7 +1096,7 @@ export function createAppHookCallback11(__appScope: Record<string, any>) {
     };
 }
 
-export function createAppHookCallback12(__appScope: Record<string, any>) {
+export function createAppHookCallback12(__appScope: ToolbarHookScope) {
   return () => {
   const { DEFAULT_MODEL_LAYER_ID, PARAM_LABELS, activeSelectedNodeIds, canBatchEditParam, customDeviceTemplates, deviceDefinitionOverrides, enumValuesForRow, getEParamValue, nodeById, parseCustomDefinitions, templateDerivedComponentLibraryInfo } = __appScope;
     const selectedNodes = activeSelectedNodeIds.flatMap((nodeId: string) => nodeById.get(nodeId) ?? []);
@@ -1198,7 +1199,7 @@ export function createAppHookCallback12(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback13(__appScope: Record<string, any>) {
+export function createAppHookCallback13(__appScope: ToolbarHookScope) {
   return () => {
   const { BATCH_MEASUREMENT_GROUP_KEYS, BATCH_MEASUREMENT_GROUP_LABELS, activeSelectedNodeIds, isStaticGraphicNode, measurementGroupCommonValue, measurementGroupsForNode, nodeById, projectMeasurements } = __appScope;
     const selectedNodes = activeSelectedNodeIds.flatMap((nodeId: string) => nodeById.get(nodeId) ?? []).filter((node: ModelNode) => !isStaticGraphicNode(node));
@@ -1221,7 +1222,7 @@ export function createAppHookCallback13(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback14(__appScope: Record<string, any>) {
+export function createAppHookCallback14(__appScope: ToolbarHookScope) {
   return () => {
   const { normalizeLibrarySearchText, projectSearchNeedle, projectModelTypeFilter, schemes } = __appScope;
     const hasTypeFilter = projectModelTypeFilter && projectModelTypeFilter.length > 0;
@@ -1245,7 +1246,7 @@ export function createAppHookCallback14(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback15(__appScope: Record<string, any>) {
+export function createAppHookCallback15(__appScope: ToolbarHookScope) {
   return () => {
   const { customDeviceDraft, customDeviceStatePageId, normalizeStatePageId, setCustomDeviceStatePageId } = __appScope;
     const activeId = normalizeStatePageId(customDeviceDraft.stateDefinitions, customDeviceStatePageId);
@@ -1255,7 +1256,7 @@ export function createAppHookCallback15(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback16(__appScope: Record<string, any>) {
+export function createAppHookCallback16(__appScope: ToolbarHookScope) {
   return () => {
   const { definitionStateDraftRows, definitionStatePageId, normalizeStatePageId, setDefinitionStatePageId } = __appScope;
     const activeId = normalizeStatePageId(definitionStateDraftRows, definitionStatePageId);
@@ -1265,14 +1266,14 @@ export function createAppHookCallback16(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback17(__appScope: Record<string, any>) {
+export function createAppHookCallback17(__appScope: ToolbarHookScope) {
   return () => {
   const { libraryFlyoutPositions, libraryFlyoutPositionsRef } = __appScope;
     libraryFlyoutPositionsRef.current = libraryFlyoutPositions;
   };
 }
 
-export function createAppHookCallback18(__appScope: Record<string, any>) {
+export function createAppHookCallback18(__appScope: ToolbarHookScope) {
   return () => {
   const { componentLibraryDisplayMode, fitLibraryFlyoutsToVisibleArea, leftPanelTab, libraryFlyoutPositionsRef, setLibraryFlyoutPositions, templateLibraryDisplayMode } = __appScope;
     if (leftPanelTab !== "library" && leftPanelTab !== "templates") {
@@ -1292,7 +1293,7 @@ export function createAppHookCallback18(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback19(__appScope: Record<string, any>) {
+export function createAppHookCallback19(__appScope: ToolbarHookScope) {
   return () => {
   const { componentLibraryDisplayMode, hideLibraryFlyout, leftPanelTab, librarySearchNeedle, templateLibraryDisplayMode, templateLibrarySearchNeedle } = __appScope;
     const keepComponentFlyout = leftPanelTab === "library" && componentLibraryDisplayMode === "right" && !librarySearchNeedle;
@@ -1303,7 +1304,7 @@ export function createAppHookCallback19(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback20(__appScope: Record<string, any>) {
+export function createAppHookCallback20(__appScope: ToolbarHookScope) {
   return () => {
   const { componentLibraryDisplayMode, hideLibraryFlyout, hoveredCategoryLibraryComponentLibrary, hoveredGraphTemplateType, leftPanelTab, templateLibraryDisplayMode } = __appScope;
     const componentFlyoutActive = leftPanelTab === "library" && componentLibraryDisplayMode === "right" && Boolean(hoveredCategoryLibraryComponentLibrary);
@@ -1329,7 +1330,7 @@ export function createAppHookCallback20(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback21(__appScope: Record<string, any>) {
+export function createAppHookCallback21(__appScope: ToolbarHookScope) {
   return () => {
   const { E_SECTION_OPTIONS, categoryLibraries, customComponentLibraries, defaultCategoryLibraryForComponentLibrary, libraryTemplates, normalizeCategoryLibraryName, normalizeComponentLibraryName, resolveTemplateComponentLibrary } = __appScope;
     const groupedOptions = new Map<string, string[]>();
@@ -1357,7 +1358,7 @@ export function createAppHookCallback21(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback22(__appScope: Record<string, any>) {
+export function createAppHookCallback22(__appScope: ToolbarHookScope) {
   return () => {
   const { componentLibraryOptionsByCategoryLibrary, customDeviceDraft, normalizeCategoryLibraryName, normalizeComponentLibraryName } = __appScope;
     const group = normalizeCategoryLibraryName(customDeviceDraft.categoryLibraryName);
@@ -1367,7 +1368,7 @@ export function createAppHookCallback22(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback23(__appScope: Record<string, any>) {
+export function createAppHookCallback23(__appScope: ToolbarHookScope) {
   return () => {
   const { componentLibraryOptionsByCategoryLibrary, customDeviceDraft, definitionDraftSection, normalizeCategoryLibraryName, normalizeComponentLibraryName, selectedDefinitionTemplate } = __appScope;
     const group = normalizeCategoryLibraryName(selectedDefinitionTemplate?.categoryLibrary ?? customDeviceDraft.categoryLibraryName);
@@ -1377,7 +1378,7 @@ export function createAppHookCallback23(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback24(__appScope: Record<string, any>) {
+export function createAppHookCallback24(__appScope: ToolbarHookScope) {
   return () => {
   const { DEFAULT_MODEL_LAYER_ID, activeLayerId, layers, setActiveLayerId, setLayers } = __appScope;
     if (!layers.some((layer: ModelLayer) => layer.id === activeLayerId)) {
@@ -1391,7 +1392,7 @@ export function createAppHookCallback24(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback25(__appScope: Record<string, any>) {
+export function createAppHookCallback25(__appScope: ToolbarHookScope) {
   return () => {
   const { activeLayerEdgeIdSet, activeLayerNodeIdSet, setConnectSource, setRewiring, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, setTerminalPress } = __appScope;
     setSelectedNodeIds((current: string[]) => current.filter((nodeId: string) => activeLayerNodeIdSet.has(nodeId)));
@@ -1403,7 +1404,7 @@ export function createAppHookCallback25(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback26(__appScope: Record<string, any>) {
+export function createAppHookCallback26(__appScope: ToolbarHookScope) {
   return () => {
   const { activeSelectionKey, previousAutoInspectorSelectionKeyRef, selectedCount, setInspectorTab } = __appScope;
     if (previousAutoInspectorSelectionKeyRef.current === activeSelectionKey) {
@@ -1416,7 +1417,7 @@ export function createAppHookCallback26(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback27(__appScope: Record<string, any>) {
+export function createAppHookCallback27(__appScope: ToolbarHookScope) {
   return () => {
   const { activeSelectedNodeIds, formatStatusRotationDegrees, formatStatusScalePercent, getNodeScaleX, getNodeScaleY, normalizeRotationDegrees, visibleNodeById } = __appScope;
     const selectedNodes = activeSelectedNodeIds.flatMap((nodeId: string) => visibleNodeById.get(nodeId) ?? []);
@@ -1446,7 +1447,7 @@ export function createAppHookCallback27(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback28(__appScope: Record<string, any>) {
+export function createAppHookCallback28(__appScope: ToolbarHookScope) {
   return () => {
   const { editHotInteractionActive, elementTreeLayerSignature, elementTreeSourceRef, graphStore, graphTreePanelActive, visibleEdges, visibleNodes } = __appScope;
     const current = elementTreeSourceRef.current;
@@ -1469,7 +1470,7 @@ export function createAppHookCallback28(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback29(__appScope: Record<string, any>) {
+export function createAppHookCallback29(__appScope: ToolbarHookScope) {
   return () => {
   const { buildElementTree, deferredElementTreeSource, elementTreeCacheRef, elementTreeSignature, graphTreePanelActive, libraryTemplates } = __appScope;
     if (!graphTreePanelActive) {
@@ -1484,7 +1485,7 @@ export function createAppHookCallback29(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback30(__appScope: Record<string, any>) {
+export function createAppHookCallback30(__appScope: ToolbarHookScope) {
   return () => {
   const { activeLayerEdgeIdSet, activeLayerNodeIdSet, activeSelectedEdgeIds, activeSelectedNodeIds, graphTreePanelActive } = __appScope;
     if (!graphTreePanelActive) {
@@ -1499,7 +1500,7 @@ export function createAppHookCallback30(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback31(__appScope: Record<string, any>) {
+export function createAppHookCallback31(__appScope: ToolbarHookScope) {
   return () => {
   const { elementTree, elementTreeItemChildren, elementTreeSearchNeedle } = __appScope;
     if (!elementTreeSearchNeedle) {
@@ -1548,7 +1549,7 @@ export function createAppHookCallback31(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback32(__appScope: Record<string, any>) {
+export function createAppHookCallback32(__appScope: ToolbarHookScope) {
   return () => {
   const { elementTreeCommittedDraftValue, elementTreeEditDrafts, setElementTreeEditDrafts } = __appScope;
     if (Object.keys(elementTreeEditDrafts).length === 0) {
@@ -1569,7 +1570,7 @@ export function createAppHookCallback32(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback33(__appScope: Record<string, any>) {
+export function createAppHookCallback33(__appScope: ToolbarHookScope) {
   return () => {
   const { selectedEdgeId, setSelectedEdgeIds } = __appScope;
     setSelectedEdgeIds((current: string[]) => {
@@ -1581,7 +1582,7 @@ export function createAppHookCallback33(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback34(__appScope: Record<string, any>) {
+export function createAppHookCallback34(__appScope: ToolbarHookScope) {
   return () => {
   const { busNodeIdSet, connectSource, dirtyEdgeIdsAfterMove, dragging, graphStore, graphStoreApplyPatch, lastBusTerminalSyncEndpointRevisionRef, latestGraphStoreRef, manualPathDrag, markRouteEdgesDirty, markStoredRouteEdgesDirty, pendingBusTerminalSyncNodeIdsRef, rewiring, scheduleIdleWork, setGraphStore, suppressNextGraphDirtyRef, synchronizePendingBusTerminalsWithGraphStore, terminalPress } = __appScope;
     const pendingBusSyncNodeIds = pendingBusTerminalSyncNodeIdsRef.current;
@@ -1648,7 +1649,7 @@ export function createAppHookCallback34(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback35(__appScope: Record<string, any>) {
+export function createAppHookCallback35(__appScope: ToolbarHookScope) {
   return () => {
   const { elementTree, graphTreePanelActive, setCollapsedElementTreeDeviceGroups, setCollapsedElementTreeGroups, setElementTreeItemLimits } = __appScope;
     if (!graphTreePanelActive) {
@@ -1673,7 +1674,7 @@ export function createAppHookCallback35(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback36(__appScope: Record<string, any>) {
+export function createAppHookCallback36(__appScope: ToolbarHookScope) {
   return () => {
   const { ELEMENT_TREE_INITIAL_ITEM_LIMIT, ELEMENT_TREE_ITEM_LIMIT_STEP, elementTree, graphTreePanelActive, selectedElementTreeItemKey, setCollapsedElementTreeDeviceGroups, setCollapsedElementTreeGroups, setElementTreeItemLimits, setElementTreeItemWindows } = __appScope;
     if (!graphTreePanelActive || !selectedElementTreeItemKey) {
@@ -1723,7 +1724,7 @@ export function createAppHookCallback36(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback37(__appScope: Record<string, any>) {
+export function createAppHookCallback37(__appScope: ToolbarHookScope) {
   return () => {
   const { elementTreeItemRefs, graphTreePanelActive, selectedElementTreeItemKey } = __appScope;
     if (!graphTreePanelActive || !selectedElementTreeItemKey) {
@@ -1736,7 +1737,7 @@ export function createAppHookCallback37(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback39(__appScope: Record<string, any>) {
+export function createAppHookCallback39(__appScope: ToolbarHookScope) {
   return () => {
   const { inspectorTopologyErrors, setTopologyWarningPanelClosed } = __appScope;
     if (inspectorTopologyErrors.length === 0) {
@@ -1745,7 +1746,7 @@ export function createAppHookCallback39(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback40(__appScope: Record<string, any>) {
+export function createAppHookCallback40(__appScope: ToolbarHookScope) {
   return () => {
   const { clampCanvasNoScrollOffsetPoint, setCanvasNoScrollOffset } = __appScope;
     setCanvasNoScrollOffset((current: Point) => {
@@ -1755,7 +1756,7 @@ export function createAppHookCallback40(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback41(__appScope: Record<string, any>) {
+export function createAppHookCallback41(__appScope: ToolbarHookScope) {
   return () => {
   const { hideLibraryFlyout, leftPanelVisible } = __appScope;
     if (!leftPanelVisible) {
@@ -1764,14 +1765,14 @@ export function createAppHookCallback41(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback42(__appScope: Record<string, any>) {
+export function createAppHookCallback42(__appScope: ToolbarHookScope) {
   return () => {
   const { updateCanvasFrameViewportAndVisibleBox } = __appScope;
     updateCanvasFrameViewportAndVisibleBox();
   };
 }
 
-export function createAppHookCallback43(__appScope: Record<string, any>) {
+export function createAppHookCallback43(__appScope: ToolbarHookScope) {
   return () => {
   const { canvasBounds, canvasFrameRef, canvasFrameViewportSize, canvasFullViewBox, fitWholeCanvasViewBox, initialCanvasFitAppliedRef, scheduleCanvasVisibleViewBoxUpdate, setCanvasNoScrollOffset, setCanvasVisibleViewBox, setViewBox } = __appScope;
     if (initialCanvasFitAppliedRef.current) {
@@ -1790,7 +1791,7 @@ export function createAppHookCallback43(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback44(__appScope: Record<string, any>) {
+export function createAppHookCallback44(__appScope: ToolbarHookScope) {
   return () => {
   const { canvasBoundsScrollSyncPendingRef, canvasFrameRef, canvasFrameViewportSize, canvasFrameViewportSizeChanged, canvasScrollSyncShouldRun, pendingCanvasBoundsScrollAnchorRef, pendingCanvasResizeCommitAnchorRef, pendingWheelZoomAnchorRef, scheduleCanvasVisibleViewBoxUpdate, skipNextCanvasScrollSyncRef, syncCanvasFrameScrollToCanvasResizeCommitAnchor, syncCanvasFrameScrollToViewBox, syncCanvasFrameScrollToWheelAnchor, updateCanvasFrameViewportSize, viewBox } = __appScope;
     const pendingWheelZoomAnchor = pendingWheelZoomAnchorRef.current;
@@ -1832,7 +1833,7 @@ export function createAppHookCallback44(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback45(__appScope: Record<string, any>) {
+export function createAppHookCallback45(__appScope: ToolbarHookScope) {
   return () => {
   const { ResizeObserver, canvasFrameRef, handleCanvasFrameScroll, updateCanvasFrameViewportAndVisibleBox } = __appScope;
     const frame = canvasFrameRef.current;
@@ -1853,14 +1854,14 @@ export function createAppHookCallback45(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback46(__appScope: Record<string, any>) {
+export function createAppHookCallback46(__appScope: ToolbarHookScope) {
   return () => {
   const { canvasHeight, canvasWidth, setCanvasSizeDraft } = __appScope;
     setCanvasSizeDraft({ width: String(canvasWidth), height: String(canvasHeight) });
   };
 }
 
-export function createAppHookCallback47(__appScope: Record<string, any>) {
+export function createAppHookCallback47(__appScope: ToolbarHookScope) {
   return () => {
   const { colorDisplayMode, colorPalette, themeMode, connectSource, getBusTerminalType, getTerminalDisplayColor, terminalColor, visibleNodeById } = __appScope;
     if (!connectSource) {
@@ -1879,7 +1880,7 @@ export function createAppHookCallback47(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback48(__appScope: Record<string, any>) {
+export function createAppHookCallback48(__appScope: ToolbarHookScope) {
   return () => {
   const { colorPalette, routableLinePlacement, routableLineTemplateTerminalType, terminalColor } = __appScope;
     if (!routableLinePlacement) {
@@ -1889,7 +1890,7 @@ export function createAppHookCallback48(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback49(__appScope: Record<string, any>) {
+export function createAppHookCallback49(__appScope: ToolbarHookScope) {
   return () => {
   const { colorPalette, nodeById, routableLineEndpointDrag, terminalColor } = __appScope;
     if (!routableLineEndpointDrag) {
@@ -1901,7 +1902,7 @@ export function createAppHookCallback49(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback50(__appScope: Record<string, any>) {
+export function createAppHookCallback50(__appScope: ToolbarHookScope) {
   return () => {
   const { connectSource, dragging, hasUnsavedChanges, manualPathDrag, rewiring, routableLineEndpointDrag, routableLinePlacement, routeRenderingReady, setRouteRenderingReady, terminalPress } = __appScope;
     if (routeRenderingReady) {
@@ -1913,7 +1914,7 @@ export function createAppHookCallback50(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback51(__appScope: Record<string, any>) {
+export function createAppHookCallback51(__appScope: ToolbarHookScope) {
   return () => {
   const { cachedRouteInputRef, graphStore, routeInputLayerSignature, visibleEdges, visibleNodes } = __appScope;
     const cachedRouteInput = cachedRouteInputRef.current;
@@ -1935,14 +1936,14 @@ export function createAppHookCallback51(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback52(__appScope: Record<string, any>) {
+export function createAppHookCallback52(__appScope: ToolbarHookScope) {
   return () => {
     const ids = new Set<string>();
     return ids;
   };
 }
 
-export function createAppHookCallback53(__appScope: Record<string, any>) {
+export function createAppHookCallback53(__appScope: ToolbarHookScope) {
   return (): { routes: RoutedEdge[]; store: RouteStore | null } => {
   const { affectedRoutingEdgeIds, cachedRouteStoreRef, cachedRoutedEdgesRef, canvasBounds, editModeRouteRenderOptions, isEditMode, patchStoredRouteStoreForEdgeIds, pendingRouteEdgeIdsRef, pendingStoredRouteEdgeIdsRef, routeEdgesForCachedStoredRendering, routeEdgesForIncrementalRendering, routeEdgesForSavedPathRendering, routeInput, routeRenderingEnabled, routingEdges, routingNodes } = __appScope;
     if (!routeRenderingEnabled) {
@@ -1992,7 +1993,7 @@ export function createAppHookCallback53(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback54(__appScope: Record<string, any>) {
+export function createAppHookCallback54(__appScope: ToolbarHookScope) {
   return () => {
   const { cachedRouteStoreRef, cachedRoutedEdgesRef, committedRouteDirtyGeneration, pendingRouteEdgeIdsRef, pendingStoredRouteEdgeIdsRef, routeDirtyGenerationRef, routedEdgeStore, routedEdges } = __appScope;
     if (routeDirtyGenerationRef.current !== committedRouteDirtyGeneration) {
@@ -2005,7 +2006,7 @@ export function createAppHookCallback54(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback55(__appScope: Record<string, any>) {
+export function createAppHookCallback55(__appScope: ToolbarHookScope) {
   return () => {
   const { renderViewportBounds, sameRenderViewportBounds, snapRenderViewportBoundsForQuery, viewportQueryBoundsCacheRef } = __appScope;
     const nextViewportQueryBounds = snapRenderViewportBoundsForQuery(renderViewportBounds);
@@ -2021,7 +2022,7 @@ export function createAppHookCallback55(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback56(__appScope: Record<string, any>) {
+export function createAppHookCallback56(__appScope: ToolbarHookScope) {
   return () => {
   const { activeSelectedEdgeSet, displaySelectedEdgeKey, effectiveViewportQueryBounds, queryRouteSpatialIndex, readViewportResultCache, routeRenderOrder, routedEdgeById, routedEdgeIndexById, routedEdgeSpatialIndex, routedEdgeStore, viewportBoundsCacheKey, viewportRoutedEdgesResultCacheRef, writeViewportResultCache } = __appScope;
     const viewportQueryCacheKey = viewportBoundsCacheKey(effectiveViewportQueryBounds);
@@ -2064,7 +2065,7 @@ export function createAppHookCallback56(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback57(__appScope: Record<string, any>) {
+export function createAppHookCallback57(__appScope: ToolbarHookScope) {
   return () => {
   const { connectSource, displaySelectedEdgeKey, displaySelectedNodeKey, draggingNodeIdSet, draggingNodeKey, edgeById, effectiveViewportQueryBounds, graphStore, queryNodeSpatialIndex, readViewportResultCache, routedEdgeStore, selectedNodeIdSet, viewportBoundsCacheKey, viewportNodesResultCacheRef, viewportRoutedEdges, visibleNodeById, visibleNodeIdSet, visibleNodeSpatialIndex, writeViewportResultCache } = __appScope;
     const viewportQueryCacheKey = viewportBoundsCacheKey(effectiveViewportQueryBounds);
@@ -2109,7 +2110,7 @@ export function createAppHookCallback57(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback58(__appScope: Record<string, any>) {
+export function createAppHookCallback58(__appScope: ToolbarHookScope) {
   return () => {
   const { EMPTY_CANVAS_LAYOUT_UNITS, activeLayerEdges, activeLayerGroups, activeLayerNodes, activeSelectedEdgeIds, buildCanvasLayoutUnits, editHotInteractionActive, isCanvasNodeMovable, isEditMode, routedEdges, selectedLayoutUnitsCacheRef, transformableActiveSelectedNodeIds } = __appScope;
       if (!isEditMode) {
@@ -2137,7 +2138,7 @@ export function createAppHookCallback58(__appScope: Record<string, any>) {
     };
 }
 
-export function createAppHookCallback59(__appScope: Record<string, any>) {
+export function createAppHookCallback59(__appScope: ToolbarHookScope) {
   return () => {
   const { activeLayerNodeIdSet, activeSelectedNodeIds, isEditMode, isRoutableLineDeviceKind, routableLineDeviceCanvasPoints, routableLineEndpointDrag, visibleNodeById } = __appScope;
     if (!isEditMode) {
@@ -2170,7 +2171,7 @@ export function createAppHookCallback59(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback60(__appScope: Record<string, any>) {
+export function createAppHookCallback60(__appScope: ToolbarHookScope) {
   return () => {
   const { canvasBounds, compactPreviewNodes, edgeById, endpointMatchedRoutePointsForEdge, getModelEdgeEndpointPoint, isBusNode, nodeById, nodes, pointsToPreviewPath, preserveConnectionEdgeRouteShape, previewStoredRoutePointsForEdge, resolveStraightBusSlideEndpointToPoint, rewiring, routeEdgesForStoredRendering, routedEdgeById } = __appScope;
     if (!rewiring) {
@@ -2266,7 +2267,7 @@ export function createAppHookCallback60(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback61(__appScope: Record<string, any>) {
+export function createAppHookCallback61(__appScope: ToolbarHookScope) {
   return () => {
   const { canvasBounds, isRoutableLineDeviceKind, nodeById, nodes, pointsToPreviewPath, routableLineDeviceCanvasPoints, routableLineDeviceEndpointRefForNode, routableLineDeviceEndpointRefs, routableLineEndpointDrag, routableLineEndpointPreviewRoutePoints, setRoutableLineDeviceEndpointsPreservingRoute } = __appScope;
     if (!routableLineEndpointDrag) {
@@ -2314,7 +2315,7 @@ export function createAppHookCallback61(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback62(__appScope: Record<string, any>) {
+export function createAppHookCallback62(__appScope: ToolbarHookScope) {
   return () => {
   const { manualPathDrag, pointsToPreviewPath } = __appScope;
     if (!manualPathDrag?.previewRoutePoints?.length) {
@@ -2329,7 +2330,7 @@ export function createAppHookCallback62(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback63(__appScope: Record<string, any>) {
+export function createAppHookCallback63(__appScope: ToolbarHookScope) {
   return () => {
   const { activeLayerNodeIdSet, isEditMode, isRoutableLineDeviceKind, manualPathPreviewRoute, pointsToPreviewPath, routableLineDeviceCanvasPoints, selectedNode, selectedNodeCount } = __appScope;
     if (!isEditMode || selectedNodeCount !== 1 || !selectedNode || !activeLayerNodeIdSet.has(selectedNode.id) || !isRoutableLineDeviceKind(selectedNode.kind)) {
@@ -2349,7 +2350,7 @@ export function createAppHookCallback63(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback64(__appScope: Record<string, any>) {
+export function createAppHookCallback64(__appScope: ToolbarHookScope) {
   return () => {
   const { canvasBounds, compactPreviewNodes, edgeWithFrozenBusEndpointPoints, nodeById, pointsToPreviewPath, preserveConnectionEdgeRouteShape, previewStoredRoutePointsForEdge, resolveStraightBusSlideEndpoint, routeEdgesForStoredRendering, terminalPress, visibleEdgesByTerminalRef, visibleNodes } = __appScope;
     if (!terminalPress?.moved) {
@@ -2397,7 +2398,7 @@ export function createAppHookCallback64(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback65(__appScope: Record<string, any>) {
+export function createAppHookCallback65(__appScope: ToolbarHookScope) {
   return () => {
   const { dragging, draggingDelta, nodeById } = __appScope;
     const preview = new Map<string, ModelNode>();
@@ -2422,7 +2423,7 @@ export function createAppHookCallback65(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback66(__appScope: Record<string, any>) {
+export function createAppHookCallback66(__appScope: ToolbarHookScope) {
   return () => {
   const { CONNECT_TERMINAL_SNAP_TOLERANCE, dragPreviewMovedNodeById, dragging, draggingDelta, draggingNodeIdSet, getNodeScaleX, getNodeScaleY, isMultiNodeMoveState, nodeById } = __appScope;
     if (!dragging || !draggingDelta || isMultiNodeMoveState(dragging)) {
@@ -2500,7 +2501,7 @@ export function createAppHookCallback66(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback67(__appScope: Record<string, any>) {
+export function createAppHookCallback67(__appScope: ToolbarHookScope) {
   return () => {
   const { candidateNodeIntersectsInteractionBounds, dragInteractionBounds, dragPreviewMovedNodeById, dragging, draggingDelta, isMultiNodeMoveState, nodeById, queryNodeSpatialIndex, visibleNodeIdSet, visibleNodeSpatialIndex, visibleNodes } = __appScope;
     if (isMultiNodeMoveState(dragging)) {
@@ -2536,7 +2537,7 @@ export function createAppHookCallback67(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback68(__appScope: Record<string, any>) {
+export function createAppHookCallback68(__appScope: ToolbarHookScope) {
   return () => {
   const { scheduleIdleWork, setStaticTerminalOverlapReadyKey, staticTerminalOverlapDeferred, staticTerminalOverlapSourceKey } = __appScope;
     if (!staticTerminalOverlapDeferred) {
@@ -2548,7 +2549,7 @@ export function createAppHookCallback68(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback69(__appScope: Record<string, any>) {
+export function createAppHookCallback69(__appScope: ToolbarHookScope) {
   return () => {
   const { getOverlappingTerminalGroups, getTerminalBusContactGroups, suppressDragTerminalInteraction, terminalOverlapAffectedNodeIds, terminalOverlapCalculationReady, terminalOverlapNodes } = __appScope;
       if (suppressDragTerminalInteraction) {
@@ -2570,7 +2571,7 @@ export function createAppHookCallback69(__appScope: Record<string, any>) {
     };
 }
 
-export function createAppHookCallback70(__appScope: Record<string, any>) {
+export function createAppHookCallback70(__appScope: ToolbarHookScope) {
   return () => {
   const { colorPalette, dragPreviewNodeFor, getBusTerminalType, isBusNode, nodeTerminalSnapTarget, terminalColor } = __appScope;
     if (!nodeTerminalSnapTarget) {
@@ -2584,7 +2585,7 @@ export function createAppHookCallback70(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback71(__appScope: Record<string, any>) {
+export function createAppHookCallback71(__appScope: ToolbarHookScope) {
   return () => {
   const { activeDropReady, drawingModeActive } = __appScope;
     document.body.classList.toggle("canvas-drawing-mode", drawingModeActive);
@@ -2596,7 +2597,7 @@ export function createAppHookCallback71(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback72(__appScope: Record<string, any>) {
+export function createAppHookCallback72(__appScope: ToolbarHookScope) {
   return () => {
   const { groupTransformGeometry, isGroupTransformDrag, pointsToPreviewPath, transformDrag, transformGroupPoint, visibleEdgeIdSet } = __appScope;
     if (!transformDrag || !isGroupTransformDrag(transformDrag) || !transformDrag.previewPoint) {
@@ -2616,7 +2617,7 @@ export function createAppHookCallback72(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback73(__appScope: Record<string, any>) {
+export function createAppHookCallback73(__appScope: ToolbarHookScope) {
   return () => {
   const { isGroupTransformDrag, routableLineNodeIdsByEndpointNodeId, transformDrag } = __appScope;
     if (!transformDrag || !isGroupTransformDrag(transformDrag) || !transformDrag.previewPoint) {
@@ -2632,7 +2633,7 @@ export function createAppHookCallback73(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback74(__appScope: Record<string, any>) {
+export function createAppHookCallback74(__appScope: ToolbarHookScope) {
   return () => {
   const { buildLightweightNodeDragPreviewRoutes, dragging, draggingDelta, isMultiNodeMoveState, singleNodeDragPreviewEdges } = __appScope;
     if (!dragging || !draggingDelta) {
@@ -2645,7 +2646,7 @@ export function createAppHookCallback74(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback75(__appScope: Record<string, any>) {
+export function createAppHookCallback75(__appScope: ToolbarHookScope) {
   return () => {
   const { buildRoutableLineDragGhostRoutesForNodeIds, cachedConnectionStrokeColor, dragMovedNodeIdSet, dragging, draggingDelta, draggingNodeIdSet, isMultiNodeMoveState, nodeById, pointsToPreviewPath, visibleEdgeIdSet } = __appScope;
     if (!dragging || (!draggingDelta && !isMultiNodeMoveState(dragging))) {
@@ -2683,7 +2684,7 @@ export function createAppHookCallback75(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback76(__appScope: Record<string, any>) {
+export function createAppHookCallback76(__appScope: ToolbarHookScope) {
   return () => {
   const { containerParamViewId, selectedContainerParameterViews, setContainerParamViewId } = __appScope;
     if (selectedContainerParameterViews.length === 0) {
@@ -2698,7 +2699,7 @@ export function createAppHookCallback76(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback77(__appScope: Record<string, any>) {
+export function createAppHookCallback77(__appScope: ToolbarHookScope) {
   return () => {
   const { __appScopeRef, backendSchemesLoadTokenRef, backendSchemesLoadedRef, clearActiveProjectDisplay, fetchBackendSchemes, findSavedProjectByActivePointer, flattenSavedSchemes, latestActiveProjectPointerRef, loadSavedProjectRecord, manualModelSelectionRef, rememberPersistedSchemesPayload, saveRequiredRef, serializeSchemesForStorage, setExpandedSchemeIds, setSchemesState, suppressNextBackendSchemeSyncRef } = __appScope;
     // activeSchemeKey 为什么必须走 ref、不能在上面解构：
@@ -2847,7 +2848,7 @@ export function createAppHookCallback77(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback78(__appScope: Record<string, any>) {
+export function createAppHookCallback78(__appScope: ToolbarHookScope) {
   return () => {
   const { backendColorConfigLoadedRef, colorDisplayMode, colorPalette, fetchBackendColorConfig, lastPersistedColorConfigPayloadRef, saveBackendColorConfigPayload, serializeColorConfigForStorage, setColorDisplayMode, setColorPalette, setColorPaletteDraft, setColorPaletteTab, suppressNextBackendColorSyncRef } = __appScope;
     fetchBackendColorConfig()
@@ -2877,7 +2878,7 @@ export function createAppHookCallback78(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback79(__appScope: Record<string, any>) {
+export function createAppHookCallback79(__appScope: ToolbarHookScope) {
   return () => {
   const { backendDeviceLibraryLoadedRef, customCategoryLibraries, customComponentLibraries, customDeviceTemplates, customGraphTemplateTypes, customGraphTemplates, deviceDefinitionOverrides, eDeviceDefinitionLabels, eDeviceDefinitionClassExportEnabled, eDeviceDefinitionFieldOrder, eDeviceDefinitionTableIds, eDeviceDefinitionTemplateFields, fetchBackendDeviceLibrary, lastPersistedDeviceLibraryPayloadRef, saveBackendDeviceLibraryPayload, serializeDeviceLibraryForStorage, setCustomCategoryLibraries, setCustomComponentLibraries, setCustomDeviceTemplates, setCustomGraphTemplateTypes, setCustomGraphTemplates, setDeviceDefinitionOverrides, setEDeviceDefinitionLabels, setEDeviceDefinitionClassExportEnabled, setEDeviceDefinitionFieldOrder, setEDeviceDefinitionTableIds, setEDeviceDefinitionTemplateFields, suppressNextBackendDeviceLibrarySyncRef } = __appScope;
     fetchBackendDeviceLibrary()
@@ -2931,7 +2932,7 @@ export function createAppHookCallback79(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback80(__appScope: Record<string, any>) {
+export function createAppHookCallback80(__appScope: ToolbarHookScope) {
   return () => {
   const { backendMeasurementConfigLoadedRef, fetchBackendMeasurementConfig, lastPersistedMeasurementConfigPayloadRef, measurementConfig, saveBackendMeasurementConfigPayload, serializeMeasurementConfigForStorage, setMeasurementConfig, writeMeasurementConfig } = __appScope;
     fetchBackendMeasurementConfig()
@@ -2958,7 +2959,7 @@ export function createAppHookCallback80(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback81(__appScope: Record<string, any>) {
+export function createAppHookCallback81(__appScope: ToolbarHookScope) {
   return () => {
   const { lastPersistedSchemesPayloadRef, rememberPersistedSchemesPayload, schemes, serializeSchemesForStorage, suppressNextBackendSchemeSyncRef } = __appScope;
     const timeoutId = window.setTimeout(() => {
@@ -2979,7 +2980,7 @@ export function createAppHookCallback81(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback82(__appScope: Record<string, any>) {
+export function createAppHookCallback82(__appScope: ToolbarHookScope) {
   return () => {
   const { backendDeviceLibraryLoadedRef, customCategoryLibraries, customComponentLibraries, customDeviceTemplates, customGraphTemplateTypes, customGraphTemplates, deviceDefinitionOverrides, eDeviceDefinitionLabels, eDeviceDefinitionClassExportEnabled, eDeviceDefinitionFieldOrder, eDeviceDefinitionTemplateFields, eDeviceDefinitionInterfaceDialogOpen, lastPersistedDeviceLibraryPayloadRef, normalizeDeviceLibraryPersistencePayload, saveBackendDeviceLibraryPayload, suppressNextBackendDeviceLibrarySyncRef, writeLocalDeviceLibraryPersistencePayload } = __appScope;
     if (eDeviceDefinitionInterfaceDialogOpen) {
@@ -3022,7 +3023,7 @@ export function createAppHookCallback82(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback83(__appScope: Record<string, any>) {
+export function createAppHookCallback83(__appScope: ToolbarHookScope) {
   return () => {
   const { COLOR_DISPLAY_MODE_STORAGE_KEY, COLOR_PALETTE_STORAGE_KEY, backendColorConfigLoadedRef, colorDisplayMode, colorPalette, lastPersistedColorConfigPayloadRef, normalizeColorPalette, saveBackendColorConfigPayload, serializeColorConfigForStorage, suppressNextBackendColorSyncRef } = __appScope;
     const timeoutId = window.setTimeout(() => {
@@ -3056,7 +3057,7 @@ export function createAppHookCallback83(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback84(__appScope: Record<string, any>) {
+export function createAppHookCallback84(__appScope: ToolbarHookScope) {
   return () => {
   const { activeImageFolderId, imageAssetsToMap, imageLibraryInitializedRef, imageTarget, localImageAssetsFromStorage, refreshImageFolders, refreshImagesForFolder, setImageAssetList, setImageAssets } = __appScope;
     if (!imageTarget || imageTarget.sourceMode === "catalogOnly") {
@@ -3076,7 +3077,7 @@ export function createAppHookCallback84(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback85(__appScope: Record<string, any>) {
+export function createAppHookCallback85(__appScope: ToolbarHookScope) {
   return () => {
   const { ACTIVE_PROJECT_STORAGE_KEY, activeProjectKey, activeProjectPointerPayload, activeSchemeKey, backendSchemesLoadedRef, schemes } = __appScope;
     const activePointerPayload = activeProjectPointerPayload(schemes, activeProjectKey, activeSchemeKey);
@@ -3091,7 +3092,7 @@ export function createAppHookCallback85(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback86(__appScope: Record<string, any>) {
+export function createAppHookCallback86(__appScope: ToolbarHookScope) {
   return () => {
   const { activeSchemeKey, flattenSavedSchemes, schemes, selectedSchemeId, setExpandedSchemeIds } = __appScope;
     setExpandedSchemeIds((current: string[]) => {
@@ -3111,7 +3112,7 @@ export function createAppHookCallback86(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback87(__appScope: Record<string, any>) {
+export function createAppHookCallback87(__appScope: ToolbarHookScope) {
   return () => {
   const { canvasWheelTargetIsRenderedCanvas, clientPointInsideRenderedCanvas, isCanvasWheelZoomExcludedTarget, shouldZoomCanvasFromWheelEvent, zoomCanvasFromWheelEvent } = __appScope;
     const preventPageWheelZoom = (event: WheelEvent) => {
@@ -3131,7 +3132,7 @@ export function createAppHookCallback87(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback88(__appScope: Record<string, any>) {
+export function createAppHookCallback88(__appScope: ToolbarHookScope) {
   return () => {
   const { setContextMenu, setProjectMenu, setTemplateMenu } = __appScope;
     const closeContextMenus = (event: globalThis.PointerEvent) => {
@@ -3151,7 +3152,7 @@ export function createAppHookCallback88(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback89(__appScope: Record<string, any>) {
+export function createAppHookCallback89(__appScope: ToolbarHookScope) {
   return () => {
   const { layerManagementDropdownRef } = __appScope;
     const blurLayerManagementDropdownFocus = () => {
@@ -3182,7 +3183,7 @@ export function createAppHookCallback89(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback90(__appScope: Record<string, any>) {
+export function createAppHookCallback90(__appScope: ToolbarHookScope) {
   return () => {
   const { CONTEXT_MENU_AUTO_HIDE_MARGIN, contextMenu, setContextMenu } = __appScope;
     if (!contextMenu || contextMenu.target !== "blank") {
@@ -3225,7 +3226,7 @@ export function createAppHookCallback90(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback91(__appScope: Record<string, any>) {
+export function createAppHookCallback91(__appScope: ToolbarHookScope) {
   return () => {
   const { canvasVisibleViewBoxFrameRef, connectPreviewFrameRef, keyboardMoveActiveKeyDeltasRef, keyboardMoveCommitCancelRef, keyboardMoveFrameElapsedMsRef, keyboardMoveFrameRef, keyboardMoveLastFrameTimeRef, mouseStatusFrameRef, pendingKeyboardMoveDeltaRef, pendingWheelZoomRequestRef, staticButtonFeedbackTimeoutRef, wheelZoomFrameRef } = __appScope;
     return () => {
@@ -3264,7 +3265,7 @@ export function createAppHookCallback91(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback92(__appScope: Record<string, any>) {
+export function createAppHookCallback92(__appScope: ToolbarHookScope) {
   return () => {
   const { persistRefreshRecoveryNow, saveRequired } = __appScope;
     let isViteFullReload = false;
@@ -3294,7 +3295,7 @@ export function createAppHookCallback92(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback93(__appScope: Record<string, any>) {
+export function createAppHookCallback93(__appScope: ToolbarHookScope) {
   return () => {
   const { clearRefreshRecoveryProject, hasUnsavedChanges } = __appScope;
     if (!hasUnsavedChanges) {
@@ -3303,14 +3304,14 @@ export function createAppHookCallback93(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback94(__appScope: Record<string, any>) {
+export function createAppHookCallback94(__appScope: ToolbarHookScope) {
   return () => {
   const { connectDropReady, connectDropReadyRef } = __appScope;
     connectDropReadyRef.current = connectDropReady;
   };
 }
 
-export function createAppHookCallback95(__appScope: Record<string, any>) {
+export function createAppHookCallback95(__appScope: ToolbarHookScope) {
   return () => {
   const { buildConnectPreviewPath, connectDropTargetPointRef, connectDropTargetRef, connectPreviewPointRef, connectSource, setConnectPreviewDom } = __appScope;
     if (!connectSource || !connectPreviewPointRef.current) {
@@ -3324,7 +3325,7 @@ export function createAppHookCallback95(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback96(__appScope: Record<string, any>) {
+export function createAppHookCallback96(__appScope: ToolbarHookScope) {
   return () => {
   const { dragUndoCapturedRef, dragging, draggingRef, imperativeMultiNodeDragActiveRef, isMultiNodeMoveState, multiNodeDragOverlayDeltaRef, resetMultiNodeDragOverlayTransform, updateMultiNodeDragOverlayTransform, updateSmartAlignmentGuides } = __appScope;
     if (imperativeMultiNodeDragActiveRef.current && !dragging) {
@@ -3342,14 +3343,14 @@ export function createAppHookCallback96(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback97(__appScope: Record<string, any>) {
+export function createAppHookCallback97(__appScope: ToolbarHookScope) {
   return () => {
   const { canvasBounds, normalizeViewBoxToCanvas, setViewBox } = __appScope;
     setViewBox((current: CanvasBounds) => normalizeViewBoxToCanvas(current, canvasBounds));
   };
 }
 
-export function createAppHookCallback98(__appScope: Record<string, any>) {
+export function createAppHookCallback98(__appScope: ToolbarHookScope) {
   return () => {
   const { canvasFrameRef, centerCanvasFrameScrollPosition, scheduleCanvasVisibleViewBoxUpdate } = __appScope;
     const frame = canvasFrameRef.current;
@@ -3361,7 +3362,7 @@ export function createAppHookCallback98(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback99(__appScope: Record<string, any>) {
+export function createAppHookCallback99(__appScope: ToolbarHookScope) {
   return () => {
   const { PROJECT_PANEL_MAX_HEIGHT, PROJECT_PANEL_MIN_HEIGHT, projectPanelResize, setProjectPanelHeight, setProjectPanelResize } = __appScope;
     if (!projectPanelResize) {
@@ -3387,7 +3388,7 @@ export function createAppHookCallback99(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback100(__appScope: Record<string, any>) {
+export function createAppHookCallback100(__appScope: ToolbarHookScope) {
   return () => {
   const { SIDE_PANEL_MAX_WIDTH, SIDE_PANEL_MIN_WIDTH, clampPanelDimension, setLeftPanelWidth, setRightPanelWidth, setSidePanelResize, sidePanelResize } = __appScope;
     if (!sidePanelResize) {
@@ -3421,7 +3422,7 @@ export function createAppHookCallback100(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback101(__appScope: Record<string, any>) {
+export function createAppHookCallback101(__appScope: ToolbarHookScope) {
   return () => {
   const { applyCanvasBounds, canvasBoundsRef, canvasFrameRef, canvasHeight, canvasNoScrollOffsetForCanvasResizeAnchor, canvasResizeBoundsFromPointerDrag, canvasResizeDraftRef, canvasResizeDrag, canvasResizeOriginShiftForBounds, canvasResizePreviewRectForDraft, canvasResizeUndoCapturedRef, canvasWidth, clampCanvasBounds, edges, flushSync, hasCanvasOriginShift, nodes, pendingCanvasResizeCommitAnchorRef, pushUndoSnapshot, scheduleCanvasVisibleViewBoxUpdate, setCanvasNoScrollOffset, setCanvasResizeDraft, setCanvasResizeDrag, setGraphArrays, shiftCachedRoutesForCanvasOrigin, syncCanvasFrameScrollToCanvasResizeCommitAnchor, translateEdgeBy, translateNodeBy, writeOperationLog } = __appScope;
     if (!canvasResizeDrag) {
@@ -3535,7 +3536,7 @@ export function createAppHookCallback101(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback102(__appScope: Record<string, any>) {
+export function createAppHookCallback102(__appScope: ToolbarHookScope) {
   return () => {
   const { STATUSBAR_MAX_HEIGHT, STATUSBAR_MIN_HEIGHT, clampPanelDimension, setStatusbarHeight, setStatusbarResize, statusbarResize } = __appScope;
     if (!statusbarResize) {
@@ -3559,7 +3560,7 @@ export function createAppHookCallback102(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback103(__appScope: Record<string, any>) {
+export function createAppHookCallback103(__appScope: ToolbarHookScope) {
   return () => {
   const { TOPOLOGY_WARNING_PANEL_MARGIN, clampNumber, setTopologyWarningPanelDrag, setTopologyWarningPanelPosition, topologyWarningPanelDrag, topologyWarningPanelHeight, topologyWarningPanelWidth } = __appScope;
     if (!topologyWarningPanelDrag) {
@@ -3587,7 +3588,7 @@ export function createAppHookCallback103(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback104(__appScope: Record<string, any>) {
+export function createAppHookCallback104(__appScope: ToolbarHookScope) {
   return () => {
   const { TOPOLOGY_WARNING_PANEL_MARGIN, TOPOLOGY_WARNING_PANEL_MAX_WIDTH, TOPOLOGY_WARNING_PANEL_MIN_WIDTH, VALIDATION_PANEL_MAX_HEIGHT, VALIDATION_PANEL_MIN_HEIGHT, clampPanelDimension, setTopologyWarningPanelHeight, setTopologyWarningPanelPosition, setTopologyWarningPanelResize, setTopologyWarningPanelWidth, topologyWarningPanelResize } = __appScope;
     if (!topologyWarningPanelResize) {
@@ -3625,7 +3626,7 @@ export function createAppHookCallback104(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback105(__appScope: Record<string, any>) {
+export function createAppHookCallback105(__appScope: ToolbarHookScope) {
   return () => {
   const { clampNodeDoubleClickDialogLayout, nodeDoubleClickDialogDrag, setNodeDoubleClickDialogDrag, setNodeDoubleClickDialogLayout } = __appScope;
     if (!nodeDoubleClickDialogDrag) {
@@ -3658,7 +3659,7 @@ export function createAppHookCallback105(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback106(__appScope: Record<string, any>) {
+export function createAppHookCallback106(__appScope: ToolbarHookScope) {
   return () => {
   const { NODE_DOUBLE_CLICK_DIALOG_MARGIN, NODE_DOUBLE_CLICK_DIALOG_MIN_HEIGHT, NODE_DOUBLE_CLICK_DIALOG_MIN_WIDTH, clampNodeDoubleClickDialogLayout, clampPanelDimension, nodeDoubleClickDialogResize, setNodeDoubleClickDialogLayout, setNodeDoubleClickDialogResize } = __appScope;
     if (!nodeDoubleClickDialogResize) {
@@ -3709,7 +3710,7 @@ export function createAppHookCallback106(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback107(__appScope: Record<string, any>) {
+export function createAppHookCallback107(__appScope: ToolbarHookScope) {
   return () => {
   const { clampDeviceLibraryDialogLayout, deviceLibraryDialogDrag, setDeviceLibraryDialogDrag, setDeviceLibraryDialogLayouts } = __appScope;
     if (!deviceLibraryDialogDrag) {
@@ -3746,7 +3747,7 @@ export function createAppHookCallback107(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback108(__appScope: Record<string, any>) {
+export function createAppHookCallback108(__appScope: ToolbarHookScope) {
   return () => {
   const { DEVICE_LIBRARY_DIALOG_CONFIG, clampDeviceLibraryDialogLayout, clampPanelDimension, deviceLibraryDialogResize, setDeviceLibraryDialogLayouts, setDeviceLibraryDialogResize } = __appScope;
     if (!deviceLibraryDialogResize) {
@@ -3802,7 +3803,7 @@ export function createAppHookCallback108(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback109(__appScope: Record<string, any>) {
+export function createAppHookCallback109(__appScope: ToolbarHookScope) {
   return () => {
   const { lastKeyboardShortcutClientPointerRef, setPointerButtonsPressed } = __appScope;
     let pointerButtonsPressed = false;
@@ -3844,7 +3845,7 @@ export function createAppHookCallback109(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback110(__appScope: Record<string, any>) {
+export function createAppHookCallback110(__appScope: ToolbarHookScope) {
   return () => {
   const { activeLayerEdges, activeLayerNodes, cancelInteractiveStaticDrawing, cancelLibraryPlacement, canvasBounds, canvasInteractionRef, canvasPointerKeyboardShortcutAvailability, clearRecordSelection, connectPreviewPointRef, connectSource, copySelectedRecord, copySelection, cutSelection, deleteProjectRecord, deleteSchemeRecord, deleteSelectedGraphicsFromCanvas, deleteSelectedRecords, findSavedSchemeById, finishInteractiveStaticDrawing, hideLibraryFlyout, hoveredCategoryLibraryComponentLibrary, isEditMode, isGlobalSaveShortcut, keyboardMoveStepForViewBox, lastCanvasPointerRef, libraryPlacement, lockConnectPreviewAxis, lockRoutableLinePreviewAxis, nudgeSelectionByKeyboard, pasteSelectedRecord, pasteSelection, projectById, projectListPointerInsideRef, recordClipboard, releaseConnectPreviewAxisLock, releaseKeyboardMoveKey, releaseRoutableLinePreviewAxisLock, resetConnectPreviewState, resetRoutableLinePreviewState, resolveKeyboardShortcutScope, routableLinePlacement, routableLinePreviewPointRef, schemes, selectedProjectId, selectedProjectIds, selectedSchemeId, selectedSchemeIds, setCanvasSelectionScope, setConnectSource, setMode, setRewiring, setRoutableLinePlacement, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, setStaticDrawing, staticDrawing, switchInspectorTabForCanvasSelection, undoLastOperation, viewBox, writeOperationLog } = __appScope;
     const handleGlobalSaveKeyDown = (event: KeyboardEvent) => {
@@ -4054,7 +4055,7 @@ export function createAppHookCallback110(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback111(__appScope: Record<string, any>) {
+export function createAppHookCallback111(__appScope: ToolbarHookScope) {
   return () => {
   const { leftPanelTab, setLeftPanelTab } = __appScope;
     if (false) {
@@ -4063,7 +4064,7 @@ export function createAppHookCallback111(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback112(__appScope: Record<string, any>) {
+export function createAppHookCallback112(__appScope: ToolbarHookScope) {
   return () => {
   const { leftPanelTab, projectListPointerInsideRef } = __appScope;
     if (leftPanelTab !== "projects") {
@@ -4072,7 +4073,7 @@ export function createAppHookCallback112(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback113(__appScope: Record<string, any>) {
+export function createAppHookCallback113(__appScope: ToolbarHookScope) {
   return () => {
   const { scheduleIdleWork, setTopologyStatus, skipNextTopologyStaleRef, topologyStatus } = __appScope;
     if (skipNextTopologyStaleRef.current) {
@@ -4110,49 +4111,49 @@ function persistPanelState(storageKey: string, value: string) {
   }
 }
 
-export function createAppHookCallback114(__appScope: Record<string, any>) {
+export function createAppHookCallback114(__appScope: ToolbarHookScope) {
   return () => {
   const { LEFT_PANEL_MODE_STORAGE_KEY, leftPanelMode } = __appScope;
     persistPanelState(LEFT_PANEL_MODE_STORAGE_KEY, leftPanelMode);
   };
 }
 
-export function createAppHookCallback115(__appScope: Record<string, any>) {
+export function createAppHookCallback115(__appScope: ToolbarHookScope) {
   return () => {
   const { RIGHT_PANEL_MODE_STORAGE_KEY, rightPanelMode } = __appScope;
     persistPanelState(RIGHT_PANEL_MODE_STORAGE_KEY, rightPanelMode);
   };
 }
 
-export function createAppHookCallback116(__appScope: Record<string, any>) {
+export function createAppHookCallback116(__appScope: ToolbarHookScope) {
   return () => {
   const { LEFT_PANEL_WIDTH_STORAGE_KEY, leftPanelWidth } = __appScope;
     persistPanelState(LEFT_PANEL_WIDTH_STORAGE_KEY, String(leftPanelWidth));
   };
 }
 
-export function createAppHookCallback117(__appScope: Record<string, any>) {
+export function createAppHookCallback117(__appScope: ToolbarHookScope) {
   return () => {
   const { RIGHT_PANEL_WIDTH_STORAGE_KEY, rightPanelWidth } = __appScope;
     persistPanelState(RIGHT_PANEL_WIDTH_STORAGE_KEY, String(rightPanelWidth));
   };
 }
 
-export function createAppHookCallback118(__appScope: Record<string, any>) {
+export function createAppHookCallback118(__appScope: ToolbarHookScope) {
   return () => {
   const { STATUSBAR_HEIGHT_STORAGE_KEY, statusbarHeight } = __appScope;
     persistPanelState(STATUSBAR_HEIGHT_STORAGE_KEY, String(statusbarHeight));
   };
 }
 
-export function createAppHookCallback119(__appScope: Record<string, any>) {
+export function createAppHookCallback119(__appScope: ToolbarHookScope) {
   return () => {
   const { VALIDATION_PANEL_HEIGHT_STORAGE_KEY, topologyWarningPanelHeight } = __appScope;
     persistPanelState(VALIDATION_PANEL_HEIGHT_STORAGE_KEY, String(topologyWarningPanelHeight));
   };
 }
 
-export function createAppHookCallback120(__appScope: Record<string, any>) {
+export function createAppHookCallback120(__appScope: ToolbarHookScope) {
   return () => {
   const { currentGraphDirtyBaseline, graphDirtyBaselineChanged, graphDirtyBaselineRef, setHasUnsavedChanges, suppressNextGraphDirtyRef } = __appScope;
     const nextBaseline = currentGraphDirtyBaseline();
@@ -4171,7 +4172,7 @@ export function createAppHookCallback120(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback121(__appScope: Record<string, any>) {
+export function createAppHookCallback121(__appScope: ToolbarHookScope) {
   return () => {
   const { VOLTAGE_BASE_SET_PRESETS, nodes, normalizeVoltageBaseInput } = __appScope;
     const values = new Set(VOLTAGE_BASE_SET_PRESETS);
@@ -4194,7 +4195,7 @@ export function createAppHookCallback121(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback122(__appScope: Record<string, any>) {
+export function createAppHookCallback122(__appScope: ToolbarHookScope) {
   return () => {
   const { activeSelectedNodeIds, nodes } = __appScope;
     if (activeSelectedNodeIds.length === 0) {
@@ -4205,7 +4206,7 @@ export function createAppHookCallback122(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback123(__appScope: Record<string, any>) {
+export function createAppHookCallback123(__appScope: ToolbarHookScope) {
   return () => {
   const { voltageBaseSetCandidateNodes, voltageBaseSettingModeForNode, voltageBaseTerminalValues } = __appScope;
     return voltageBaseSetCandidateNodes
@@ -4221,7 +4222,7 @@ export function createAppHookCallback123(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback124(__appScope: Record<string, any>) {
+export function createAppHookCallback124(__appScope: ToolbarHookScope) {
   return () => {
   const { VOLTAGE_BASE_SET_SCOPES, activeSelectedNodeIds, activeVoltageBaseTerminalValues, edges, emptyVoltageBaseSetResult, hasVoltageBaseTerminalValues, mergeVoltageBaseSetResults, nodes, setVoltageBaseTerminalValuesForScope, setVoltageBaseValuesForScope, voltageBaseSetDialogOpen, voltageBaseSetMode, voltageBaseSetReady, voltageBaseSetValue } = __appScope;
     if (!voltageBaseSetDialogOpen) {
@@ -4267,7 +4268,7 @@ export function createAppHookCallback124(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback125(__appScope: Record<string, any>) {
+export function createAppHookCallback125(__appScope: ToolbarHookScope) {
   return () => {
   const { activeVoltageBaseTerminalKey, setActiveVoltageBaseTerminalKey, voltageBaseSetDialogOpen, voltageBaseSetTerminalRows, voltageBaseTerminalRowKey } = __appScope;
     if (!voltageBaseSetDialogOpen) {
@@ -4285,7 +4286,7 @@ export function createAppHookCallback125(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback126(__appScope: Record<string, any>) {
+export function createAppHookCallback126(__appScope: ToolbarHookScope) {
   return () => {
   const { VOLTAGE_BASE_CLEAR_SCOPES, activeSelectedNodeIds, clearVoltageBaseValuesForScope, edges, nodes, voltageBaseClearDialogOpen } = __appScope;
     if (!voltageBaseClearDialogOpen) {
@@ -4300,7 +4301,7 @@ export function createAppHookCallback126(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback127(__appScope: Record<string, any>) {
+export function createAppHookCallback127(__appScope: ToolbarHookScope) {
   return (libraries: Set<string>, types: Set<string>) => {
   const { setCollapsedCustomComponentTreeLibraries, setCollapsedCustomComponentTreeTypes } = __appScope;
     setCollapsedCustomComponentTreeLibraries(libraries);
@@ -4308,7 +4309,7 @@ export function createAppHookCallback127(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback128(__appScope: Record<string, any>) {
+export function createAppHookCallback128(__appScope: ToolbarHookScope) {
   return () => {
   const { CANVAS_INITIAL_LOD_DETAIL_CHUNK_SIZE, CANVAS_INITIAL_LOD_FIRST_DETAIL_DELAY_MS, CANVAS_INITIAL_LOD_NEXT_DETAIL_DELAY_MS, initialCanvasDetailHydrationLimit, initialCanvasDetailHydrationTarget, initialCanvasLodActive, scheduleIdleWork, setInitialCanvasDetailHydrationLimit, setInitialCanvasLodActive, usePersistentCanvasLod } = __appScope;
     if (!initialCanvasLodActive) {
@@ -4341,7 +4342,7 @@ export function createAppHookCallback128(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback129(__appScope: Record<string, any>) {
+export function createAppHookCallback129(__appScope: ToolbarHookScope) {
   return () => {
   const { groupTransformPreviewNodeIdSet, initialCanvasDetailHydrationLimit, isStaticNode, useInitialCanvasLod, viewportNodes } = __appScope;
     if (!useInitialCanvasLod || initialCanvasDetailHydrationLimit <= 0) {
@@ -4361,7 +4362,7 @@ export function createAppHookCallback129(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback130(__appScope: Record<string, any>) {
+export function createAppHookCallback130(__appScope: ToolbarHookScope) {
   return () => {
   const { groupTransformPreviewNodeIdSet, initialCanvasDetailedNodeIdSet, isRoutableLineDeviceKind, isStaticNode, nodeLabelDrag, nodeLabelRotateDrag, selectedNodeId, selectedNodeIdSet, transformDrag, useSimplifiedCanvasNodes, useSimplifiedSelectedCanvasNodes, viewportNodes } = __appScope;
     if (!useSimplifiedCanvasNodes || transformDrag || nodeLabelDrag || nodeLabelRotateDrag) {
@@ -4389,7 +4390,7 @@ export function createAppHookCallback130(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback131(__appScope: Record<string, any>) {
+export function createAppHookCallback131(__appScope: ToolbarHookScope) {
   return () => {
   const { activeSelectedEdgeSet, selectedEdgeId, useSimplifiedSelectedCanvasEdges } = __appScope;
     if (!useSimplifiedSelectedCanvasEdges) {
@@ -4401,7 +4402,7 @@ export function createAppHookCallback131(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback132(__appScope: Record<string, any>) {
+export function createAppHookCallback132(__appScope: ToolbarHookScope) {
   return () => {
   const { initialCanvasDetailHydrationLimit, useInitialCanvasLod, viewportRoutedEdges } = __appScope;
     if (!useInitialCanvasLod || initialCanvasDetailHydrationLimit <= 0) {
@@ -4418,7 +4419,7 @@ export function createAppHookCallback132(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback133(__appScope: Record<string, any>) {
+export function createAppHookCallback133(__appScope: ToolbarHookScope) {
   return () => {
   const { CANVAS_LOD_MARKUP_CHUNK_SIZE, activeLayerEdgeIdSet, activeSelectedEdgeSet, cachedConnectionStrokeColor, detailedSelectedEdgeIdSet, dragGhostEdgeIdSet, dragOverlayEdgeIdSet, edgeById, escapeXml, groupTransformPreviewEdgeIdSet, initialCanvasDetailedEdgeIdSet, isEditMode, lodCanvasRouteChunkCacheRef, multiNodeDragging, stableSvgMarkupChunks, terminalPressPreviewEdgeIdSet, useSimplifiedCanvasRoutes, viewportRoutedEdges } = __appScope;
     if (!useSimplifiedCanvasRoutes) {
@@ -4457,7 +4458,7 @@ export function createAppHookCallback133(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback134(__appScope: Record<string, any>) {
+export function createAppHookCallback134(__appScope: ToolbarHookScope) {
   return () => {
   const { CANVAS_LOD_MARKUP_CHUNK_SIZE, DeviceGlyph, activeLayerNodeIdSet, buildSvgTerminalMarkup, colorDisplayMode, colorPalette, themeMode, customSingleTerminalAnchorToken, deviceStateVisualToken, dragGhostRoutableLineNodeIdSet, escapeXml, exportDeviceMetadataAttributes, formatSvgNumber, getDeviceStrokeColor, getDeviceStrokeWidth, groupTransformPreviewNodeIdSet, imageAssets, initialCanvasDetailedNodeIdSet, isBusNode, isEditMode, isRoutableLineDeviceKind, isStaticNode, libraryTemplateByKind, lodCanvasNodeChunkCacheRef, nodeGeometryTransform, nodeLabelDrag, nodeLabelRotateDrag, pointsToOrthogonalPath, renderSvgElementMarkup, resolveNodeStateVisual, resolveStateVisualImageHref, routableLineDeviceRenderLocalPoints, routableLineEndpointDrag, stableSvgMarkupChunks, stateVisualText, transformDrag, useSimplifiedCanvasNodes, viewportNodes } = __appScope;
     if (!useSimplifiedCanvasNodes || transformDrag || nodeLabelDrag || nodeLabelRotateDrag) {
@@ -4531,7 +4532,7 @@ export function createAppHookCallback134(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback135(__appScope: Record<string, any>) {
+export function createAppHookCallback135(__appScope: ToolbarHookScope) {
   return () => {
   const { displaySelectedNodeIds, escapeXml, formatSvgNumber, groupTransformPreviewNodeIdSet, isBusNode, isStaticNode, nodeGeometryTransform, nodeUprightSelectionOutlineRect, nodeUsesUprightStaticSelectionOutline, selectedNodeId, useSimplifiedSelectedCanvasNodes, visibleNodeById } = __appScope;
     if (!useSimplifiedSelectedCanvasNodes) {
@@ -4563,7 +4564,7 @@ export function createAppHookCallback135(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback136(__appScope: Record<string, any>) {
+export function createAppHookCallback136(__appScope: ToolbarHookScope) {
   return () => {
   const { activeSelectedEdgeIds, activeSelectedNodeIds, calculateModelGeometryBounds, calculateNodeVisualBounds, combineSelectionRects, isEditMode, routedEdgeById, visibleNodeById } = __appScope;
     if (isEditMode || (activeSelectedNodeIds.length === 0 && activeSelectedEdgeIds.length === 0)) {
@@ -4587,7 +4588,7 @@ export function createAppHookCallback136(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback137(__appScope: Record<string, any>) {
+export function createAppHookCallback137(__appScope: ToolbarHookScope) {
   return () => {
   const { CANVAS_MINIMAP_DEFER_SAMPLE_THRESHOLD, editHotInteractionActive, routedEdges, scheduleIdleWork, setMinimapSamplingReady, visibleNodes } = __appScope;
     if (editHotInteractionActive) {
@@ -4603,7 +4604,7 @@ export function createAppHookCallback137(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback138(__appScope: Record<string, any>) {
+export function createAppHookCallback138(__appScope: ToolbarHookScope) {
   return () => {
   const { editHotInteractionActive, minimapNodeStep, minimapSampleCacheRef, minimapSamplingReady, visibleNodes } = __appScope;
     const cache = minimapSampleCacheRef.current;
@@ -4624,7 +4625,7 @@ export function createAppHookCallback138(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback139(__appScope: Record<string, any>) {
+export function createAppHookCallback139(__appScope: ToolbarHookScope) {
   return () => {
   const { editHotInteractionActive, minimapRouteStep, minimapSampleCacheRef, minimapSamplingReady, routedEdges } = __appScope;
     const cache = minimapSampleCacheRef.current;
@@ -4645,7 +4646,7 @@ export function createAppHookCallback139(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback140(__appScope: Record<string, any>) {
+export function createAppHookCallback140(__appScope: ToolbarHookScope) {
   return () => {
   const {
     activeProjectKey,
@@ -4704,7 +4705,7 @@ export function createAppHookCallback140(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback141(__appScope: Record<string, any>) {
+export function createAppHookCallback141(__appScope: ToolbarHookScope) {
   return () => {
   const { DEFAULT_CANVAS_BACKGROUND, DEFAULT_CANVAS_HEIGHT, DEFAULT_CANVAS_WIDTH, activeProjectKey, backgroundPageCanvasTransform, backgroundProjectId, backgroundProjectRecord, canvasHeight, canvasWidth, imageAssets, resolveProjectImage } = __appScope;
     if (!backgroundProjectId || backgroundProjectId === activeProjectKey || !backgroundProjectRecord) {
@@ -4725,7 +4726,7 @@ export function createAppHookCallback141(__appScope: Record<string, any>) {
   };
 }
 
-export function createAppHookCallback142(__appScope: Record<string, any>) {
+export function createAppHookCallback142(__appScope: ToolbarHookScope) {
   return () => {
   const { backgroundLayerIds, backgroundPageFrameRender, backgroundPageRenderReady, edges, filterProjectByVisibleLayers, nodes, normalizeProjectLayers, routeEdgesForSavedPathRendering } = __appScope;
     if (!backgroundPageFrameRender || !backgroundPageRenderReady) {

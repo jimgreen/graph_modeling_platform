@@ -3,6 +3,7 @@
  * 同时作为统一门面重导出已拆分的 5 个子域工厂模块，保证外部调用方零破坏。
  */
 
+import type { DeviceDefinitionScope } from "./appScopeTypes";
 import type { ChangeEvent, CSSProperties, MouseEvent, PointerEvent } from "react";
 import { deviceDefinitionComplianceKey } from "./appDeviceDefinitionEInterface";
 import {
@@ -284,7 +285,7 @@ const deviceParameterDefinitionListsEqual = (
   right: readonly DeviceParameterDefinition[]
 ) => JSON.stringify(canonicalDeviceParameterDefinitionValue(left)) === JSON.stringify(canonicalDeviceParameterDefinitionValue(right));
 
-const inlineDefaultIconBackgroundPatch = (__appScope: Record<string, any>, scope: "custom" | "definition") => {
+const inlineDefaultIconBackgroundPatch = (__appScope: DeviceDefinitionScope, scope: "custom" | "definition") => {
   const { isDefaultStatePageId, stateIconDrawingInlineImage, stateIconDrawingInlineTarget } = __appScope;
   if (
     !stateIconDrawingInlineTarget ||
@@ -438,7 +439,7 @@ export function customDeviceDraftSectionDirtyToken(
   });
 }
 
-export function createSetCustomDeviceDraftCleanBaseline(__appScope: Record<string, any>) {
+export function createSetCustomDeviceDraftCleanBaseline(__appScope: DeviceDefinitionScope) {
   return (draft: CustomDeviceDraft, anchors?: readonly Point[]) => {
   const { createDefaultCustomDeviceTerminalAnchors, customDeviceDraftBaselineRef, customDeviceDraftCleanTokenRef } = __appScope;
     const nextAnchors = anchors ?? createDefaultCustomDeviceTerminalAnchors(draft.terminalCount, draft.terminalAnchors);
@@ -459,7 +460,7 @@ export function createSetCustomDeviceDraftCleanBaseline(__appScope: Record<strin
   };
 }
 
-export function createCustomDeviceDraftHasUnsavedChanges(__appScope: Record<string, any>) {
+export function createCustomDeviceDraftHasUnsavedChanges(__appScope: DeviceDefinitionScope) {
   return (section?: CustomDeviceDialogView) => {
   const { customDeviceDraft, customDeviceDraftBaselineRef, customDeviceDraftCleanTokenRef, customDeviceTerminalAnchors } = __appScope;
     if (section) {
@@ -486,7 +487,7 @@ export function createCustomDeviceDraftHasUnsavedChanges(__appScope: Record<stri
 }
 
 // 还原当前 tab 或全部 tab 到预设定义
-export function createRevertCustomDeviceDraftCurrentTab(__appScope: Record<string, any>) {
+export function createRevertCustomDeviceDraftCurrentTab(__appScope: DeviceDefinitionScope) {
   return () => {
   const { customDeviceDraftBaselineRef, customDeviceDialogView, setCustomDeviceDraft, setStateIconDrawingDialog } = __appScope;
     const baseline: CustomDeviceDraft | null = customDeviceDraftBaselineRef?.current ?? null;
@@ -525,7 +526,7 @@ export function createRevertCustomDeviceDraftCurrentTab(__appScope: Record<strin
   };
 }
 
-export function createRevertCustomDeviceDraftAll(__appScope: Record<string, any>) {
+export function createRevertCustomDeviceDraftAll(__appScope: DeviceDefinitionScope) {
   return () => {
   const { customDeviceDraftBaselineRef, setCustomDeviceDraft, setStateIconDrawingDialog, editingCustomDeviceKind, selectedDefinitionKind, baseLibraryTemplateByKind, createCustomDeviceDraftFromTemplate, resolveTemplateComponentLibrary } = __appScope;
     if (typeof setStateIconDrawingDialog === "function") setStateIconDrawingDialog(null);
@@ -546,7 +547,7 @@ export function createRevertCustomDeviceDraftAll(__appScope: Record<string, any>
   };
 }
 
-export function createCustomDeviceDefaultStateVisualDraft(__appScope: Record<string, any>) {
+export function createCustomDeviceDefaultStateVisualDraft(__appScope: DeviceDefinitionScope) {
   return (): Partial<DeviceStateDefinition> => {
   const { customDeviceDraft, customDevicePreviewLabel, customDevicePreviewSourceTemplate, customDraftTerminalTypes, generateCustomDeviceImage, selectedCustomComponentTemplate, selectedDefinitionTemplate } = __appScope;
     if (customDeviceDraft.backgroundImageCleared) {
@@ -598,7 +599,7 @@ export function createCustomDeviceDefaultStateVisualDraft(__appScope: Record<str
   };
 }
 
-export function createSnapCustomDeviceTerminalAnchor(__appScope: Record<string, any>) {
+export function createSnapCustomDeviceTerminalAnchor(__appScope: DeviceDefinitionScope) {
   return (anchor: Point): Point => {
   const { CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES, CUSTOM_DEVICE_TERMINAL_ANCHOR_SNAP_SCREEN_TOLERANCE, customDevicePreviewHeight, customDevicePreviewWidth, customDeviceTerminalAnchorValue, projectCustomDeviceTerminalAnchorToBoundary } = __appScope;
     const snapAxis = (value: number, tolerance: number) => {
@@ -620,7 +621,7 @@ export function createSnapCustomDeviceTerminalAnchor(__appScope: Record<string, 
   };
 }
 
-export function createCustomDeviceTerminalConnectorSegment(__appScope: Record<string, any>) {
+export function createCustomDeviceTerminalConnectorSegment(__appScope: DeviceDefinitionScope) {
   return (anchor: Point) => {
   const { customDevicePreviewHeight, customDevicePreviewWidth, projectCustomDeviceTerminalAnchorToBoundary } = __appScope;
     const boundaryAnchor = projectCustomDeviceTerminalAnchorToBoundary(anchor);
@@ -657,7 +658,7 @@ export function createCustomDeviceTerminalConnectorSegment(__appScope: Record<st
   };
 }
 
-export function createUpdateCustomDeviceTerminalAnchor(__appScope: Record<string, any>) {
+export function createUpdateCustomDeviceTerminalAnchor(__appScope: DeviceDefinitionScope) {
   return (index: number, patch: Partial<Point>) => {
   const { createDefaultCustomDeviceTerminalAnchors, customDeviceTerminalAnchorValue, hasOverlappingCustomDeviceTerminalAnchors, projectCustomDeviceTerminalAnchorToBoundary, setCustomDeviceDraft } = __appScope;
     setCustomDeviceDraft((current: any) => {
@@ -678,7 +679,7 @@ export function createUpdateCustomDeviceTerminalAnchor(__appScope: Record<string
   };
 }
 
-export function createUpdateCustomDeviceStateDraftRow(__appScope: Record<string, any>) {
+export function createUpdateCustomDeviceStateDraftRow(__appScope: DeviceDefinitionScope) {
   return (rowId: string, patch: Partial<DeviceDefinitionStateDraftRow>) => {
   const { isDefaultStatePageId, setCustomDeviceDraft } = __appScope;
     setCustomDeviceDraft((current: any) => ({
@@ -699,7 +700,7 @@ export function createUpdateCustomDeviceStateDraftRow(__appScope: Record<string,
   };
 }
 
-export function createAddCustomDeviceStateDraftRow(__appScope: Record<string, any>) {
+export function createAddCustomDeviceStateDraftRow(__appScope: DeviceDefinitionScope) {
   return () => {
   const { appendNonDefaultStateDraftRow, createStateDraftRowFromDefaultVisual, customDeviceDefaultStateVisualDraft, defaultStateDraftRow, isDefaultStatePageId, nextNonDefaultStateIndex, setCustomDeviceDraft, setCustomDeviceStatePageId, stateDraftRowId, stateIconDrawingDialog, stateIconDrawingInlineImage } = __appScope;
     const defaultVisual = customDeviceDefaultStateVisualDraft();
@@ -743,7 +744,7 @@ export function createAddCustomDeviceStateDraftRow(__appScope: Record<string, an
   };
 }
 
-export function createDeleteCustomDeviceStateDraftRow(__appScope: Record<string, any>) {
+export function createDeleteCustomDeviceStateDraftRow(__appScope: DeviceDefinitionScope) {
   return (rowId: string) => {
   const { setCustomDeviceDraft } = __appScope;
     setCustomDeviceDraft((current: any) => ({
@@ -754,7 +755,7 @@ export function createDeleteCustomDeviceStateDraftRow(__appScope: Record<string,
   };
 }
 
-export function createUpdateCustomDeviceTerminalAnchorFromPreview(__appScope: Record<string, any>) {
+export function createUpdateCustomDeviceTerminalAnchorFromPreview(__appScope: DeviceDefinitionScope) {
   return (index: number, svg: SVGSVGElement, event: PointerEvent<SVGElement>) => {
   const { customDevicePreviewHeight, customDevicePreviewWidth, snapCustomDeviceTerminalAnchor, updateCustomDeviceTerminalAnchor } = __appScope;
     const matrix = svg.getScreenCTM();
@@ -773,7 +774,7 @@ export function createUpdateCustomDeviceTerminalAnchorFromPreview(__appScope: Re
   };
 }
 
-export function createDefinitionDefaultStateVisualDraft(__appScope: Record<string, any>) {
+export function createDefinitionDefaultStateVisualDraft(__appScope: DeviceDefinitionScope) {
   return (): Partial<DeviceStateDefinition> => {
   const { definitionVisualDraft, selectedDefinitionTemplate } = __appScope;
     const params = selectedDefinitionTemplate?.params ?? {};
@@ -825,7 +826,7 @@ export function createDefinitionDefaultStateVisualDraft(__appScope: Record<strin
   };
 }
 
-export function createSnapDefinitionTerminalAnchor(__appScope: Record<string, any>) {
+export function createSnapDefinitionTerminalAnchor(__appScope: DeviceDefinitionScope) {
   return (anchor: Point): Point => {
   const { CUSTOM_DEVICE_TERMINAL_ANCHOR_GUIDE_VALUES, CUSTOM_DEVICE_TERMINAL_ANCHOR_SNAP_SCREEN_TOLERANCE, customDeviceTerminalAnchorValue, definitionVisualPreviewHeight, definitionVisualPreviewWidth, projectCustomDeviceTerminalAnchorToBoundary } = __appScope;
     const snapAxis = (value: number, tolerance: number) => {
@@ -847,7 +848,7 @@ export function createSnapDefinitionTerminalAnchor(__appScope: Record<string, an
   };
 }
 
-export function createDefinitionTerminalConnectorSegment(__appScope: Record<string, any>) {
+export function createDefinitionTerminalConnectorSegment(__appScope: DeviceDefinitionScope) {
   return (anchor: Point) => {
   const { definitionVisualPreviewHeight, definitionVisualPreviewWidth, projectCustomDeviceTerminalAnchorToBoundary } = __appScope;
     const boundaryAnchor = projectCustomDeviceTerminalAnchorToBoundary(anchor);
@@ -876,7 +877,7 @@ export function createDefinitionTerminalConnectorSegment(__appScope: Record<stri
   };
 }
 
-export function createUpdateDefinitionTerminalAnchor(__appScope: Record<string, any>) {
+export function createUpdateDefinitionTerminalAnchor(__appScope: DeviceDefinitionScope) {
   return (index: number, patch: Partial<Point>) => {
   const { createDefaultCustomDeviceTerminalAnchors, customDeviceTerminalAnchorValue, hasOverlappingCustomDeviceTerminalAnchors, projectCustomDeviceTerminalAnchorToBoundary, setDefinitionVisualDraft } = __appScope;
     setDefinitionVisualDraft((current: any) => {
@@ -897,7 +898,7 @@ export function createUpdateDefinitionTerminalAnchor(__appScope: Record<string, 
   };
 }
 
-export function createUpdateDefinitionTerminalAnchorFromPreview(__appScope: Record<string, any>) {
+export function createUpdateDefinitionTerminalAnchorFromPreview(__appScope: DeviceDefinitionScope) {
   return (index: number, svg: SVGSVGElement, event: PointerEvent<SVGElement>) => {
   const { definitionVisualPreviewHeight, definitionVisualPreviewWidth, snapDefinitionTerminalAnchor, updateDefinitionTerminalAnchor } = __appScope;
     const matrix = svg.getScreenCTM();
@@ -916,7 +917,7 @@ export function createUpdateDefinitionTerminalAnchorFromPreview(__appScope: Reco
   };
 }
 
-export function createLoadDefinitionTemplateDraft(__appScope: Record<string, any>) {
+export function createLoadDefinitionTemplateDraft(__appScope: DeviceDefinitionScope) {
   return (template: DeviceTemplate) => {
   const { DEFAULT_STATE_PAGE_ID, categoryLibraryComponentLibraryKey, createDefinitionDraftRows, createDefinitionVisualDraft, definitionDeleteAllParametersRequestedRef, definitionMeasurementSelectionAnchorRef, definitionParameterSelectionAnchorRef, normalizeCategoryLibraryName, resolveTemplateComponentLibrary, setCollapsedDefinitionComponentLibraries, setDefinitionDraftError, setDefinitionDraftRows, setDefinitionDraftSection, setDefinitionMeasurementDraft, setDefinitionStateDraftRows, setDefinitionStatePageId, setDefinitionTerminalAnchorDragIndex, setDefinitionVisualDraft, setExpandedDefinitionGroups, setSelectedDefinitionKind, setSelectedDefinitionMeasurementRowIndexes, setSelectedDefinitionParameterRowIds } = __appScope;
     const stateRows = createDefinitionStateDraftRowsWithDefaultImages(__appScope, template);
@@ -942,7 +943,7 @@ export function createLoadDefinitionTemplateDraft(__appScope: Record<string, any
   };
 }
 
-export function createFinishDeviceLibraryDialogPointerOperation(__appScope: Record<string, any>) {
+export function createFinishDeviceLibraryDialogPointerOperation(__appScope: DeviceDefinitionScope) {
   return () => {
   const { setDeviceLibraryDialogDrag, setDeviceLibraryDialogResize } = __appScope;
     setDeviceLibraryDialogDrag(null);
@@ -950,7 +951,7 @@ export function createFinishDeviceLibraryDialogPointerOperation(__appScope: Reco
   };
 }
 
-export function createCurrentDeviceLibraryDialogRect(__appScope: Record<string, any>) {
+export function createCurrentDeviceLibraryDialogRect(__appScope: DeviceDefinitionScope) {
   return (kind: DeviceLibraryDialogKind) => {
   const { DEVICE_LIBRARY_DIALOG_CONFIG, clampDeviceLibraryDialogLayout, deviceLibraryDialogLayouts, deviceLibraryDialogRefForKind } = __appScope;
     const config = DEVICE_LIBRARY_DIALOG_CONFIG[kind];
@@ -974,7 +975,7 @@ export function createCurrentDeviceLibraryDialogRect(__appScope: Record<string, 
   };
 }
 
-export function createDeviceLibraryDialogStyle(__appScope: Record<string, any>) {
+export function createDeviceLibraryDialogStyle(__appScope: DeviceDefinitionScope) {
   return (kind: DeviceLibraryDialogKind) => {
   const { clampDeviceLibraryDialogLayout, deviceLibraryDialogLayouts } = __appScope;
     const layout = deviceLibraryDialogLayouts[kind];
@@ -991,7 +992,7 @@ export function createDeviceLibraryDialogStyle(__appScope: Record<string, any>) 
   };
 }
 
-export function createStartDeviceLibraryDialogDrag(__appScope: Record<string, any>) {
+export function createStartDeviceLibraryDialogDrag(__appScope: DeviceDefinitionScope) {
   return (kind: DeviceLibraryDialogKind, event: PointerEvent<HTMLElement>) => {
   const { currentDeviceLibraryDialogRect, setDeviceLibraryDialogDrag, setDeviceLibraryDialogLayouts } = __appScope;
     if (event.button !== 0) {
@@ -1014,7 +1015,7 @@ export function createStartDeviceLibraryDialogDrag(__appScope: Record<string, an
   };
 }
 
-export function createStartDeviceLibraryDialogResize(__appScope: Record<string, any>) {
+export function createStartDeviceLibraryDialogResize(__appScope: DeviceDefinitionScope) {
   return (kind: DeviceLibraryDialogKind, event: PointerEvent<HTMLDivElement>) => {
   const { currentDeviceLibraryDialogRect, setDeviceLibraryDialogLayouts, setDeviceLibraryDialogResize } = __appScope;
     if (event.button !== 0) {
@@ -1037,7 +1038,7 @@ export function createStartDeviceLibraryDialogResize(__appScope: Record<string, 
   };
 }
 
-export function createStopDeviceLibraryDialogEvent(__appScope: Record<string, any>) {
+export function createStopDeviceLibraryDialogEvent(__appScope: DeviceDefinitionScope) {
   return (event: PointerEvent<HTMLElement> | MouseEvent<HTMLElement>) => {
   const { finishDeviceLibraryDialogPointerOperation } = __appScope;
     event.stopPropagation();
@@ -1051,7 +1052,7 @@ export function createStopDeviceLibraryDialogEvent(__appScope: Record<string, an
   };
 }
 
-export function createOpenDeviceDefinitionDialog(__appScope: Record<string, any>) {
+export function createOpenDeviceDefinitionDialog(__appScope: DeviceDefinitionScope) {
   return () => {
   const { DEFAULT_STATE_PAGE_ID, cancelPendingCustomComponentTemplateLoad, createCustomDeviceDraftFromTemplate, ensureCustomComponentTreeExpanded, libraryTemplates, normalizeCategoryLibraryName, prepareMeasurementConfigDraft, resolveTemplateComponentLibrary, selectedCustomComponentTemplate, selectedDefinitionTemplate, setCustomComponentTreeSelection, setCustomDeviceDefinitionMode, setCustomDeviceDialogOpen, setCustomDeviceDialogView, setCustomDeviceDraft, setCustomDeviceDraftCleanBaseline = () => undefined, setCustomDeviceSaveMessage, setCustomDeviceStatePageId, setDefinitionDraftSection, setDeviceDefinitionDialogOpen, setDeviceLibraryDialogLayouts, setEditingCustomDeviceKind, setSelectedDefinitionKind } = __appScope;
     let openedDraft: CustomDeviceDraft | null = null;
@@ -1086,7 +1087,7 @@ export function createOpenDeviceDefinitionDialog(__appScope: Record<string, any>
   };
 }
 
-export function createCloseDeviceDefinitionDialog(__appScope: Record<string, any>) {
+export function createCloseDeviceDefinitionDialog(__appScope: DeviceDefinitionScope) {
   return () => {
   const { DEFAULT_STATE_PAGE_ID, definitionMeasurementSelectionAnchorRef, definitionParameterSelectionAnchorRef, finishDeviceLibraryDialogPointerOperation, measurementConfigDraftRef, setDefinitionStateDraftRows, setDefinitionStatePageId, setDefinitionTerminalAnchorDragIndex, setDefinitionVisualDraft, setDeviceDefinitionDialogOpen, setMeasurementConfigDraft, setMeasurementConfigSaveStatus, setSelectedDefinitionMeasurementRowIndexes, setSelectedDefinitionParameterRowIds } = __appScope;
     finishDeviceLibraryDialogPointerOperation();
@@ -1105,7 +1106,7 @@ export function createCloseDeviceDefinitionDialog(__appScope: Record<string, any
   };
 }
 
-export function createCloseCustomDeviceDialog(__appScope: Record<string, any>) {
+export function createCloseCustomDeviceDialog(__appScope: DeviceDefinitionScope) {
   return () => {
   const { customMeasurementSelectionAnchorRef, customParameterSelectionAnchorRef, createEmptyCustomDeviceDraft, finishDeviceLibraryDialogPointerOperation, measurementConfigDraftRef, setCustomDeviceDialogOpen, setCustomDeviceDraft, setCustomDeviceTerminalAnchorDragIndex, setMeasurementConfigDraft, setMeasurementConfigSaveStatus, setSelectedCustomMeasurementRowIndexes, setSelectedCustomParameterRowIds } = __appScope;
     finishDeviceLibraryDialogPointerOperation();
@@ -1126,7 +1127,7 @@ export function createCloseCustomDeviceDialog(__appScope: Record<string, any>) {
   };
 }
 
-export function createToggleDefinitionGroup(__appScope: Record<string, any>) {
+export function createToggleDefinitionGroup(__appScope: DeviceDefinitionScope) {
   return (categoryLibrary: CategoryLibrary) => {
   const { setExpandedDefinitionGroups } = __appScope;
     setExpandedDefinitionGroups((current: any) =>
@@ -1135,7 +1136,7 @@ export function createToggleDefinitionGroup(__appScope: Record<string, any>) {
   };
 }
 
-export function createToggleDefinitionComponentLibrary(__appScope: Record<string, any>) {
+export function createToggleDefinitionComponentLibrary(__appScope: DeviceDefinitionScope) {
   return (categoryLibrary: CategoryLibrary, componentLibrary: string) => {
   const { categoryLibraryComponentLibraryKey, setCollapsedDefinitionComponentLibraries, setDefinitionDraftSection, setSelectedDefinitionKind } = __appScope;
     const typeKey = categoryLibraryComponentLibraryKey(categoryLibrary, componentLibrary);
@@ -1148,7 +1149,7 @@ export function createToggleDefinitionComponentLibrary(__appScope: Record<string
   };
 }
 
-export function createUpdateDefinitionComponentLibraryCommonParamExport(__appScope: Record<string, any>) {
+export function createUpdateDefinitionComponentLibraryCommonParamExport(__appScope: DeviceDefinitionScope) {
   return (componentLibrary: string, enName: string, patch: { exportEnabled?: boolean; exportName?: string }) => {
   const { deviceDefinitionKeyForTemplate, deviceDefinitionOverrideForTemplate, getTemplateParameterDefinitions, libraryTemplates, normalizeComponentLibraryName, resolveTemplateComponentLibrary, setDeviceDefinitionOverrides, writeOperationLog } = __appScope;
     const sectionKey = normalizeComponentLibraryName(componentLibrary);
@@ -1195,7 +1196,7 @@ export function createUpdateDefinitionComponentLibraryCommonParamExport(__appSco
   };
 }
 
-export function createToggleElementTreeGroup(__appScope: Record<string, any>) {
+export function createToggleElementTreeGroup(__appScope: DeviceDefinitionScope) {
   return (typeKey: string) => {
   const { setCollapsedElementTreeGroups } = __appScope;
     setCollapsedElementTreeGroups((current: any) =>
@@ -1204,7 +1205,7 @@ export function createToggleElementTreeGroup(__appScope: Record<string, any>) {
   };
 }
 
-export function createToggleElementTreeDeviceGroup(__appScope: Record<string, any>) {
+export function createToggleElementTreeDeviceGroup(__appScope: DeviceDefinitionScope) {
   return (deviceKey: string) => {
   const { setCollapsedElementTreeDeviceGroups } = __appScope;
     setCollapsedElementTreeDeviceGroups((current: any) =>
@@ -1213,7 +1214,7 @@ export function createToggleElementTreeDeviceGroup(__appScope: Record<string, an
   };
 }
 
-export function createUpdateDefinitionDraftRow(__appScope: Record<string, any>) {
+export function createUpdateDefinitionDraftRow(__appScope: DeviceDefinitionScope) {
   return (rowId: string, patch: Partial<DeviceDefinitionDraftRow>) => {
   const { definitionDeleteAllParametersRequestedRef, setDefinitionDraftError, setDefinitionDraftRows } = __appScope;
     if (definitionDeleteAllParametersRequestedRef) definitionDeleteAllParametersRequestedRef.current = false;
@@ -1222,7 +1223,7 @@ export function createUpdateDefinitionDraftRow(__appScope: Record<string, any>) 
   };
 }
 
-export function createAddDefinitionDraftRow(__appScope: Record<string, any>) {
+export function createAddDefinitionDraftRow(__appScope: DeviceDefinitionScope) {
   return () => {
   const { definitionDeleteAllParametersRequestedRef, definitionParameterSelectionAnchorRef, deviceDefinitionRowId, setDefinitionDraftError, setDefinitionDraftRows, setSelectedDefinitionParameterRowIds } = __appScope;
     if (definitionDeleteAllParametersRequestedRef) definitionDeleteAllParametersRequestedRef.current = false;
@@ -1245,7 +1246,7 @@ export function createAddDefinitionDraftRow(__appScope: Record<string, any>) {
   };
 }
 
-export function createDeleteDefinitionDraftRow(__appScope: Record<string, any>) {
+export function createDeleteDefinitionDraftRow(__appScope: DeviceDefinitionScope) {
   return (rowId: string) => {
   const { definitionDeleteAllParametersRequestedRef, setDefinitionDraftError, setDefinitionDraftRows } = __appScope;
     if (definitionDeleteAllParametersRequestedRef) definitionDeleteAllParametersRequestedRef.current = false;
@@ -1254,7 +1255,7 @@ export function createDeleteDefinitionDraftRow(__appScope: Record<string, any>) 
   };
 }
 
-export function createUpdateDefinitionStateDraftRow(__appScope: Record<string, any>) {
+export function createUpdateDefinitionStateDraftRow(__appScope: DeviceDefinitionScope) {
   return (rowId: string, patch: Partial<DeviceDefinitionStateDraftRow>) => {
   const { isDefaultStatePageId, setDefinitionDraftError, setDefinitionStateDraftRows, setDefinitionVisualDraft } = __appScope;
     setDefinitionStateDraftRows((current: any) =>
@@ -1280,7 +1281,7 @@ export function createUpdateDefinitionStateDraftRow(__appScope: Record<string, a
   };
 }
 
-export function createAddDefinitionStateDraftRow(__appScope: Record<string, any>) {
+export function createAddDefinitionStateDraftRow(__appScope: DeviceDefinitionScope) {
   return () => {
   const { appendNonDefaultStateDraftRow, createStateDraftRowFromDefaultVisual, defaultStateDraftRow, definitionDefaultStateVisualDraft, isDefaultStatePageId, nextNonDefaultStateIndex, setDefinitionDraftError, setDefinitionStateDraftRows, setDefinitionStatePageId, stateDraftRowId, stateIconDrawingDialog, stateIconDrawingInlineImage } = __appScope;
     const defaultVisual = definitionDefaultStateVisualDraft();
@@ -1317,7 +1318,7 @@ export function createAddDefinitionStateDraftRow(__appScope: Record<string, any>
   };
 }
 
-export function createDeleteDefinitionStateDraftRow(__appScope: Record<string, any>) {
+export function createDeleteDefinitionStateDraftRow(__appScope: DeviceDefinitionScope) {
   return (rowId: string) => {
   const { setDefinitionDraftError, setDefinitionStateDraftRows } = __appScope;
     setDefinitionStateDraftRows((current: any) => current.filter((row: any) => row.id !== rowId));
@@ -1325,7 +1326,7 @@ export function createDeleteDefinitionStateDraftRow(__appScope: Record<string, a
   };
 }
 
-export function createRequestCloseCustomDeviceDialog(__appScope: Record<string, any>) {
+export function createRequestCloseCustomDeviceDialog(__appScope: DeviceDefinitionScope) {
   return () => {
   const { closeCustomDeviceDialog, requestCustomDeviceDraftAction } = __appScope;
     return requestCustomDeviceDraftAction(
@@ -1338,7 +1339,7 @@ export function createRequestCloseCustomDeviceDialog(__appScope: Record<string, 
   };
 }
 
-export function createUpdateSelectedDefinitionResizePermission(__appScope: Record<string, any>) {
+export function createUpdateSelectedDefinitionResizePermission(__appScope: DeviceDefinitionScope) {
   return (value: string) => {
   const { deviceDefinitionOverrideForTemplate, selectedDefinitionTemplate, setCustomDeviceTemplates, setDefinitionDraftError, setDeviceDefinitionOverrides, writeOperationLog } = __appScope;
     if (!selectedDefinitionTemplate) {
@@ -1376,7 +1377,7 @@ export function createUpdateSelectedDefinitionResizePermission(__appScope: Recor
   };
 }
 
-export function createSaveDeviceDefinitionStateVisualDraft(__appScope: Record<string, any>) {
+export function createSaveDeviceDefinitionStateVisualDraft(__appScope: DeviceDefinitionScope) {
   return () => {
   const { DEFAULT_STATE_PAGE_ID, activeStateDraftRow, createStateDraftRow, definitionStateDraftRows, definitionStatePageId, deviceDefinitionOverrideForTemplate, getTemplateParameterDefinitions, selectedDefinitionTemplate, setCustomDeviceTemplates, setDefinitionDraftError, setDefinitionStateDraftRows, setDefinitionStatePageId, setDeviceDefinitionOverrides, syncExistingNodesWithTemplateDefinitions, validateStateDraftRows, writeOperationLog } = __appScope;
     if (!selectedDefinitionTemplate) {
@@ -1435,7 +1436,7 @@ export function createSaveDeviceDefinitionStateVisualDraft(__appScope: Record<st
   };
 }
 
-export function createSaveDeviceDefinitionVisualDraft(__appScope: Record<string, any>) {
+export function createSaveDeviceDefinitionVisualDraft(__appScope: DeviceDefinitionScope) {
   return () => {
   const { DEFAULT_STATE_PAGE_ID, TERMINAL_TYPE_LIBRARY_LABELS, activeStateDraftRow, createStateDraftRow, definitionStateDraftRows, definitionStatePageId, definitionVisualDraft, definitionVisualTerminalAnchors, deviceDefinitionOverrideForTemplate, getTemplateParameterDefinitions, hasOverlappingCustomDeviceTerminalAnchors, selectedDefinitionTemplate, setCustomDeviceTemplates, setDefinitionDraftError, setDefinitionStateDraftRows, setDefinitionStatePageId, setDefinitionTerminalAnchorDragIndex, setDefinitionVisualDraft, setDeviceDefinitionOverrides, syncExistingNodesWithTemplateDefinitions, templateAllowsResizeTransform, validateStateDraftRows, writeOperationLog } = __appScope;
     if (!selectedDefinitionTemplate || !definitionVisualDraft) {
@@ -1559,7 +1560,7 @@ export function createSaveDeviceDefinitionVisualDraft(__appScope: Record<string,
   };
 }
 
-export function createSaveDeviceDefinitionDraft(__appScope: Record<string, any>) {
+export function createSaveDeviceDefinitionDraft(__appScope: DeviceDefinitionScope) {
   return () => {
   const { ALLOW_RESIZE_TRANSFORM_PARAM, createDefinitionDraftRows, definitionDeleteAllParametersRequestedRef, definitionDraftRows, definitionDraftSection, definitionMeasurementDraft, deviceDefinitionKeyForTemplate, deviceDefinitionOverrideForTemplate, deviceDefinitionRowId, getTemplateParameterDefinitions, isReservedDeviceDefinitionParamName, libraryTemplates, measurementConfig, measurementConfigDraft, measurementConfigDraftRef, normalizeComponentLibraryName, normalizeDefinitionRowEnumFields, selectedDefinitionTemplate, setDefinitionDraftError, setDefinitionDraftRows, setDefinitionMeasurementDraft = () => undefined, setDeviceDefinitionOverrides, syncExistingNodesWithTemplateDefinitions, templateAllowsResizeTransform } = __appScope;
     if (!selectedDefinitionTemplate) {
@@ -1723,7 +1724,7 @@ export function createSaveDeviceDefinitionDraft(__appScope: Record<string, any>)
   };
 }
 
-export function createResetDeviceDefinitionDraft(__appScope: Record<string, any>) {
+export function createResetDeviceDefinitionDraft(__appScope: DeviceDefinitionScope) {
   return () => {
   const { deviceDefinitionKeyForTemplate, loadDefinitionTemplateDraft, selectedDefinitionBaseTemplate, setDeviceDefinitionOverrides } = __appScope;
     if (!selectedDefinitionBaseTemplate) {
@@ -1748,7 +1749,7 @@ export function createResetDeviceDefinitionDraft(__appScope: Record<string, any>
   };
 }
 
-export function createUpdateCustomDraftTerminalCount(__appScope: Record<string, any>) {
+export function createUpdateCustomDraftTerminalCount(__appScope: DeviceDefinitionScope) {
   return (value: number) => {
   const { MAX_CUSTOM_DEVICE_TERMINALS, TERMINAL_TYPE_LIBRARY_LABELS, createDefaultCustomDeviceTerminalAnchors, normalizeContainerTerminalAssociations, setCustomDeviceDialogView, setCustomDeviceDraft } = __appScope;
     const count = clampNumber(Math.round(value || 0), 0, MAX_CUSTOM_DEVICE_TERMINALS);
@@ -1791,7 +1792,7 @@ export function createUpdateCustomDraftTerminalCount(__appScope: Record<string, 
   };
 }
 
-export function createChooseCustomDeviceBackground(__appScope: Record<string, any>) {
+export function createChooseCustomDeviceBackground(__appScope: DeviceDefinitionScope) {
   return (event: ChangeEvent<HTMLInputElement>) => {
   const { activeImageFolderId, refreshImageFolders, setCustomDeviceDraft, setCustomDeviceSaveMessage, setImageAssetList, setImageAssets, uploadBackendImage } = __appScope;
     const file = event.target.files?.[0];
@@ -1825,7 +1826,7 @@ export function createChooseCustomDeviceBackground(__appScope: Record<string, an
   };
 }
 
-export function createChooseDefinitionTemplateIcon(__appScope: Record<string, any>) {
+export function createChooseDefinitionTemplateIcon(__appScope: DeviceDefinitionScope) {
   return (event: ChangeEvent<HTMLInputElement>) => {
   const { activeImageFolderId, refreshImageFolders, setDefinitionVisualDraft, setImageAssetList, setImageAssets, uploadBackendImage } = __appScope;
     const file = event.target.files?.[0];
@@ -1862,7 +1863,7 @@ export function createChooseDefinitionTemplateIcon(__appScope: Record<string, an
   };
 }
 
-export function createChooseStateVisualImage(__appScope: Record<string, any>) {
+export function createChooseStateVisualImage(__appScope: DeviceDefinitionScope) {
   return (event: ChangeEvent<HTMLInputElement>) => {
   const { activeImageFolderId, refreshImageFolders, setImageAssetList, setImageAssets, setStateImageUploadTarget, stateImageUploadTarget, updateCustomDeviceStateDraftRow, updateDefinitionStateDraftRow, uploadBackendImage } = __appScope;
     const file = event.target.files?.[0];
@@ -1904,7 +1905,7 @@ export function createChooseStateVisualImage(__appScope: Record<string, any>) {
   };
 }
 
-export function createEnsureCustomComponentTreeExpanded(__appScope: Record<string, any>) {
+export function createEnsureCustomComponentTreeExpanded(__appScope: DeviceDefinitionScope) {
   return (categoryLibraryName: string, componentLibrary?: string) => {
   const { customComponentTreeTypeKey, normalizeCategoryLibraryName, setCollapsedCustomComponentTreeLibraries, setCollapsedCustomComponentTreeTypes } = __appScope;
     const normalizedLibrary = normalizeCategoryLibraryName(categoryLibraryName);
@@ -1924,7 +1925,7 @@ export function createEnsureCustomComponentTreeExpanded(__appScope: Record<strin
   };
 }
 
-export function createCancelPendingCustomComponentTemplateLoad(__appScope: Record<string, any>) {
+export function createCancelPendingCustomComponentTemplateLoad(__appScope: DeviceDefinitionScope) {
   return () => {
   const { customComponentSelectionFrameRef, customComponentSelectionRequestRef } = __appScope;
     customComponentSelectionRequestRef.current += 1;
@@ -1935,7 +1936,7 @@ export function createCancelPendingCustomComponentTemplateLoad(__appScope: Recor
   };
 }
 
-export function createSelectCustomCategoryLibrary(__appScope: Record<string, any>) {
+export function createSelectCustomCategoryLibrary(__appScope: DeviceDefinitionScope) {
   return (categoryLibraryName: string, options: { expand?: boolean } = {}) => {
   const { DEFAULT_STATE_PAGE_ID, cancelPendingCustomComponentTemplateLoad, defaultComponentLibraryForCategoryLibrary, ensureCustomComponentTreeExpanded, normalizeCategoryLibraryName, normalizeComponentLibraryName, setCustomComponentTreeSelection, setCustomDeviceDefinitionMode = () => undefined, setCustomDeviceDraft, setCustomDeviceDraftCleanBaseline = () => undefined, setCustomDeviceStatePageId, setEditingCustomDeviceKind, setSelectedDefinitionKind = () => undefined } = __appScope;
     cancelPendingCustomComponentTemplateLoad();
@@ -1965,7 +1966,7 @@ export function createSelectCustomCategoryLibrary(__appScope: Record<string, any
 }
 
 function componentLibraryMetadataDraftPatch(
-  __appScope: Record<string, any>,
+  __appScope: DeviceDefinitionScope,
   className: string,
   categoryLibraryName = ""
 ) {
@@ -2029,7 +2030,7 @@ function componentLibraryMetadataDraftPatch(
   };
 }
 
-export function createRequestCustomDeviceDraftAction(__appScope: Record<string, any>) {
+export function createRequestCustomDeviceDraftAction(__appScope: DeviceDefinitionScope) {
   return (
     action: () => void,
     options: {
@@ -2060,7 +2061,7 @@ export function createRequestCustomDeviceDraftAction(__appScope: Record<string, 
   };
 }
 
-export function createResolveCustomDeviceUnsavedPrompt(__appScope: Record<string, any>) {
+export function createResolveCustomDeviceUnsavedPrompt(__appScope: DeviceDefinitionScope) {
   return (choice: "save" | "discard" | "cancel") => {
     const {
       customDevicePendingActionRef,
@@ -2098,7 +2099,7 @@ export function createResolveCustomDeviceUnsavedPrompt(__appScope: Record<string
   };
 }
 
-export function createRequestCustomDeviceDialogView(__appScope: Record<string, any>) {
+export function createRequestCustomDeviceDialogView(__appScope: DeviceDefinitionScope) {
   return (nextView: CustomDeviceDialogView) => {
     const {
       customDeviceDialogView,
@@ -2126,7 +2127,7 @@ export function createRequestCustomDeviceDialogView(__appScope: Record<string, a
 }
 
 function customDeviceDraftPatchForComponentLibrarySelection(
-  __appScope: Record<string, any>,
+  __appScope: DeviceDefinitionScope,
   className: string,
   categoryLibraryName = "",
   options: { includeInherited?: boolean } = {}
@@ -2219,7 +2220,7 @@ function customDeviceDraftPatchForComponentLibrarySelection(
   };
 }
 
-export function createSelectCustomComponentLibrary(__appScope: Record<string, any>) {
+export function createSelectCustomComponentLibrary(__appScope: DeviceDefinitionScope) {
   return (categoryLibraryName: string, sectionName: string, options: { expand?: boolean } = {}) => {
   const { DEFAULT_STATE_PAGE_ID, cancelPendingCustomComponentTemplateLoad, ensureCustomComponentTreeExpanded, normalizeCategoryLibraryName, normalizeComponentLibraryName, setCustomComponentTreeSelection, setCustomDeviceDefinitionMode = () => undefined, setCustomDeviceDraft, setCustomDeviceDraftCleanBaseline = () => undefined, setCustomDeviceStatePageId, setCustomDeviceDialogView, setEditingCustomDeviceKind, setSelectedDefinitionKind = () => undefined } = __appScope;
     cancelPendingCustomComponentTemplateLoad();
@@ -2249,7 +2250,7 @@ export function createSelectCustomComponentLibrary(__appScope: Record<string, an
   };
 }
 
-export function createSelectCustomComponentTemplate(__appScope: Record<string, any>) {
+export function createSelectCustomComponentTemplate(__appScope: DeviceDefinitionScope) {
   return (template: DeviceTemplate, sectionName?: string) => {
   const { DEFAULT_STATE_PAGE_ID, createCustomDeviceDraftFromTemplate, customComponentSelectionFrameRef, customComponentSelectionRequestRef, customDeviceDefinitionMode, ensureCustomComponentTreeExpanded, normalizeCategoryLibraryName, normalizeComponentLibraryName, resolveTemplateComponentLibrary, setCustomComponentTreeSelection, setCustomDeviceDraft, setCustomDeviceDraftCleanBaseline = () => undefined, setCustomDeviceSaveMessage, setCustomDeviceStatePageId, setDefinitionDraftSection, setEditingCustomDeviceKind, setSelectedDefinitionKind } = __appScope;
     if (sectionName === undefined) {
@@ -2295,7 +2296,7 @@ export function createSelectCustomComponentTemplate(__appScope: Record<string, a
   };
 }
 
-export function createStartCustomComponentCreate(__appScope: Record<string, any>) {
+export function createStartCustomComponentCreate(__appScope: DeviceDefinitionScope) {
   return () => {
   const { customComponentTreeSelection, nextCustomTemplateKind, normalizeCategoryLibraryName, normalizeComponentLibraryName = (value: unknown) => String(value ?? "").trim(), setCustomLibraryCreateDialog } = __appScope;
     if (customComponentTreeSelection?.kind !== "componentLibrary") {
@@ -2338,7 +2339,7 @@ function cloneCustomComponentTemplateSnapshot(template: DeviceTemplate): DeviceT
   return JSON.parse(JSON.stringify(template)) as DeviceTemplate;
 }
 
-export function createCopyCustomComponentTemplate(__appScope: Record<string, any>) {
+export function createCopyCustomComponentTemplate(__appScope: DeviceDefinitionScope) {
   return (template: DeviceTemplate | null | undefined) => {
     const {
       buildDeviceTemplateCopyVisualSvg: injectedBuildDeviceTemplateCopyVisualSvg,
@@ -2411,7 +2412,7 @@ export function createCopyCustomComponentTemplate(__appScope: Record<string, any
   };
 }
 
-export function createPasteCustomComponentTemplate(__appScope: Record<string, any>) {
+export function createPasteCustomComponentTemplate(__appScope: DeviceDefinitionScope) {
   return (categoryLibraryNameInput: string, componentClassNameInput: string) => {
     const {
       copiedCustomComponentTemplate,
@@ -2460,7 +2461,7 @@ export function createPasteCustomComponentTemplate(__appScope: Record<string, an
   };
 }
 
-export function createExportCustomComponentTemplateSvg(__appScope: Record<string, any>) {
+export function createExportCustomComponentTemplateSvg(__appScope: DeviceDefinitionScope) {
   return async (template: DeviceTemplate | null | undefined) => {
     const {
       buildDeviceTemplateIconSvg,
@@ -2508,7 +2509,7 @@ export function createExportCustomComponentTemplateSvg(__appScope: Record<string
   };
 }
 
-export function createOpenCustomComponentSvgImport(__appScope: Record<string, any>) {
+export function createOpenCustomComponentSvgImport(__appScope: DeviceDefinitionScope) {
   return (_template?: DeviceTemplate) => {
     const {
       customComponentSvgImportInputRef,
@@ -2524,7 +2525,7 @@ export function createOpenCustomComponentSvgImport(__appScope: Record<string, an
   };
 }
 
-export function createImportCustomComponentSvg(__appScope: Record<string, any>) {
+export function createImportCustomComponentSvg(__appScope: DeviceDefinitionScope) {
   return async (event: ChangeEvent<HTMLInputElement>) => {
     const {
       DEFAULT_STATE_PAGE_ID,
@@ -2621,7 +2622,7 @@ export function createImportCustomComponentSvg(__appScope: Record<string, any>) 
 
 const CUSTOM_DEVICE_KIND_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_-]*$/;
 
-export function createConfirmCustomLibraryCreateDialog(__appScope: Record<string, any>) {
+export function createConfirmCustomLibraryCreateDialog(__appScope: DeviceDefinitionScope) {
   return (dialogOverride?: any) => {
   const { DEFAULT_STATE_PAGE_ID, cancelPendingCustomComponentTemplateLoad = () => undefined, categoryLibraries, componentLibraryOptions, createCustomDeviceDraftFromTemplate, createDefaultCustomDeviceTerminalAnchors, createEmptyCustomDeviceDraft, customCategoryLibraries = [], customComponentLibraries = [], customDeviceDraft, customDeviceTemplates, customLibraryCreateDialog, defaultComponentLibraryForCategoryLibrary, deviceDefinitionOverrides = {}, isValidComponentLibraryName, libraryTemplates, normalizeCategoryLibraryName, normalizeComponentLibraryName, normalizeCustomCategoryLibraries, normalizeCustomComponentLibraries, persistDeviceLibraryChange = () => undefined, setCustomCategoryLibraries, setCustomComponentLibraries, setCustomComponentTreeSelection, setCustomDeviceDefinitionMode = () => undefined, setCustomDeviceDialogView = () => undefined, setCustomDeviceDraft, setCustomDeviceDraftCleanBaseline = () => undefined, setCustomDeviceSaveMessage = () => undefined, setCustomDeviceStatePageId = () => undefined, setCustomLibraryCreateDialog, setDeviceDefinitionOverrides = () => undefined, setEditingCustomDeviceKind = () => undefined, setExpandedCategoryLibraries, setSelectedDefinitionKind = () => undefined } = __appScope;
     const dialog = dialogOverride ?? customLibraryCreateDialog;
@@ -2970,7 +2971,7 @@ export function createConfirmCustomLibraryCreateDialog(__appScope: Record<string
   };
 }
 
-export function createNextCustomCategoryLibraryName(__appScope: Record<string, any>) {
+export function createNextCustomCategoryLibraryName(__appScope: DeviceDefinitionScope) {
   return () => {
     const { categoryLibraries } = __appScope;
     const existingGroups = new Set(categoryLibraries.map((group: any) => group.toLowerCase()));
@@ -2984,7 +2985,7 @@ export function createNextCustomCategoryLibraryName(__appScope: Record<string, a
   };
 }
 
-export function createCreateCustomCategoryLibrary(__appScope: Record<string, any>) {
+export function createCreateCustomCategoryLibrary(__appScope: DeviceDefinitionScope) {
   return () => {
   const { nextCustomCategoryLibraryName, nextCustomComponentLibraryName, setCustomLibraryCreateDialog } = __appScope;
     setCustomLibraryCreateDialog({
@@ -2999,7 +3000,7 @@ export function createCreateCustomCategoryLibrary(__appScope: Record<string, any
   };
 }
 
-export function createDeleteCustomCategoryLibrary(__appScope: Record<string, any>) {
+export function createDeleteCustomCategoryLibrary(__appScope: DeviceDefinitionScope) {
   return async (targetCategoryLibraryName?: string) => {
   const { DEVICE_LIBRARY = [], PROTECTED_CATEGORY_LIBRARIES, customComponentLibraries, customDeviceDraft, customDeviceTemplates, defaultComponentLibraryForCategoryLibrary, isBuiltInComponentLibrary, normalizeCategoryLibraryName, resolveTemplateComponentLibrary, setCollapsedCustomComponentTreeLibraries, setCollapsedCustomComponentTreeTypes, setCustomCategoryLibraries, setCustomComponentTreeSelection, setCustomComponentLibraries, setCustomDeviceDraft, setCustomDeviceTemplates, setDefinitionDraftSection, setDeviceDefinitionOverrides, setEditingCustomDeviceKind, setExpandedCategoryLibraries, setExpandedDefinitionGroups, setSelectedDefinitionKind } = __appScope;
     if (targetCategoryLibraryName === undefined) {
@@ -3086,7 +3087,7 @@ export function createDeleteCustomCategoryLibrary(__appScope: Record<string, any
   };
 }
 
-export function createNextCustomComponentLibraryName(__appScope: Record<string, any>) {
+export function createNextCustomComponentLibraryName(__appScope: DeviceDefinitionScope) {
   return () => {
   const { componentLibraryOptions } = __appScope;
     const existingTypes = new Set(componentLibraryOptions.map((componentLibrary: any) => componentLibrary.toLowerCase()));
@@ -3100,7 +3101,7 @@ export function createNextCustomComponentLibraryName(__appScope: Record<string, 
   };
 }
 
-export function createCreateCustomComponentLibrary(__appScope: Record<string, any>) {
+export function createCreateCustomComponentLibrary(__appScope: DeviceDefinitionScope) {
   return () => {
   const { customComponentTreeSelection, nextCustomComponentLibraryName, normalizeCategoryLibraryName, normalizeComponentLibraryName = (value: unknown) => String(value ?? "").trim(), setCustomLibraryCreateDialog } = __appScope;
     if (customComponentTreeSelection?.kind !== "categoryLibrary" && customComponentTreeSelection?.kind !== "componentLibrary") {
@@ -3140,7 +3141,7 @@ export function createCreateCustomComponentLibrary(__appScope: Record<string, an
   };
 }
 
-export function createDeleteCustomComponentLibrary(__appScope: Record<string, any>) {
+export function createDeleteCustomComponentLibrary(__appScope: DeviceDefinitionScope) {
   return async (targetSection?: string) => {
   const { E_SECTION_OPTIONS, customComponentLibraries = [], customComponentTreeSelection, customDeviceDraft, defaultComponentLibraryForCategoryLibrary, libraryTemplates, normalizeCategoryLibraryName, normalizeComponentLibraryName, resolveTemplateComponentLibrary, setCollapsedCustomComponentTreeTypes, setCustomComponentTreeSelection, setCustomComponentLibraries, setCustomDeviceDraft, setCustomDeviceTemplates, setDefinitionDraftSection, setDeviceDefinitionOverrides, setEditingCustomDeviceKind, setSelectedDefinitionKind } = __appScope;
     if (targetSection === undefined) {
@@ -3212,7 +3213,7 @@ export function createDeleteCustomComponentLibrary(__appScope: Record<string, an
   };
 }
 
-export function createRenameSelectedCustomDeviceTreeItem(__appScope: Record<string, any>) {
+export function createRenameSelectedCustomDeviceTreeItem(__appScope: DeviceDefinitionScope) {
   return async () => {
   const { PROTECTED_CATEGORY_LIBRARIES, categoryLibraries, customComponentTreeSelection, libraryTemplateByKind, normalizeCategoryLibraryName, setCollapsedCustomComponentTreeLibraries, setCollapsedCustomComponentTreeTypes, setCustomCategoryLibraries, setCustomComponentTreeSelection, setCustomComponentLibraries, setCustomDeviceDraft, setCustomDeviceTemplates, setExpandedCategoryLibraries, setExpandedDefinitionGroups } = __appScope;
     if (customComponentTreeSelection.kind === "categoryLibrary") {
@@ -3292,7 +3293,7 @@ export function createRenameSelectedCustomDeviceTreeItem(__appScope: Record<stri
   };
 }
 
-export function createDeleteSelectedCustomDeviceTreeItem(__appScope: Record<string, any>) {
+export function createDeleteSelectedCustomDeviceTreeItem(__appScope: DeviceDefinitionScope) {
   return async () => {
   const { customComponentTreeSelection, customDeviceTemplates, deleteCustomCategoryLibrary, deleteCustomComponentLibrary, libraryTemplateByKind, libraryTemplates, setCustomComponentTreeSelection, setCustomDeviceDraft, setCustomDeviceTemplates, setDeviceDefinitionOverrides, setEditingCustomDeviceKind } = __appScope;
     if (customComponentTreeSelection.kind === "categoryLibrary") {
@@ -3330,7 +3331,7 @@ export function createDeleteSelectedCustomDeviceTreeItem(__appScope: Record<stri
   };
 }
 
-export function createNextCustomTemplateKind(__appScope: Record<string, any>) {
+export function createNextCustomTemplateKind(__appScope: DeviceDefinitionScope) {
   return (componentLibrary: string) => {
   const { libraryTemplates } = __appScope;
     const safeType = componentLibrary.replace(/[^A-Za-z0-9_]+/g, "_") || "CustomDevice";
@@ -3349,7 +3350,7 @@ export function createNextCustomTemplateKind(__appScope: Record<string, any>) {
   };
 }
 
-export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) {
+export function createSaveCustomDeviceTemplate(__appScope: DeviceDefinitionScope) {
   return (options: {
     closeAfterSave?: boolean;
     draftOverride?: any;
@@ -3603,7 +3604,7 @@ export function createSaveCustomDeviceTemplate(__appScope: Record<string, any>) 
   };
 }
 
-export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Record<string, any>) {
+export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: DeviceDefinitionScope) {
   return (template: DeviceTemplate, options: { closeAfterSave?: boolean } = {}) => {
   const { ALLOW_RESIZE_TRANSFORM_PARAM, TERMINAL_TYPE_LIBRARY_LABELS, baseLibraryTemplates = [], closeCustomDeviceDialog, createCustomDeviceDraftFromTemplate, customDefaultDefinitions, customDeviceDraft, customDeviceGeneratedDefaultImageCandidates, customDeviceImageWithTerminalConnectors, customDeviceTerminalAnchors, deviceDefinitionOverrideForTemplate, deviceDefinitionOverrides, getTemplateParameterDefinitions, hasOverlappingCustomDeviceTerminalAnchors, isDerivedComponentBaseParamName, isReservedDeviceDefinitionParamName, isValidComponentLibraryName, libraryTemplates, measurementConfig, measurementConfigDraft, measurementConfigDraftRef, normalizeComponentLibraryName, normalizeContainerTerminalAssociations, normalizeDefinitionRowEnumFields, persistDeviceLibraryChange, setCustomDeviceDraft, setCustomDeviceDraftCleanBaseline = () => undefined, setCustomDeviceSaveMessage, setCustomDeviceSaveToast, customDeviceSaveToastTimerRef, setDeviceDefinitionOverrides, showGlobalMessage, syncExistingNodesWithTemplateDefinitions, syncInheritedCustomDeviceStateVisuals, validateContainerTerminalAssociations, validateStateDraftRows, writeOperationLog } = __appScope;
     setCustomDeviceSaveMessage("");
@@ -4015,7 +4016,7 @@ export function createSaveBuiltinDeviceDefinitionFromCustomDraft(__appScope: Rec
   };
 }
 
-export function createSaveComponentLibraryDefinition(__appScope: Record<string, any>) {
+export function createSaveComponentLibraryDefinition(__appScope: DeviceDefinitionScope) {
   return (options: { closeAfterSave?: boolean } = {}) => {
     const {
       ALLOW_RESIZE_TRANSFORM_PARAM,
@@ -4262,7 +4263,7 @@ export function createSaveComponentLibraryDefinition(__appScope: Record<string, 
   };
 }
 
-export function createSaveCustomDeviceDefinitionDialog(__appScope: Record<string, any>) {
+export function createSaveCustomDeviceDefinitionDialog(__appScope: DeviceDefinitionScope) {
   return (options: { closeAfterSave?: boolean } = {}) => {
   const { customComponentTreeSelection, customDeviceDefinitionMode, editingCustomDeviceKind, saveBuiltinDeviceDefinitionFromCustomDraft, saveComponentLibraryDefinition, saveCustomDeviceTemplate, selectedCustomComponentTemplate, selectedDefinitionTemplate, showGlobalMessage = () => undefined } = __appScope;
     if (customDeviceDefinitionMode === "create") {

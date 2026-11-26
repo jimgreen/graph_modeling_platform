@@ -3,6 +3,7 @@
  * 从 appDeviceDefinitionFactories.tsx 拆分，保持严格 TypeScript 类型检查。
  */
 
+import type { StateIconDrawingScope } from "./appScopeTypes";
 import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent, PointerEvent } from "react";
 import {
   STATE_ICON_DRAFT_FRAME,
@@ -81,7 +82,7 @@ function stateIconLineCapFromStaticMarker(value: string | undefined | null) {
   return "none";
 }
 
-export function createStateIconDrawingElementFromStaticTemplate(__appScope: Record<string, any>, template: any, row?: any) {
+export function createStateIconDrawingElementFromStaticTemplate(__appScope: StateIconDrawingScope, template: any, row?: any) {
   const {
     createImportedStateIconElement,
     createStateIconDrawingElement,
@@ -457,7 +458,7 @@ export function clampStateIconDrawingMovementDelta(elements: any[], delta: Point
   };
 }
 
-export function stateIconDrawingMovementFrameForDialog(__appScope: Record<string, any>, current: any) {
+export function stateIconDrawingMovementFrameForDialog(__appScope: StateIconDrawingScope, current: any) {
   const definitionScope = current?.target?.scope === "definition";
   const draft = definitionScope ? __appScope.definitionVisualDraft : __appScope.customDeviceDraft;
   const terminalTypes = definitionScope ? __appScope.definitionVisualTerminalTypes : __appScope.customDraftTerminalTypes;
@@ -468,7 +469,7 @@ export function stateIconDrawingMovementFrameForDialog(__appScope: Record<string
   return stateIconDrawingFrameRect(Boolean(current?.target?.scope && terminalCount > 0));
 }
 
-export function stateIconDrawingMovementVisibleFrames(__appScope: Record<string, any>) {
+export function stateIconDrawingMovementVisibleFrames(__appScope: StateIconDrawingScope) {
   return {
     image: __appScope.stateIconDrawingImageVisibleFrames ?? {},
     svg: __appScope.stateIconDrawingSvgVisibleFrames ?? {}
@@ -662,7 +663,7 @@ function stateIconDrawingTerminalConnectorSegment(anchor: Point, projectAnchor: 
   };
 }
 
-function stateIconDrawingTerminalAlignmentCandidates(__appScope: Record<string, any>, options: { excludeTerminalIndex?: number } = {}) {
+function stateIconDrawingTerminalAlignmentCandidates(__appScope: StateIconDrawingScope, options: { excludeTerminalIndex?: number } = {}) {
   const {
     customDeviceDraft,
     customDeviceTerminalAnchors,
@@ -718,7 +719,7 @@ function stateIconDrawingPointBounds(point: Point) {
 }
 
 export function stateIconDrawingTerminalPointSnap(
-  __appScope: Record<string, any>,
+  __appScope: StateIconDrawingScope,
   point: Point,
   options: { excludeTerminalIndex?: number; selectedIds?: readonly string[] } = {}
 ) {
@@ -745,7 +746,7 @@ export function stateIconDrawingTerminalPointSnap(
   };
 }
 
-export function createComputeStateIconDrawingSmartAlignmentSnap(__appScope: Record<string, any>) {
+export function createComputeStateIconDrawingSmartAlignmentSnap(__appScope: StateIconDrawingScope) {
   return ({
     elements,
     selectedIds,
@@ -940,7 +941,7 @@ export function finishStateIconDrawingDraft(current: any, historyRef: any) {
   };
 }
 
-export function createTemplateDefaultStateIconImage(__appScope: Record<string, any>, template: any, options: Record<string, any> = {}) {
+export function createTemplateDefaultStateIconImage(__appScope: StateIconDrawingScope, template: any, options: Record<string, any> = {}) {
   if (!template) {
     return "";
   }
@@ -1058,7 +1059,7 @@ export function clearGeneratedDefinitionVisualDraftImage(template: any, draft: a
   };
 }
 
-export function createDefinitionStateDraftRowsWithDefaultImages(__appScope: Record<string, any>, template: any) {
+export function createDefinitionStateDraftRowsWithDefaultImages(__appScope: StateIconDrawingScope, template: any) {
   const { createDefinitionStateDraftRows, imageAssets = {} } = __appScope;
   const rows = createDefinitionStateDraftRows(template);
   if (!template || template.custom) {
@@ -1115,7 +1116,7 @@ export function stateIconDrawingImportedSvgSelectionFrame(element: any) {
   };
 }
 
-export function createChooseStateIconDrawingImport(__appScope: Record<string, any>) {
+export function createChooseStateIconDrawingImport(__appScope: StateIconDrawingScope) {
   return (event: ChangeEvent<HTMLInputElement>) => {
   const { activeImageFolderId, createEditableStateIconElementsFromSvgSource, createImportedStateIconElement, refreshImageFolders, setImageAssetList, setImageAssets, setStateIconDrawingDialog, stateIconDrawingHistoryRef, stateIconDrawingImportMode, uploadBackendImage } = __appScope;
     const file = event.target.files?.[0];
@@ -1168,7 +1169,7 @@ export function createChooseStateIconDrawingImport(__appScope: Record<string, an
   };
 }
 
-export function createUpdateStateIconDrawingElement(__appScope: Record<string, any>) {
+export function createUpdateStateIconDrawingElement(__appScope: StateIconDrawingScope) {
   return (elementId: string, patch: Partial<StateIconDrawingElement>) => {
   const { setStateIconDrawingDialog, stateIconDrawingHistoryRef } = __appScope;
     const explicitPatch = {
@@ -1189,7 +1190,7 @@ export function createUpdateStateIconDrawingElement(__appScope: Record<string, a
   };
 }
 
-export function createUpdateStateIconDrawingElements(__appScope: Record<string, any>) {
+export function createUpdateStateIconDrawingElements(__appScope: StateIconDrawingScope) {
   return (elementIds: readonly string[], updater: (element: StateIconDrawingElement) => StateIconDrawingElement, options: { recordHistory?: boolean } = {}) => {
   const { setStateIconDrawingDialog, stateIconDrawingHistoryRef } = __appScope;
     const idSet = new Set(elementIds);
@@ -1204,7 +1205,7 @@ export function createUpdateStateIconDrawingElements(__appScope: Record<string, 
   };
 }
 
-export function createStateIconDrawingPointer(__appScope: Record<string, any>) {
+export function createStateIconDrawingPointer(__appScope: StateIconDrawingScope) {
   let cachedSvg: SVGSVGElement | null = null;
   let cachedPoint: SVGPoint | null = null;
   let cachedInverse: DOMMatrix | null = null;
@@ -1234,7 +1235,7 @@ export function createStateIconDrawingPointer(__appScope: Record<string, any>) {
   };
 }
 
-export function createStateIconDrawingSelection(__appScope: Record<string, any>) {
+export function createStateIconDrawingSelection(__appScope: StateIconDrawingScope) {
   return (elementId: string, append: boolean) => {
   const { setStateIconDrawingDialog } = __appScope;
     setStateIconDrawingDialog((current: any) => {
@@ -1252,7 +1253,7 @@ export function createStateIconDrawingSelection(__appScope: Record<string, any>)
   };
 }
 
-export function createStartStateIconDrawingDrag(__appScope: Record<string, any>) {
+export function createStartStateIconDrawingDrag(__appScope: StateIconDrawingScope) {
   return (event: PointerEvent<SVGElement>, elementId: string, mode: StateIconDrawingDragMode, handleOffset?: Point) => {
   const { setStateIconDrawingContextMenu, setStateIconDrawingDialog, stateIconDrawingDialog, stateIconDrawingDragRef, stateIconDrawingPointer } = __appScope;
     if (event.button !== 0) {
@@ -1308,7 +1309,7 @@ export function createStartStateIconDrawingDrag(__appScope: Record<string, any>)
   };
 }
 
-export function createDragStateIconDrawingSelection(__appScope: Record<string, any>) {
+export function createDragStateIconDrawingSelection(__appScope: StateIconDrawingScope) {
   let rafId: number | null = null;
   let pendingEvent: PointerEvent<SVGSVGElement> | null = null;
 
@@ -1437,7 +1438,7 @@ export function createDragStateIconDrawingSelection(__appScope: Record<string, a
   };
 }
 
-export function createStopStateIconDrawingDrag(__appScope: Record<string, any>) {
+export function createStopStateIconDrawingDrag(__appScope: StateIconDrawingScope) {
   return (event: PointerEvent<SVGSVGElement>) => {
   const { setStateIconDrawingDialog, stateIconDrawingDragDeltaRef, stateIconDrawingDragRef, stateIconDrawingHistoryRef } = __appScope;
     const delta = stateIconDrawingDragDeltaRef.current;
@@ -1464,7 +1465,7 @@ export function createStopStateIconDrawingDrag(__appScope: Record<string, any>) 
   };
 }
 
-export function createDeleteSelectedStateIconDrawingElements(__appScope: Record<string, any>) {
+export function createDeleteSelectedStateIconDrawingElements(__appScope: StateIconDrawingScope) {
   return () => {
   const { setStateIconDrawingContextMenu, setStateIconDrawingDialog, stateIconDrawingHistoryRef } = __appScope;
     setStateIconDrawingContextMenu(null);
@@ -1489,7 +1490,7 @@ export function createDeleteSelectedStateIconDrawingElements(__appScope: Record<
   };
 }
 
-export function createStateIconDrawingKeyDown(__appScope: Record<string, any>) {
+export function createStateIconDrawingKeyDown(__appScope: StateIconDrawingScope) {
   return (event: ReactKeyboardEvent<HTMLElement>) => {
   const { deleteSelectedStateIconDrawingElements, setStateIconDrawingContextMenu, setStateIconDrawingDialog, stateIconDrawingClipboardRef, stateIconDrawingDialog, stateIconDrawingElementId, stateIconDrawingHistoryRef } = __appScope;
     const target = event.target as HTMLElement | null;
@@ -1663,7 +1664,7 @@ export function createStateIconDrawingKeyDown(__appScope: Record<string, any>) {
   };
 }
 
-export function createAddStateIconDrawingElement(__appScope: Record<string, any>) {
+export function createAddStateIconDrawingElement(__appScope: StateIconDrawingScope) {
   return (kind: StateVisualShapeKind) => {
   const { setStateIconDrawingContextMenu, setStateIconDrawingDialog } = __appScope;
     setStateIconDrawingContextMenu(null);
@@ -1684,7 +1685,7 @@ export function createAddStateIconDrawingElement(__appScope: Record<string, any>
   };
 }
 
-export function createDeleteStateIconDrawingElement(__appScope: Record<string, any>) {
+export function createDeleteStateIconDrawingElement(__appScope: StateIconDrawingScope) {
   return (elementId: string) => {
   const { setStateIconDrawingContextMenu, setStateIconDrawingDialog, stateIconDrawingHistoryRef } = __appScope;
     setStateIconDrawingContextMenu(null);
@@ -1709,7 +1710,7 @@ export function createDeleteStateIconDrawingElement(__appScope: Record<string, a
   };
 }
 
-export function createOpenStateIconDrawingDialog(__appScope: Record<string, any>) {
+export function createOpenStateIconDrawingDialog(__appScope: StateIconDrawingScope) {
   return (target: StateIconDrawingTarget) => {
   const { createStateIconDrawingInitialElements, customDeviceDraft, definitionStateDraftRows, imageAssets, setStateIconDrawingContextMenu, setStateIconDrawingDialog, stateIconDrawingHistoryRef, stateIconDrawingInitialFrame } = __appScope;
     const row =
@@ -1732,7 +1733,7 @@ export function createOpenStateIconDrawingDialog(__appScope: Record<string, any>
   };
 }
 
-export function createApplyStateIconDrawingDialog(__appScope: Record<string, any>) {
+export function createApplyStateIconDrawingDialog(__appScope: StateIconDrawingScope) {
   return async () => {
   const { backendImageIdFromHref, customDeviceDraft, customDraftTerminalTypes, definitionVisualDraft, definitionVisualTerminalTypes, fetchBackendImageDataUrl, imageAssetList, imageAssets, isDefaultStatePageId, isImageDataUrl, setDefinitionVisualDraft, setStateIconDrawingDialog, stateIconDrawingDialog, stateIconDrawingToImage, updateCustomDeviceStateDraftRow, updateDefinitionStateDraftRow } = __appScope;
     if (!stateIconDrawingDialog) {

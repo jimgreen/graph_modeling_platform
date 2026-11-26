@@ -43,7 +43,16 @@ const frontendManualChunks = (id: string) => {
     }
     return "vendor";
   }
-  if (isSourceModule(moduleId, "/src/model.ts")) {
+  if (
+    isSourceModule(moduleId, "/src/model.ts") ||
+    hasModulePath(moduleId, "/src/model/") ||
+    isSourceModule(moduleId, "/src/model-routing.ts") ||
+    hasModulePath(moduleId, "/src/routing/") ||
+    isSourceModule(moduleId, "/src/model-eexport.ts") ||
+    isSourceModule(moduleId, "/src/export/e-section-schema.ts") ||
+    isSourceModule(moduleId, "/src/export/e-record-builders.ts") ||
+    hasModulePath(moduleId, "/src/encoding/")
+  ) {
     return "model-core";
   }
   if (

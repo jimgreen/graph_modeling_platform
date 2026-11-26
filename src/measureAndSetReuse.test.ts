@@ -273,7 +273,8 @@ describe("★ 静态守卫：别名语义与「只读」前提", () => {
     const filesWithCalls = [...new Set(callLines.map((r) => r.file))].sort();
     expect(filesWithCalls, "有调用的文件列表（新增调用点时须同步核对）").toEqual([
       "appExtracted/appGraphMeasurementFactories.tsx",
-      "appExtracted/appSelectionDragFactories.tsx"
+      "appExtracted/appSelectionDragFactories.tsx",
+      "appExtracted/appTransformDragFactories.tsx"
     ]);
     expect(callLines.length, `实际扫到的调用行数：${callLines.length}`).toBe(21);
   });

@@ -167,7 +167,13 @@ describe("与生产代码的一致性：这些分组必须与源码里的判据�
    * 我用变异验证抓到了这个假绿（16/16 全过），故改为逐 kind 核对。
    */
   test("★ model-eexport 的 E 段类名分支与本文件逐 kind 一致", () => {
-    const code = stripComments(read("src/model-eexport.ts"));
+    const code = stripComments(
+      read("src/model-eexport.ts")
+      + "\n"
+      + read("src/export/e-section-schema.ts")
+      + "\n"
+      + read("src/export/e-record-builders.ts")
+    );
     // 抽出「每个 kind → 第一个命中的类名」，复刻该函数的短路求值顺序。
     // 顺序与 model-eexport.ts 里的 if 链一致（先命中者胜）。
     const kindToClass = (kind: string): string => {

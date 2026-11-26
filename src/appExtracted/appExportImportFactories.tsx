@@ -3,6 +3,7 @@
  * 从 appDeviceDefinitionFactories.tsx 拆分，保持严格 TypeScript 类型检查。
  */
 
+import type { ExportImportScope } from "./appScopeTypes";
 import type { ChangeEvent } from "react";
 import { buildEFileExportOptionsFromLibrary, applyEDeviceDefinitionSectionsToLibraryState } from "./appDeviceDefinitionEInterface";
 import {
@@ -35,7 +36,7 @@ export function getSkipSaveCheck(): boolean {
   return skipSaveCheckFlag;
 }
 
-export function createEnsureSavedBeforeExport(__appScope: Record<string, any>) {
+export function createEnsureSavedBeforeExport(__appScope: ExportImportScope) {
   return () => {
     // 使用模块级变量，避免闭包捕获旧值
     if (getSkipSaveCheck() || __appScope.canExportCurrentModel) {
@@ -46,7 +47,7 @@ export function createEnsureSavedBeforeExport(__appScope: Record<string, any>) {
   };
 }
 
-export function createLoadSvgImageExportPathById(__appScope: Record<string, any>) {
+export function createLoadSvgImageExportPathById(__appScope: ExportImportScope) {
   return async () => {
   const { fetchAllBackendImages, fetchBackendImageDataUrl, imageAssetList, imageAssets, imageExportPathByIdFromAssets, isImageDataUrl, svgExportReferencedImageHrefById } = __appScope;
     const referencedHrefById = svgExportReferencedImageHrefById();
@@ -94,7 +95,7 @@ export function createLoadSvgImageExportPathById(__appScope: Record<string, any>
   };
 }
 
-export function createExportSvg(__appScope: Record<string, any>) {
+export function createExportSvg(__appScope: ExportImportScope) {
   return async (textEncoding: TextFileEncoding = "utf-8") => {
   const {
     ensureSavedBeforeExport,
@@ -309,7 +310,7 @@ function eFileWarningDetailsFromResponse(response: Response): string[] {
 }
 
 export function showStandaloneExportCompletion(
-  __appScope: Record<string, any>,
+  __appScope: ExportImportScope,
   title: string,
   message: string,
   details: string[] = [],
@@ -334,7 +335,7 @@ export function showStandaloneExportCompletion(
 // 不带该参数时后端只能读磁盘库，界面态与库态一旦漂移（落盘失败/多端并发/手动还原），
 // 导出会静默产出缺列的 E 文件（实测：界面已加载国网模板，导出却缺 runstat 列）。
 // 文件模板/自定义态（可编辑）不传：此时以后端库态为准，避免丢弃用户改动。
-function eFileTemplateQueryName(__appScope: Record<string, any>): string {
+function eFileTemplateQueryName(__appScope: ExportImportScope): string {
   const { eDeviceInterfaceLoadedTemplateName, eDeviceInterfaceReadonlyMode } = __appScope;
   if (!eDeviceInterfaceReadonlyMode) {
     return "";
@@ -344,7 +345,7 @@ function eFileTemplateQueryName(__appScope: Record<string, any>): string {
 }
 
 // E 文件生成已移至后端 /v1/schemes/model/export?format=e-file（单文件导出与目录导出共用本函数）。
-async function fetchBackendModelEFile(__appScope: Record<string, any>, textEncoding: TextFileEncoding, failureMessage: string) {
+async function fetchBackendModelEFile(__appScope: ExportImportScope, textEncoding: TextFileEncoding, failureMessage: string) {
   const { projectName } = __appScope;
   const path = backendExportSchemePath(__appScope);
   const templateName = eFileTemplateQueryName(__appScope);
@@ -370,7 +371,7 @@ async function fetchBackendModelEFile(__appScope: Record<string, any>, textEncod
 // SVG 生成已移至后端 /v1/schemes/model/export?format=svg；colorMode=voltage 保持前端导出原有按电压着色。
 // 已知差异（后端渲染器舍去）：不含背景页图层；配色取自部署的 color-config.json（与前端本地导出同源）。
 // XML 声明由后端产出，前端不再前置，保证响应体与落盘文件逐字节一致。
-async function fetchBackendModelSvgText(__appScope: Record<string, any>, textEncoding: TextFileEncoding, failureMessage: string) {
+async function fetchBackendModelSvgText(__appScope: ExportImportScope, textEncoding: TextFileEncoding, failureMessage: string) {
   const { projectName } = __appScope;
   const path = backendExportSchemePath(__appScope);
   const url = apiPath(
@@ -390,7 +391,7 @@ async function fetchBackendModelSvgText(__appScope: Record<string, any>, textEnc
 
 // JSON 生成已移至后端 /v1/schemes/model/export?format=json：与 E/SVG/CIM 同口径（先保存再请求），
 // 输出为存档态压缩 JSON（不再本地序列化浏览器实时态）。
-async function fetchBackendModelJsonText(__appScope: Record<string, any>, failureMessage: string) {
+async function fetchBackendModelJsonText(__appScope: ExportImportScope, failureMessage: string) {
   const { projectName } = __appScope;
   const path = backendExportSchemePath(__appScope);
   const url = apiPath(
@@ -405,7 +406,7 @@ async function fetchBackendModelJsonText(__appScope: Record<string, any>, failur
   return JSON.stringify(payload?.data?.project ?? {});
 }
 
-export function createExportSvgFile(__appScope: Record<string, any>) {
+export function createExportSvgFile(__appScope: ExportImportScope) {
   return async (textEncoding: TextFileEncoding = "utf-8") => {
     const {
       ensureSavedBeforeExport,
@@ -475,7 +476,7 @@ export function createExportSvgFile(__appScope: Record<string, any>) {
   };
 }
 
-export function createExportJsonFile(__appScope: Record<string, any>) {
+export function createExportJsonFile(__appScope: ExportImportScope) {
   return async (textEncoding: TextFileEncoding = "utf-8") => {
     const {
       ensureSavedBeforeExport,
@@ -544,7 +545,7 @@ export function createExportJsonFile(__appScope: Record<string, any>) {
   };
 }
 
-export function createExportEFile(__appScope: Record<string, any>) {
+export function createExportEFile(__appScope: ExportImportScope) {
   return async (textEncoding: TextFileEncoding = "gbk") => {
     const {
       ensureSavedBeforeExport,
@@ -622,7 +623,7 @@ export function createExportEFile(__appScope: Record<string, any>) {
   };
 }
 
-export function createExportEDeviceDefinitionFile(__appScope: Record<string, any>) {
+export function createExportEDeviceDefinitionFile(__appScope: ExportImportScope) {
   return async () => {
     const { libraryTemplates, PARAM_LABELS, eDeviceDefinitionLabels, eDeviceDefinitionClassExportEnabled, eDeviceDefinitionFieldOrder, eDeviceDefinitionTableIds, eDeviceDefinitionTemplateFields, resolveTemplateComponentLibrary, saveTextFile, writeOperationLog } = __appScope;
     // libraryTemplates 已合并内置 + 自定义元件并应用 deviceDefinitionOverrides，导出范围覆盖所有元件（含内置）
@@ -663,7 +664,7 @@ export function createExportEDeviceDefinitionFile(__appScope: Record<string, any
   };
 }
 
-export function createImportEDeviceDefinitionFile(__appScope: Record<string, any>) {
+export function createImportEDeviceDefinitionFile(__appScope: ExportImportScope) {
   return (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = "";
@@ -780,7 +781,7 @@ function decodeEFileText(result: unknown): string {
 }
 
 // 程序化导出 E 文件定义（经 WS control 指令调用，返回文本不触发浏览器下载）
-export function createProgrammaticExportEDeviceDefinition(__appScope: Record<string, any>) {
+export function createProgrammaticExportEDeviceDefinition(__appScope: ExportImportScope) {
   return () => {
     const { libraryTemplates, PARAM_LABELS, eDeviceDefinitionLabels, eDeviceDefinitionClassExportEnabled, eDeviceDefinitionFieldOrder, eDeviceDefinitionTableIds, eDeviceDefinitionTemplateFields, resolveTemplateComponentLibrary } = __appScope;
     return buildEDeviceDefinitionFileFromInterfaceDefinitions(buildEFileExportOptionsFromLibrary({
@@ -797,7 +798,7 @@ export function createProgrammaticExportEDeviceDefinition(__appScope: Record<str
 }
 
 // 程序化导入 E 文件定义（经 WS control 指令调用，返回匹配结果，不实际写入）
-export function createProgrammaticImportEDeviceDefinition(__appScope: Record<string, any>) {
+export function createProgrammaticImportEDeviceDefinition(__appScope: ExportImportScope) {
   return (text: string) => {
     const { libraryTemplates } = __appScope;
     const resolveDefinitionComponentLibrary = __appScope.resolveTemplateComponentLibrary ?? ((template: any) => inferESection(template.kind, template.params ?? {}));
@@ -823,7 +824,7 @@ export function createProgrammaticImportEDeviceDefinition(__appScope: Record<str
   };
 }
 
-export function createIsProjectFilePayload(__appScope: Record<string, any>) {
+export function createIsProjectFilePayload(__appScope: ExportImportScope) {
   return (value: unknown): value is ProjectFile => {
   const { isObjectRecord } = __appScope;
     if (!isObjectRecord(value)) {
@@ -834,7 +835,7 @@ export function createIsProjectFilePayload(__appScope: Record<string, any>) {
   };
 }
 
-export function createCreateImportedSchemeRecord(__appScope: Record<string, any>) {
+export function createCreateImportedSchemeRecord(__appScope: ExportImportScope) {
   return (text: string, fileName: string): SavedSchemeRecord => {
   const { createImportedSchemeRecord, createSavedProject, createSavedScheme, isObjectRecord, isProjectFilePayload } = __appScope;
     const payload = JSON.parse(text) as unknown;
@@ -883,7 +884,7 @@ export function createCreateImportedSchemeRecord(__appScope: Record<string, any>
   };
 }
 
-export function createExportProjectRecordFile(__appScope: Record<string, any>) {
+export function createExportProjectRecordFile(__appScope: ExportImportScope) {
   return async (project: SavedProjectRecord) => {
   const { activeProjectKey, currentProject, projectName, safeFilePart, saveTextFile, serializeProject, writeOperationLog } = __appScope;
     const projectFile = project.id === activeProjectKey ? currentProject() : project.project;
@@ -909,7 +910,7 @@ export function createExportProjectRecordFile(__appScope: Record<string, any>) {
   };
 }
 
-export function createExportCurrentModelFile(__appScope: Record<string, any>) {
+export function createExportCurrentModelFile(__appScope: ExportImportScope) {
   return async () => {
   const { currentProject, projectName, safeFilePart, saveTextFile, serializeProject, writeOperationLog } = __appScope;
     // 本机另存为才拿得到磁盘路径 → 弹框里才有【查看】
@@ -933,7 +934,7 @@ export function createExportCurrentModelFile(__appScope: Record<string, any>) {
   };
 }
 
-export function createOpenModelImportFilePicker(__appScope: Record<string, any>) {
+export function createOpenModelImportFilePicker(__appScope: ExportImportScope) {
   return (targetSchemeId = "") => {
   const { modelImportInputRef, modelImportTargetSchemeIdRef } = __appScope;
     modelImportTargetSchemeIdRef.current = targetSchemeId;
@@ -941,7 +942,7 @@ export function createOpenModelImportFilePicker(__appScope: Record<string, any>)
   };
 }
 
-export function createOpenSvgModelImportFilePicker(__appScope: Record<string, any>) {
+export function createOpenSvgModelImportFilePicker(__appScope: ExportImportScope) {
   return (targetSchemeId = "") => {
   const { modelImportTargetSchemeIdRef, svgModelImportInputRef } = __appScope;
     modelImportTargetSchemeIdRef.current = targetSchemeId;
@@ -952,7 +953,7 @@ export function createOpenSvgModelImportFilePicker(__appScope: Record<string, an
   };
 }
 
-export function createCompleteImportedModelFeedback(__appScope: Record<string, any>) {
+export function createCompleteImportedModelFeedback(__appScope: ExportImportScope) {
   return (feedback?: { successMessage: string; warnings: string[] }) => {
   const { writeOperationLog } = __appScope;
     if (!feedback) {
@@ -985,7 +986,7 @@ function svgModelImportCompletionFeedback(importedName: string, result: any) {
   };
 }
 
-export function createOpenSchemeImportFilePicker(__appScope: Record<string, any>) {
+export function createOpenSchemeImportFilePicker(__appScope: ExportImportScope) {
   return (parentSchemeId = "") => {
   const { schemeImportInputRef, schemeImportParentSchemeIdRef } = __appScope;
     schemeImportParentSchemeIdRef.current = parentSchemeId;
@@ -996,7 +997,7 @@ export function createOpenSchemeImportFilePicker(__appScope: Record<string, any>
   };
 }
 
-export function createMergeImportedSchemeIntoExisting(__appScope: Record<string, any>) {
+export function createMergeImportedSchemeIntoExisting(__appScope: ExportImportScope) {
   return (existingScheme: SavedSchemeRecord, importedScheme: SavedSchemeRecord): SavedSchemeRecord => {
   const { hasSameName, mergeImportedSchemeIntoExisting, upsertSavedProject } = __appScope;
     const now = new Date().toISOString();
@@ -1023,7 +1024,7 @@ export function createMergeImportedSchemeIntoExisting(__appScope: Record<string,
   };
 }
 
-export function createCommitImportedSchemeRecord(__appScope: Record<string, any>) {
+export function createCommitImportedSchemeRecord(__appScope: ExportImportScope) {
   return (importedScheme: SavedSchemeRecord, parentSchemeId = "") => {
   const { insertChildSavedScheme, persistSchemeTreeToBackend, schemePathForScheme, selectSingleScheme, setExpandedSchemeIds, setSchemes, writeOperationLog } = __appScope;
     const parentPath = parentSchemeId ? schemePathForScheme(parentSchemeId) : [];
@@ -1038,7 +1039,7 @@ export function createCommitImportedSchemeRecord(__appScope: Record<string, any>
   };
 }
 
-export function createApplyBackendSchemeArchiveImport(__appScope: Record<string, any>) {
+export function createApplyBackendSchemeArchiveImport(__appScope: ExportImportScope) {
   return (payload: BackendSchemeArchiveImportResponse, fallbackName: string) => {
   const { findSavedSchemeByPath, hydrateSavedSchemeRuntimeIds, normalizeSavedSchemeIndexes, rememberPersistedSchemesPayload, selectSingleScheme, serializeSchemesForStorage, setExpandedSchemeIds, setSchemesState, suppressNextBackendSchemeSyncRef, writeOperationLog } = __appScope;
     const importedPath = Array.isArray(payload.importedPath) ? payload.importedPath : [];
@@ -1060,7 +1061,7 @@ export function createApplyBackendSchemeArchiveImport(__appScope: Record<string,
   };
 }
 
-export function createImportSchemeFile(__appScope: Record<string, any>) {
+export function createImportSchemeFile(__appScope: ExportImportScope) {
   return async (event: ChangeEvent<HTMLInputElement>) => {
   const { applyBackendSchemeArchiveImport, commitImportedSchemeRecord, createImportedSchemeRecord, findSavedSchemeById, hasSameName, schemeImportParentSchemeIdRef, schemePathForScheme, schemes, setPendingSchemeImportConflict, uploadBackendSchemeArchive } = __appScope;
     const input = event.currentTarget;
@@ -1113,7 +1114,7 @@ export function createImportSchemeFile(__appScope: Record<string, any>) {
   };
 }
 
-export function createCommitImportedModelRecord(__appScope: Record<string, any>) {
+export function createCommitImportedModelRecord(__appScope: ExportImportScope) {
   return (targetScheme: SavedSchemeRecord, importedRecord: SavedProjectRecord) => {
   const { findSavedSchemeById, handleBackendSchemeMutationFailure, loadSavedProject, saveBackendProjectRecord, schemePathForRecord, setExpandedSchemeIds, setSchemes, upsertSavedProjectInScheme, writeOperationLog } = __appScope;
     const targetPath = schemePathForRecord(targetScheme);
@@ -1132,7 +1133,7 @@ export function createCommitImportedModelRecord(__appScope: Record<string, any>)
   };
 }
 
-export function createImportModelFile(__appScope: Record<string, any>) {
+export function createImportModelFile(__appScope: ExportImportScope) {
   return async (event: ChangeEvent<HTMLInputElement>) => {
   const { activeSchemeRecord, commitImportedModelRecord, createSavedProject, createSavedScheme, deserializeProject, findSavedSchemeById, modelImportTargetSchemeIdRef, schemes, selectedSchemeRecord, setPendingModelImportConflict } = __appScope;
     const input = event.currentTarget;
@@ -1173,7 +1174,7 @@ export function createImportModelFile(__appScope: Record<string, any>) {
   };
 }
 
-export function createImportSvgModelFile(__appScope: Record<string, any>) {
+export function createImportSvgModelFile(__appScope: ExportImportScope) {
   return async (event: ChangeEvent<HTMLInputElement>) => {
   const {
     activeSchemeRecord,
@@ -1270,7 +1271,7 @@ function dotModelImportCompletionFeedback(importedName: string, result: any) {
   };
 }
 
-export function createOpenDotModelImportFilePicker(__appScope: Record<string, any>) {
+export function createOpenDotModelImportFilePicker(__appScope: ExportImportScope) {
   return (targetSchemeId = "") => {
   const { dotModelImportInputRef, modelImportTargetSchemeIdRef } = __appScope;
     modelImportTargetSchemeIdRef.current = targetSchemeId;
@@ -1281,7 +1282,7 @@ export function createOpenDotModelImportFilePicker(__appScope: Record<string, an
   };
 }
 
-export function createImportDotModelFile(__appScope: Record<string, any>) {
+export function createImportDotModelFile(__appScope: ExportImportScope) {
   return async (event: ChangeEvent<HTMLInputElement>) => {
   const {
     activeSchemeRecord,
@@ -1345,7 +1346,7 @@ export function createImportDotModelFile(__appScope: Record<string, any>) {
   };
 }
 
-export function createResolveDuplicateSchemeImport(__appScope: Record<string, any>) {
+export function createResolveDuplicateSchemeImport(__appScope: ExportImportScope) {
   return (action: "merge" | "rename" | "cancel") => {
   const { applyBackendSchemeArchiveImport, commitImportedSchemeRecord, findSavedSchemeById, mergeImportedSchemeIntoExisting, pendingSchemeImportConflict, persistSchemeTreeToBackend, promptUniqueRecordName, replaceSavedSchemeById, savedChildSchemeNames, schemePathForRecord, schemePathForScheme, schemes, selectSingleScheme, setExpandedSchemeIds, setPendingSchemeImportConflict, setSchemes, uniqueRecordName, uploadBackendSchemeArchive, writeOperationLog } = __appScope;
     const conflict = pendingSchemeImportConflict;
@@ -1422,7 +1423,7 @@ export function createResolveDuplicateSchemeImport(__appScope: Record<string, an
   };
 }
 
-export function createResolveDuplicateModelImport(__appScope: Record<string, any>) {
+export function createResolveDuplicateModelImport(__appScope: ExportImportScope) {
   return (action: "overwrite" | "rename" | "cancel") => {
   const { activeSchemeRecord, commitImportedModelRecord, completeImportedModelFeedback, createSavedProject, createSavedScheme, findSavedSchemeById, pendingModelImportConflict, promptUniqueRecordName, schemes, selectedSchemeRecord, setPendingModelImportConflict, uniqueRecordName } = __appScope;
     const conflict = pendingModelImportConflict;
@@ -1467,7 +1468,7 @@ export function createResolveDuplicateModelImport(__appScope: Record<string, any
   };
 }
 
-export function createExportSchemeRecord(__appScope: Record<string, any>) {
+export function createExportSchemeRecord(__appScope: ExportImportScope) {
   return async (scheme: SavedSchemeRecord) => {
   const { downloadBackendSchemeArchive, flattenSavedProjects, isPickerAbort, safeFilePart, schemePathForRecord, writeOperationLog } = __appScope;
     try {

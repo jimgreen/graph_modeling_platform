@@ -2,6 +2,7 @@ export * from "../export/static-button-targets";
 import { lazy } from "react";
 import { apiPath } from "../config";
 import { BUILTIN_VOLTAGE_LEVELS, ELEMENT_TREE_COMPONENT_LIBRARY_LABELS } from "../model";
+import { E_SECTION_COLUMNS } from "../export/e-section-schema";
 import {
   DEVICE_VISUAL_PARAM_KEYS,
   DEVICE_VISUAL_PARAM_PREFIXES
@@ -22,7 +23,6 @@ import {
   HYDROGEN_ENDPOINT_CONTROL_TYPES,
   HYDROGEN_STORAGE_CONTROL_TYPES,
   ELECTRIC_HEAT_COUPLING_CONTROL_TYPES,
-  E_SECTION_COLUMNS,
   firstNonZeroVoltageBase,
   getNodeScaleX,
   getNodeScaleY,

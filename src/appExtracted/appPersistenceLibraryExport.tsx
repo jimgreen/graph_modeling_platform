@@ -2999,9 +2999,13 @@ function isLocalStorageQuotaError(error: unknown): boolean {
 function warnLocalStorageWriteFailure(error: unknown): void {
   console.error("[persist] localStorage 写入失败:", error);
   if (isLocalStorageQuotaError(error)) {
-    import("../globalMessage").then(({ showGlobalMessage }) => {
-      showGlobalMessage("浏览器本地存储空间已满，本次图元库修改可能未持久化。请导出备份并清理浏览器缓存后重试。");
-    }).catch(() => {});
+    // 经由 globalThis 读取由 main.tsx 注册的全局提示函数，避免 Node 测试加载 globalMessage.ts，同时消除 Vite 动静混引告警
+    const notify = typeof globalThis !== "undefined"
+      ? (globalThis as { showGlobalMessage?: (message: string) => void }).showGlobalMessage
+      : undefined;
+    if (typeof notify === "function") {
+      notify("浏览器本地存储空间已满，本次图元库修改可能未持久化。请导出备份并清理浏览器缓存后重试。");
+    }
   }
 }
 

@@ -3,11 +3,12 @@
  * 从 appDeviceDefinitionFactories.tsx 拆分，保持严格 TypeScript 类型检查。
  */
 
+import type { EdgeRouteInteractionScope } from "./appScopeTypes";
 import type { MouseEvent, PointerEvent } from "react";
 import { isLineOnlyConnectionNode, type Edge, type ModelNode, type Point } from "../model";
 import { type ConnectTarget } from "./appCoreCanvasUtilities";
 
-export function createOpenEdgeContextMenu(__appScope: Record<string, any>) {
+export function createOpenEdgeContextMenu(__appScope: EdgeRouteInteractionScope) {
   return (event: MouseEvent<SVGPathElement>, edgeId: string, routePoints?: Point[]) => {
   const { activateInspectorFromCanvas, activeLayerEdgeIdSet, canvasInteractionRef, clampPointToCanvas, lastCanvasPointerRef, lastRawCanvasPointerRef, openGraphicContextMenu, projectListPointerInsideRef, screenToSvgPoint, selectCanvasGraphics, svgRef, updateMouseStatus } = __appScope;
     event.preventDefault();
@@ -38,7 +39,7 @@ export function createOpenEdgeContextMenu(__appScope: Record<string, any>) {
   };
 }
 
-export function createCaptureCanvasPointer(__appScope: Record<string, any>) {
+export function createCaptureCanvasPointer(__appScope: EdgeRouteInteractionScope) {
   return (pointerId: number) => {
   const { svgRef } = __appScope;
     try {
@@ -49,7 +50,7 @@ export function createCaptureCanvasPointer(__appScope: Record<string, any>) {
   };
 }
 
-export function createStartManualSegmentDrag(__appScope: Record<string, any>) {
+export function createStartManualSegmentDrag(__appScope: EdgeRouteInteractionScope) {
   return (
     event: PointerEvent<SVGPathElement>,
     edgeId: string,
@@ -91,7 +92,7 @@ export function createStartManualSegmentDrag(__appScope: Record<string, any>) {
   };
 }
 
-export function createStartManualPointDrag(__appScope: Record<string, any>) {
+export function createStartManualPointDrag(__appScope: EdgeRouteInteractionScope) {
   return (event: PointerEvent<SVGCircleElement>, edgeId: string, pointIndex: number, routePoints: Point[]) => {
   const { activeLayerEdgeIdSet, captureCanvasPointer, clampPointToCanvas, edgePointerBendInsertRef, findBendInsertRouteSegmentIndex, hasCanvasSelectionModifier, insertManualBendAtPoint, routeManualPoints, screenToSvgPoint, selectCanvasGraphics, setManualPathDrag, startModifierSelectionPress, svgRef } = __appScope;
     event.stopPropagation();
@@ -129,7 +130,7 @@ export function createStartManualPointDrag(__appScope: Record<string, any>) {
   };
 }
 
-export function createRouteSegmentPointerDistance(__appScope: Record<string, any>) {
+export function createRouteSegmentPointerDistance(__appScope: EdgeRouteInteractionScope) {
   return (point: Point, from: Point, to: Point) => {
     if (from.y === to.y) {
       const minX = Math.min(from.x, to.x);
@@ -151,7 +152,7 @@ export function createRouteSegmentPointerDistance(__appScope: Record<string, any
   };
 }
 
-export function createFindEditableRouteSegmentIndex(__appScope: Record<string, any>) {
+export function createFindEditableRouteSegmentIndex(__appScope: EdgeRouteInteractionScope) {
   return (routePoints: Point[], point: Point) => {
   const { routeSegmentPointerDistance, sameOptionalPoint } = __appScope;
     const candidates = routePoints
@@ -165,7 +166,7 @@ export function createFindEditableRouteSegmentIndex(__appScope: Record<string, a
   };
 }
 
-export function createConnectionHitTolerance(__appScope: Record<string, any>) {
+export function createConnectionHitTolerance(__appScope: EdgeRouteInteractionScope) {
   return () => {
   const { CONNECTION_HIT_SCREEN_TOLERANCE, svgRef } = __appScope;
     const svg = svgRef.current;
@@ -180,7 +181,7 @@ export function createConnectionHitTolerance(__appScope: Record<string, any>) {
   };
 }
 
-export function createFindConnectionRouteHitAtPoint(__appScope: Record<string, any>) {
+export function createFindConnectionRouteHitAtPoint(__appScope: EdgeRouteInteractionScope) {
   return (point: Point) => {
   const { activeLayerEdgeIdSet, connectionHitTolerance, queryRouteSpatialIndex, routeSegmentPointerDistance, routedEdgeIndexById, routedEdgeSpatialIndex } = __appScope;
     const tolerance = connectionHitTolerance();
@@ -210,7 +211,7 @@ export function createFindConnectionRouteHitAtPoint(__appScope: Record<string, a
   };
 }
 
-export function createInsertManualBendAtPoint(__appScope: Record<string, any>) {
+export function createInsertManualBendAtPoint(__appScope: EdgeRouteInteractionScope) {
   return (edgeId: string, segmentIndex: number, routePoints: Point[], clickPoint: Point) => {
   const { activeLayerEdgeIdSet, canvasBounds, insertOrthogonalRouteBend, pushUndoSnapshot, routeManualPoints, setEdgeManualPoints } = __appScope;
     if (!activeLayerEdgeIdSet.has(edgeId)) {
@@ -227,7 +228,7 @@ export function createInsertManualBendAtPoint(__appScope: Record<string, any>) {
   };
 }
 
-export function createInsertManualBendFromPointer(__appScope: Record<string, any>) {
+export function createInsertManualBendFromPointer(__appScope: EdgeRouteInteractionScope) {
   return (edgeId: string, routePoints: Point[], clickPoint: Point) => {
   const { findEditableRouteSegmentIndex, insertManualBendAtPoint } = __appScope;
     const segmentIndex = findEditableRouteSegmentIndex(routePoints, clickPoint);
@@ -239,7 +240,7 @@ export function createInsertManualBendFromPointer(__appScope: Record<string, any
   };
 }
 
-export function createAddManualBendFromContextMenu(__appScope: Record<string, any>) {
+export function createAddManualBendFromContextMenu(__appScope: EdgeRouteInteractionScope) {
   return () => {
   const { contextMenu, insertManualBendFromPointer, lastCanvasPointerRef, selectedEdgeId, selectedRoutedEdge } = __appScope;
     const edgeId = contextMenu?.edgeId ?? selectedEdgeId;
@@ -252,7 +253,7 @@ export function createAddManualBendFromContextMenu(__appScope: Record<string, an
   };
 }
 
-export function createAddRoutableLineBendFromContextMenu(__appScope: Record<string, any>) {
+export function createAddRoutableLineBendFromContextMenu(__appScope: EdgeRouteInteractionScope) {
   return () => {
   const { contextMenu, insertRoutableLineBendFromPointer, isRoutableLineDeviceKind, lastCanvasPointerRef, nodeById, routableLineDeviceCanvasPoints } = __appScope;
     const nodeId = contextMenu?.nodeId;
@@ -269,7 +270,7 @@ export function createAddRoutableLineBendFromContextMenu(__appScope: Record<stri
   };
 }
 
-export function createInsertManualBendFromEdgePath(__appScope: Record<string, any>) {
+export function createInsertManualBendFromEdgePath(__appScope: EdgeRouteInteractionScope) {
   return (event: MouseEvent<SVGElement>, edgeId: string, routePoints: Point[]) => {
   const { activateInspectorFromCanvas, activeLayerEdgeIdSet, clampPointToCanvas, edgePointerBendInsertRef, insertManualBendFromPointer, screenToSvgPoint, selectCanvasGraphics, staticDrawing, svgRef } = __appScope;
     event.preventDefault();
@@ -300,7 +301,7 @@ export function createInsertManualBendFromEdgePath(__appScope: Record<string, an
   };
 }
 
-export function createHandleEdgePathPointerDown(__appScope: Record<string, any>) {
+export function createHandleEdgePathPointerDown(__appScope: EdgeRouteInteractionScope) {
   return (event: PointerEvent<SVGPathElement>, edgeId: string, routePoints: Point[]) => {
   const { activateInspectorFromCanvas, activeLayerEdgeIdSet, appendStaticDrawingPoint, clampPointToCanvas, edgePointerBendInsertRef, hasCanvasSelectionModifier, insertManualBendFromPointer, isRepeatedEdgePointerClick, lastEdgePointerClickRef, screenToSvgPoint, selectCanvasGraphics, startModifierSelectionPress, staticDrawing, svgRef } = __appScope;
     event.stopPropagation();
@@ -346,7 +347,7 @@ export function createHandleEdgePathPointerDown(__appScope: Record<string, any>)
   };
 }
 
-export function createDeleteManualBendPoint(__appScope: Record<string, any>) {
+export function createDeleteManualBendPoint(__appScope: EdgeRouteInteractionScope) {
   return (edgeId: string, routePointIndex: number, routePoints: Point[]) => {
   const { activeLayerEdgeIdSet, pushUndoSnapshot, routeManualPoints, setEdgeManualPoints } = __appScope;
     if (!activeLayerEdgeIdSet.has(edgeId)) {
@@ -361,7 +362,7 @@ export function createDeleteManualBendPoint(__appScope: Record<string, any>) {
   };
 }
 
-export function createSetRoutableLineManualPathPoints(__appScope: Record<string, any>) {
+export function createSetRoutableLineManualPathPoints(__appScope: EdgeRouteInteractionScope) {
   return (nodeId: string, routePoints: Point[]) => {
   const { activeLayerNodeIdSet, canvasBounds, isRoutableLineDeviceKind, nodeById, patchGraphNodes, setRoutableLineDeviceCanvasPoints } = __appScope;
     const lineNode = nodeById.get(nodeId);
@@ -376,7 +377,7 @@ export function createSetRoutableLineManualPathPoints(__appScope: Record<string,
   };
 }
 
-export function createInsertRoutableLineBendAtPoint(__appScope: Record<string, any>) {
+export function createInsertRoutableLineBendAtPoint(__appScope: EdgeRouteInteractionScope) {
   return (nodeId: string, segmentIndex: number, routePoints: Point[], clickPoint: Point) => {
   const { activeLayerNodeIdSet, canvasBounds, insertRoutableLineDeviceBend, isRoutableLineDeviceKind, nodeById, patchGraphNodes, pushUndoSnapshot, setRoutableLineDeviceCanvasPoints, writeOperationLog } = __appScope;
     const lineNode = nodeById.get(nodeId);
@@ -400,7 +401,7 @@ export function createInsertRoutableLineBendAtPoint(__appScope: Record<string, a
   };
 }
 
-export function createInsertRoutableLineBendFromPointer(__appScope: Record<string, any>) {
+export function createInsertRoutableLineBendFromPointer(__appScope: EdgeRouteInteractionScope) {
   return (nodeId: string, routePoints: Point[], clickPoint: Point) => {
   const { findEditableRouteSegmentIndex, insertRoutableLineBendAtPoint } = __appScope;
     const segmentIndex = findEditableRouteSegmentIndex(routePoints, clickPoint);
@@ -411,7 +412,7 @@ export function createInsertRoutableLineBendFromPointer(__appScope: Record<strin
   };
 }
 
-export function createStartRoutableLineSegmentDrag(__appScope: Record<string, any>) {
+export function createStartRoutableLineSegmentDrag(__appScope: EdgeRouteInteractionScope) {
   return (
     event: PointerEvent<SVGPathElement>,
     node: ModelNode,
@@ -447,7 +448,7 @@ export function createStartRoutableLineSegmentDrag(__appScope: Record<string, an
   };
 }
 
-export function createStartRoutableLinePointDrag(__appScope: Record<string, any>) {
+export function createStartRoutableLinePointDrag(__appScope: EdgeRouteInteractionScope) {
   return (event: PointerEvent<SVGCircleElement>, node: ModelNode, pointIndex: number, routePoints: Point[]) => {
   const { activeLayerNodeIdSet, captureCanvasPointer, clampPointToCanvas, hasCanvasSelectionModifier, insertRoutableLineBendFromPointer, screenToSvgPoint, selectCanvasGraphics, setManualPathDrag, startModifierSelectionPress, svgRef } = __appScope;
     event.stopPropagation();
@@ -476,7 +477,7 @@ export function createStartRoutableLinePointDrag(__appScope: Record<string, any>
   };
 }
 
-export function createDeleteRoutableLineBendPoint(__appScope: Record<string, any>) {
+export function createDeleteRoutableLineBendPoint(__appScope: EdgeRouteInteractionScope) {
   return (nodeId: string, routePointIndex: number, routePoints: Point[]) => {
   const { activeLayerNodeIdSet, pushUndoSnapshot, setRoutableLineManualPathPoints } = __appScope;
     if (!activeLayerNodeIdSet.has(nodeId) || routePointIndex <= 0 || routePointIndex >= routePoints.length - 1) {
@@ -488,7 +489,7 @@ export function createDeleteRoutableLineBendPoint(__appScope: Record<string, any
   };
 }
 
-export function createStartConnectFromTerminal(__appScope: Record<string, any>) {
+export function createStartConnectFromTerminal(__appScope: EdgeRouteInteractionScope) {
   return (node: ModelNode, terminalId: string, point?: Point) => {
   const { activeLayerNodeIdSet, applyConnectPreviewState, getModelEdgeEndpointPoint, resetRoutableLinePreviewState, setCanvasSelectionScope, setConnectSource, setMode, setRoutableLinePlacement, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds } = __appScope;
     if (isLineOnlyConnectionNode(node)) {
@@ -511,7 +512,7 @@ export function createStartConnectFromTerminal(__appScope: Record<string, any>) 
   };
 }
 
-export function createFinishTerminalPress(__appScope: Record<string, any>) {
+export function createFinishTerminalPress(__appScope: EdgeRouteInteractionScope) {
   return () => {
   const { busAnchorFromPoint, isBusNode, nodeById, patchSingleTerminalAnchorFromPoint, setTerminalPress, startConnectFromTerminal, terminalPress } = __appScope;
     if (!terminalPress) {
@@ -540,7 +541,7 @@ export function createFinishTerminalPress(__appScope: Record<string, any>) {
   };
 }
 
-export function createHandleTerminalPointerDown(__appScope: Record<string, any>) {
+export function createHandleTerminalPointerDown(__appScope: EdgeRouteInteractionScope) {
   return (
     event: PointerEvent<SVGCircleElement>,
     node: ModelNode,

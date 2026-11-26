@@ -84,9 +84,20 @@ describe("vite.config.ts 的 manualChunks 分块行为", () => {
     expect(manualChunks(posix("node_modules/typescript/lib/typescript.js"))).toBe("vendor");
   });
 
-  test("model 入口归入 model-core，图状态 store 归入 graph-core，其余源码不归块", () => {
+  test("model / routing / export 归入 model-core，图状态 store 归入 graph-core，其余源码不归块", () => {
     const repoPosix = (rel) => `D:/work/graph_modeling_platform/${rel}`;
-    expect(manualChunks(repoPosix("src/model.ts"))).toBe("model-core");
+    for (const rel of [
+      "src/model.ts",
+      "src/model/types.ts",
+      "src/model-routing.ts",
+      "src/routing/routeWorkerClient.ts",
+      "src/model-eexport.ts",
+      "src/export/e-section-schema.ts",
+      "src/export/e-record-builders.ts",
+      "src/encoding/gbk.ts"
+    ]) {
+      expect(manualChunks(repoPosix(rel)), `${rel} 应归入 model-core`).toBe("model-core");
+    }
     for (const rel of [
       "src/graphStore.ts",
       "src/routeStore.ts",

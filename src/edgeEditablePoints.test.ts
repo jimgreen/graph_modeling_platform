@@ -232,10 +232,11 @@ describe("★ 静态守卫：8 个调用点都改用了助手，且没有残留�
     const byFile: Record<string, number> = {};
     for (const hit of hits) byFile[hit.file] = (byFile[hit.file] ?? 0) + 1;
     expect(byFile, `实际 ${hits.length} 处`).toEqual({
-      "appExtracted/appCanvasInteractionFactories.tsx": 2,
-      "appExtracted/appProjectCanvasFactories.tsx": 1,
+      "appExtracted/appCanvasInteractionFactories.tsx": 1,
       "appExtracted/appPersistenceLibraryExport.tsx": 1,
+      "appExtracted/appProjectRecordFactories.tsx": 1,
       "appExtracted/appRenderBatch.tsx": 1,
+      "appExtracted/appStaticDrawingFactories.tsx": 1,
       "autoAlign/autoAlignPlan.ts": 1,
       "model-routing.ts": 1,
       "selectionActions.ts": 1

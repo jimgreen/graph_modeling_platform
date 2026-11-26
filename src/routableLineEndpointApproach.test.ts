@@ -575,22 +575,22 @@ function findCanvasPointsCalls(source: string): CanvasPointsCall[] {
  */
 const PREVIEW_CALL_ALLOWLIST: Array<{ file: string; contextPattern: RegExp; reason: string }> = [
   {
-    file: "appExtracted/appProjectCanvasFactories.tsx",
+    file: "appExtracted/appProjectRecordFactories.tsx",
     contextPattern: /const previewRoutePoints = routableLineNode/,
     reason: "拖拽预览分支：随 mousemove 每帧调用，走端点走向强制会让拖拽发涩；松手提交由 createFinishManualPathDrag 兜底"
   },
   {
-    file: "model-routing.ts",
+    file: "routing/routeGeometryPrimitives.ts",
     contextPattern: /insertOrthogonalRouteBend\(/,
     reason: "加拐点几何 helper，自身也被预览路径复用；提交侧的纠正已在 appDeviceDefinitionFactories.createInsertRoutableLineBendAtPoint 传入 context"
   },
   {
-    file: "model-routing.ts",
+    file: "routing/routeGeometryPrimitives.ts",
     contextPattern: /moveOrthogonalRouteSegment\(/,
     reason: "拖线段几何 helper，仅在拖拽预览路径使用（提交侧先由调用方 setRoutableLineDeviceCanvasPoints 带 context 纠正）"
   },
   {
-    file: "model-routing.ts",
+    file: "routing/routeGeometryPrimitives.ts",
     contextPattern: /simplifyPreservedRoutableLineRouteIfCleaner\(/,
     reason: "setRoutableLineDeviceEndpointsPreservingRoute 内层写入；该函数 return 前紧接一次 enforceRoutableLineEndpointApproach，此处再传 context 会重复纠正"
   }

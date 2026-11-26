@@ -1,0 +1,1494 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="precision-dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title data-i18n="page.title">架构重构与变更总览报告 · Graph Modeling Platform</title>
+  <style>
+    /* ========================================================================
+       Design Tokens — 严格套用 style-presets.md (precision-dark / minimalist-light)
+       ======================================================================== */
+    :root,
+    [data-theme="precision-dark"] {
+      color-scheme: dark;
+      --bg-canvas: #0B0F19;
+      --bg-surface: #111827;
+      --bg-subtle: #1E293B;
+      --bg-hover: rgba(148, 163, 184, 0.10);
+      --bg-selected: rgba(56, 189, 248, 0.14);
+      --table-stripe: #162032;
+      --table-hover: #1E293B;
+      --text-primary: #F8FAFC;
+      --text-secondary: #94A3B8;
+      --text-tertiary: #64748B;
+      --accent: #38BDF8;
+      --accent-hover: #0EA5E9;
+      --accent-soft: rgba(56, 189, 248, 0.15);
+      --ok: #34D399;
+      --ok-soft: rgba(52, 211, 153, 0.14);
+      --warn: #FBBF24;
+      --warn-soft: rgba(251, 191, 36, 0.15);
+      --danger: #FB7185;
+      --danger-soft: rgba(251, 113, 133, 0.15);
+      --border-color: rgba(255, 255, 255, 0.08);
+      --border-strong: rgba(255, 255, 255, 0.16);
+      --border: 1px solid var(--border-color);
+      --grid-line: rgba(255, 255, 255, 0.06);
+      --code-bg: #0F172A;
+      --select-option-bg: #111827;
+      --radius-card: 10px;
+      --radius-btn: 6px;
+      --shadow-card: 0 4px 16px rgba(0, 0, 0, 0.28);
+      --font-sans: "Inter", "Segoe UI", "Roboto", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Arial", system-ui, sans-serif;
+      --font-mono: "JetBrains Mono", "Fira Code", "Cascadia Code", ui-monospace, SFMono-Regular, monospace;
+      accent-color: var(--accent);
+    }
+
+    [data-theme="minimalist-light"] {
+      color-scheme: light;
+      --bg-canvas: #F8FAFC;
+      --bg-surface: #FFFFFF;
+      --bg-subtle: #F1F5F9;
+      --bg-hover: rgba(15, 23, 42, 0.04);
+      --bg-selected: rgba(37, 99, 235, 0.10);
+      --table-stripe: #F8FAFC;
+      --table-hover: #EFF6FF;
+      --text-primary: #0F172A;
+      --text-secondary: #64748B;
+      --text-tertiary: #94A3B8;
+      --accent: #2563EB;
+      --accent-hover: #1D4ED8;
+      --accent-soft: rgba(37, 99, 235, 0.10);
+      --ok: #0D9488;
+      --ok-soft: rgba(13, 148, 136, 0.12);
+      --warn: #D97706;
+      --warn-soft: rgba(217, 119, 6, 0.13);
+      --danger: #DC2626;
+      --danger-soft: rgba(220, 38, 38, 0.10);
+      --border-color: #E2E8F0;
+      --border-strong: #CBD5E1;
+      --border: 1px solid var(--border-color);
+      --grid-line: #E2E8F0;
+      --code-bg: #F1F5F9;
+      --select-option-bg: #FFFFFF;
+      --radius-card: 12px;
+      --radius-btn: 8px;
+      --shadow-card: 0 1px 3px rgba(15, 23, 42, 0.04), 0 1px 2px rgba(15, 23, 42, 0.02);
+      --font-sans: "Inter", "Segoe UI", "Roboto", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Arial", system-ui, sans-serif;
+      --font-mono: "JetBrains Mono", "Fira Code", "Cascadia Code", ui-monospace, SFMono-Regular, monospace;
+      accent-color: var(--accent);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      min-height: 100%;
+      background: var(--bg-canvas);
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+      font-size: 13px;
+      line-height: 1.45;
+      -webkit-font-smoothing: antialiased;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border-strong) var(--bg-canvas);
+    }
+
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: var(--bg-canvas); }
+    ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text-tertiary); }
+
+    select option {
+      background-color: var(--select-option-bg);
+      color: var(--text-primary);
+    }
+
+    .mono {
+      font-family: var(--font-mono);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* 顶栏 40px */
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 40;
+      height: 40px;
+      padding: 0 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      background: var(--bg-surface);
+      border-bottom: var(--border);
+    }
+
+    .topbar-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .brand-icon {
+      width: 22px;
+      height: 22px;
+      border-radius: 5px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .topbar-title {
+      font-size: 14px;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .commit-chip {
+      font-size: 11px;
+      padding: 1px 7px;
+      border-radius: 4px;
+      background: var(--ok-soft);
+      color: var(--ok);
+      font-weight: 600;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    .ctrl-btn, .ctrl-select, .ctrl-input {
+      height: 26px;
+      padding: 0 8px;
+      border-radius: var(--radius-btn);
+      border: var(--border);
+      background: var(--bg-subtle);
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+      font-size: 12px;
+      outline: none;
+      transition: border-color 150ms ease, background-color 150ms ease, color 150ms ease;
+    }
+
+    .ctrl-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .ctrl-btn:hover, .ctrl-select:hover, .ctrl-input:hover {
+      border-color: var(--border-strong);
+      background: var(--bg-hover);
+    }
+
+    .ctrl-btn:focus-visible, .ctrl-select:focus-visible, .ctrl-input:focus-visible {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-soft);
+    }
+
+    .ctrl-select { cursor: pointer; }
+    .ctrl-input { width: 210px; min-width: 120px; }
+    .ctrl-input::placeholder { color: var(--text-tertiary); }
+
+    /* 单行紧凑指标条 34px */
+    .kpi-strip {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      min-height: 34px;
+      padding: 4px 12px;
+      gap: 0;
+      background: var(--bg-surface);
+      border-bottom: var(--border);
+    }
+
+    .kpi-item {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 6px;
+      padding: 2px 12px 2px 0;
+      margin-right: 12px;
+      border-right: var(--border);
+      white-space: nowrap;
+    }
+
+    .kpi-item:last-child { border-right: none; margin-right: 0; padding-right: 0; }
+    .kpi-label { font-size: 11px; color: var(--text-secondary); }
+    .kpi-val { font-size: 13px; font-weight: 700; color: var(--text-primary); }
+    .kpi-val.ok { color: var(--ok); }
+    .kpi-val.accent { color: var(--accent); }
+
+    /* 主工作区 */
+    .workspace {
+      max-width: 1680px;
+      margin: 0 auto;
+      padding: 8px 10px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    /* 单行整合导航 + 筛选工具栏 */
+    .toolbar-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 4px 6px;
+      background: var(--bg-surface);
+      border: var(--border);
+      border-radius: var(--radius-card);
+    }
+
+    .tab-group {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      flex-wrap: wrap;
+    }
+
+    .tab-btn {
+      height: 26px;
+      padding: 0 10px;
+      border: 1px solid transparent;
+      border-radius: var(--radius-btn);
+      background: transparent;
+      color: var(--text-secondary);
+      font-family: var(--font-sans);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      white-space: nowrap;
+      transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
+    }
+
+    .tab-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+    .tab-btn.active {
+      background: var(--accent-soft);
+      color: var(--accent);
+      border-color: var(--border-strong);
+    }
+
+    .tab-count {
+      font-size: 11px;
+      padding: 0 5px;
+      border-radius: 999px;
+      background: var(--bg-subtle);
+      color: var(--text-secondary);
+    }
+    .tab-btn.active .tab-count { background: var(--bg-surface); color: var(--accent); }
+
+    .filter-group {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    /* 面板 */
+    .view-panel { display: none; flex-direction: column; gap: 8px; }
+    .view-panel.active { display: flex; }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: minmax(0, 1.05fr) minmax(0, 1.25fr);
+      gap: 8px;
+    }
+
+    @media (max-width: 1080px) {
+      .grid-2 { grid-template-columns: 1fr; }
+    }
+
+    .panel {
+      background: var(--bg-surface);
+      border: var(--border);
+      border-radius: var(--radius-card);
+      box-shadow: var(--shadow-card);
+      overflow: hidden;
+      min-width: 0;
+    }
+
+    .panel-head {
+      height: 32px;
+      padding: 0 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      background: var(--bg-subtle);
+      border-bottom: var(--border);
+    }
+
+    .panel-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--text-primary);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .panel-meta {
+      font-size: 11px;
+      color: var(--text-secondary);
+      white-space: nowrap;
+    }
+
+    .panel-body {
+      padding: 8px 10px;
+    }
+
+    /* 表格（高密度 28px 行高） */
+    .table-wrap {
+      width: 100%;
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+
+    thead th {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      height: 28px;
+      padding: 0 8px;
+      text-align: left;
+      font-weight: 600;
+      font-size: 11px;
+      color: var(--text-secondary);
+      background: var(--bg-subtle);
+      border-bottom: var(--border);
+      white-space: nowrap;
+    }
+
+    tbody tr {
+      border-bottom: var(--border);
+      transition: background-color 120ms ease;
+    }
+
+    tbody tr:nth-child(even) { background: var(--table-stripe); }
+    tbody tr:hover { background: var(--table-hover); }
+    tbody tr.selected-row {
+      background: var(--bg-selected);
+      box-shadow: inset 3px 0 0 var(--accent);
+    }
+
+    tbody td {
+      padding: 5px 8px;
+      vertical-align: middle;
+      color: var(--text-primary);
+    }
+
+    td.num, th.num { text-align: right; white-space: nowrap; }
+    td.nowrap { white-space: nowrap; }
+
+    /* 语义徽章 */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      height: 19px;
+      padding: 0 6px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .badge-ok { background: var(--ok-soft); color: var(--ok); }
+    .badge-accent { background: var(--accent-soft); color: var(--accent); }
+    .badge-warn { background: var(--warn-soft); color: var(--warn); }
+    .badge-danger { background: var(--danger-soft); color: var(--danger); }
+    .badge-neutral { background: var(--bg-subtle); color: var(--text-secondary); border: var(--border); }
+
+    .diff-add { color: var(--ok); font-weight: 600; }
+    .diff-del { color: var(--danger); font-weight: 600; }
+
+    .path-code {
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      color: var(--text-primary);
+      word-break: break-all;
+    }
+
+    .inline-code {
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      padding: 1px 5px;
+      border-radius: 4px;
+      background: var(--code-bg);
+      color: var(--accent);
+      border: var(--border);
+    }
+
+    /* 列表与要点 */
+    .bullet-list {
+      margin: 0;
+      padding-left: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .bullet-list li { color: var(--text-primary); }
+
+    /* SVG 容器 */
+    .svg-box {
+      width: 100%;
+      overflow-x: auto;
+    }
+
+    .svg-box svg {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+
+    /* 守卫卡片网格 */
+    .guard-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+      gap: 8px;
+    }
+
+    .guard-item {
+      padding: 8px 10px;
+      border-radius: var(--radius-btn);
+      background: var(--bg-subtle);
+      border: var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .guard-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+    }
+
+    .guard-name {
+      font-weight: 700;
+      font-size: 12px;
+      color: var(--text-primary);
+    }
+
+    .guard-desc {
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+
+    .empty-row {
+      text-align: center;
+      padding: 20px !important;
+      color: var(--text-secondary);
+    }
+
+    /* 底部极简信息条 */
+    .footer-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 4px 2px 0;
+      font-size: 11px;
+      color: var(--text-tertiary);
+    }
+  </style>
+</head>
+<body>
+  <!-- 顶栏 40px -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <span class="brand-icon" aria-hidden="true">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="16 18 22 12 16 6"></polyline>
+          <polyline points="8 6 2 12 8 18"></polyline>
+        </svg>
+      </span>
+      <span class="topbar-title" data-i18n="topbar.title">图上建模平台 · 架构重构与变更总览</span>
+      <span class="commit-chip mono">main @ ec408dcf</span>
+    </div>
+    <div class="topbar-right">
+      <button id="themeToggle" class="ctrl-btn" type="button" data-i18n-title="action.switchTheme">
+        <svg id="themeIcon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="4"></circle>
+          <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"></path>
+        </svg>
+        <span id="themeLabel" data-i18n="theme.dark">精密暗黑</span>
+      </button>
+      <select id="langSelect" class="ctrl-select" aria-label="Language">
+        <option value="zh-CN">简体中文</option>
+        <option value="en-US">English</option>
+        <option value="ru-RU">Русский</option>
+      </select>
+    </div>
+  </header>
+
+  <!-- 单行紧凑指标条 34px -->
+  <section class="kpi-strip" aria-label="Metrics">
+    <div class="kpi-item">
+      <span class="kpi-label" data-i18n="kpi.commits">基线提交</span>
+      <span class="kpi-val mono accent">3</span>
+    </div>
+    <div class="kpi-item">
+      <span class="kpi-label" data-i18n="kpi.files">变更文件</span>
+      <span class="kpi-val mono">86</span>
+    </div>
+    <div class="kpi-item">
+      <span class="kpi-label" data-i18n="kpi.nocheck">@ts-nocheck</span>
+      <span class="kpi-val mono ok">2 → 0</span>
+    </div>
+    <div class="kpi-item">
+      <span class="kpi-label">appDeviceDefinitionFactories</span>
+      <span class="kpi-val mono ok">9,693 → 4,304 (-55.6%)</span>
+    </div>
+    <div class="kpi-item">
+      <span class="kpi-label">server.mjs</span>
+      <span class="kpi-val mono ok">6,415 → 3,814 (-40.6%)</span>
+    </div>
+    <div class="kpi-item">
+      <span class="kpi-label" data-i18n="kpi.tests">全量测试</span>
+      <span class="kpi-val mono ok">485 / 11,603</span>
+    </div>
+  </section>
+
+  <!-- 主工作区 -->
+  <main class="workspace">
+    <!-- 单行整合导航与筛选工具栏 -->
+    <div class="toolbar-row">
+      <div class="tab-group" role="tablist">
+        <button class="tab-btn active" data-tab="overview" role="tab" aria-selected="true">
+          <span data-i18n="tab.overview">总览与图表</span>
+        </button>
+        <button class="tab-btn" data-tab="phases" role="tab" aria-selected="false">
+          <span data-i18n="tab.phases">阶段改造明细</span>
+          <span class="tab-count mono">8</span>
+        </button>
+        <button class="tab-btn" data-tab="files" role="tab" aria-selected="false">
+          <span data-i18n="tab.files">文件变更清单</span>
+          <span id="filesTabCount" class="tab-count mono">95</span>
+        </button>
+        <button class="tab-btn" data-tab="guards" role="tab" aria-selected="false">
+          <span data-i18n="tab.guards">架构守卫与验收</span>
+          <span class="tab-count mono">10</span>
+        </button>
+      </div>
+
+      <div id="fileFilters" class="filter-group" style="display:none;">
+        <select id="commitFilter" class="ctrl-select"></select>
+        <select id="domainFilter" class="ctrl-select"></select>
+        <select id="statusFilter" class="ctrl-select"></select>
+        <input id="searchInput" class="ctrl-input" type="search" data-i18n-placeholder="filter.searchPlaceholder" placeholder="搜索路径或改动说明..." />
+      </div>
+    </div>
+
+    <!-- 视图 1：总览与图表 -->
+    <section id="panel-overview" class="view-panel active">
+      <div class="grid-2">
+        <!-- 图 1：巨型文件瘦身与模块化对比 -->
+        <div class="panel">
+          <div class="panel-head">
+            <span class="panel-title" data-i18n="chart.slimTitle">核心巨型文件瘦身对比（LOC）</span>
+            <span class="panel-meta mono">Before vs After</span>
+          </div>
+          <div class="panel-body">
+            <div id="slimChart" class="svg-box"></div>
+          </div>
+        </div>
+
+        <!-- 图 2：五子域单向无环 DAG 依赖架构 -->
+        <div class="panel">
+          <div class="panel-head">
+            <span class="panel-title" data-i18n="chart.dagTitle">appDeviceDefinitionFactories 五子域单向 DAG 架构</span>
+            <span class="panel-meta mono" data-i18n="chart.dagMeta">0 循环依赖 · export * 兼容门面</span>
+          </div>
+          <div class="panel-body">
+            <div id="dagChart" class="svg-box"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 三轮稳定基线提交表 -->
+      <div class="panel">
+        <div class="panel-head">
+          <span class="panel-title" data-i18n="section.commits">三轮稳定基线提交记录（origin/main）</span>
+          <span class="panel-meta mono">+18,482 / -9,855 LOC</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:92px;" data-i18n="col.commit">提交</th>
+                <th style="width:155px;" data-i18n="col.time">时间</th>
+                <th style="width:160px;" data-i18n="col.scope">覆盖阶段</th>
+                <th data-i18n="col.summary">核心改造摘要</th>
+                <th class="num" style="width:70px;" data-i18n="col.filesCount">文件</th>
+                <th class="num" style="width:130px;" data-i18n="col.diff">增删行</th>
+              </tr>
+            </thead>
+            <tbody id="commitTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 视图 2：阶段改造明细 -->
+    <section id="panel-phases" class="view-panel">
+      <div class="panel">
+        <div class="panel-head">
+          <span class="panel-title" data-i18n="section.phases">Phase 1 → Phase 3E + 全仓类型清零与五子域拆分矩阵</span>
+          <span class="panel-meta mono">8 Domains</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:110px;" data-i18n="col.phase">阶段</th>
+                <th style="width:88px;" data-i18n="col.commit">提交</th>
+                <th style="width:210px;" data-i18n="col.topic">改造主题</th>
+                <th data-i18n="col.changes">具体改造内容</th>
+                <th style="width:270px;" data-i18n="col.artifacts">关键模块 / 守卫</th>
+              </tr>
+            </thead>
+            <tbody id="phaseTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 视图 3：文件变更清单 -->
+    <section id="panel-files" class="view-panel">
+      <div class="panel">
+        <div class="panel-head">
+          <span class="panel-title" data-i18n="section.files">全量文件变更明细</span>
+          <span id="fileFilterMeta" class="panel-meta mono">95 / 95</span>
+        </div>
+        <div class="table-wrap" style="max-height: calc(100vh - 205px); overflow-y: auto;">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:86px;" data-i18n="col.commit">提交</th>
+                <th style="width:74px;" data-i18n="col.status">状态</th>
+                <th style="width:118px;" data-i18n="col.domain">归属域</th>
+                <th data-i18n="col.path">文件路径</th>
+                <th data-i18n="col.note">改动说明</th>
+                <th class="num" style="width:118px;" data-i18n="col.diff">增删行</th>
+              </tr>
+            </thead>
+            <tbody id="fileTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 视图 4：架构守卫与验收 -->
+    <section id="panel-guards" class="view-panel">
+      <div class="panel">
+        <div class="panel-head">
+          <span class="panel-title" data-i18n="section.guards">架构红线与自动化守卫契约</span>
+          <span class="panel-meta mono">All Passed</span>
+        </div>
+        <div class="panel-body">
+          <div id="guardGrid" class="guard-grid"></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <span class="panel-title" data-i18n="section.verify">最终基线（ec408dcf）验收结果</span>
+          <span class="panel-meta mono">2026-11-26</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:190px;" data-i18n="col.checkItem">验收项</th>
+                <th data-i18n="col.command">执行命令</th>
+                <th style="width:260px;" data-i18n="col.result">结果</th>
+                <th style="width:84px;" data-i18n="col.status">状态</th>
+              </tr>
+            </thead>
+            <tbody id="verifyTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <footer class="footer-bar">
+      <span>graph_modeling_platform · <span class="mono">469d9b85 → 85f82787 → ec408dcf</span></span>
+      <span data-i18n="footer.runtime">本地服务就绪：前端 http://127.0.0.1:5173/ · 后端 http://127.0.0.1:5174</span>
+    </footer>
+  </main>
+
+  <script>
+    const I18N_DICT = {
+      "zh-CN": {
+        "page.title": "架构重构与变更总览报告 · Graph Modeling Platform",
+        "topbar.title": "图上建模平台 · 架构重构与变更总览",
+        "action.switchTheme": "切换深浅色主题",
+        "theme.dark": "精密暗黑",
+        "theme.light": "极简明亮",
+        "kpi.commits": "基线提交",
+        "kpi.files": "去重文件",
+        "kpi.nocheck": "全仓 @ts-nocheck",
+        "kpi.tests": "全量测试",
+        "tab.overview": "总览与图表",
+        "tab.phases": "阶段改造明细",
+        "tab.files": "文件变更清单",
+        "tab.guards": "架构守卫与验收",
+        "chart.slimTitle": "核心巨型文件瘦身与模块化对比（LOC）",
+        "chart.dagTitle": "appDeviceDefinitionFactories 五子域单向 DAG 架构",
+        "chart.dagMeta": "0 循环依赖 · export * 兼容门面",
+        "chart.before": "重构前",
+        "chart.after": "重构后",
+        "chart.facade": "主文件门面 (4,304 行)",
+        "chart.reexport": "export * 统一重导出（外部调用零破坏）",
+        "chart.calls": "内部调用",
+        "section.commits": "三轮稳定基线提交记录（origin/main）",
+        "section.phases": "Phase 1 → Phase 3E + 全仓类型清零与五子域拆分矩阵",
+        "section.files": "全量文件变更明细",
+        "section.guards": "架构红线与自动化守卫契约",
+        "section.verify": "最终基线（ec408dcf）验收结果",
+        "col.commit": "提交",
+        "col.time": "时间",
+        "col.scope": "覆盖阶段",
+        "col.summary": "核心改造摘要",
+        "col.filesCount": "文件",
+        "col.diff": "增删行",
+        "col.phase": "阶段",
+        "col.topic": "改造主题",
+        "col.changes": "具体改造内容",
+        "col.artifacts": "关键模块 / 守卫",
+        "col.status": "状态",
+        "col.domain": "归属域",
+        "col.path": "文件路径",
+        "col.note": "改动说明",
+        "col.checkItem": "验收项",
+        "col.command": "执行命令",
+        "col.result": "实测结果",
+        "filter.allCommits": "全部提交 (3)",
+        "filter.allDomains": "全部域",
+        "filter.allStatus": "全部状态",
+        "filter.added": "新增 (A)",
+        "filter.modified": "修改 (M)",
+        "filter.searchPlaceholder": "搜索路径或改动说明...",
+        "status.added": "新增",
+        "status.modified": "修改",
+        "status.pass": "通过",
+        "domain.devdef": "设备定义拆分",
+        "domain.canvas": "画布分层",
+        "domain.worker": "布线 Worker",
+        "domain.palette": "命令面板",
+        "domain.backend": "后端架构",
+        "domain.frontend": "前端核心",
+        "domain.guard": "测试与守卫",
+        "domain.config": "构建与文档",
+        "empty.noMatch": "无匹配变更记录",
+        "footer.runtime": "本地开发服务已就绪：前端 http://127.0.0.1:5173/ · 后端 http://127.0.0.1:5174"
+      },
+      "en-US": {
+        "page.title": "Architecture Refactoring Changelog · Graph Modeling Platform",
+        "topbar.title": "Graph Modeling Platform · Refactoring Changelog",
+        "action.switchTheme": "Toggle light / dark theme",
+        "theme.dark": "Precision Dark",
+        "theme.light": "Minimalist Light",
+        "kpi.commits": "Commits",
+        "kpi.files": "Unique Files",
+        "kpi.nocheck": "Repo @ts-nocheck",
+        "kpi.tests": "Full Tests",
+        "tab.overview": "Overview & Charts",
+        "tab.phases": "Phase Matrix",
+        "tab.files": "File Changes",
+        "tab.guards": "Guards & Verification",
+        "chart.slimTitle": "Monolith Slimming Comparison (LOC)",
+        "chart.dagTitle": "appDeviceDefinitionFactories 5-Subdomain Unidirectional DAG",
+        "chart.dagMeta": "0 Cycles · export * Facade",
+        "chart.before": "Before",
+        "chart.after": "After",
+        "chart.facade": "Main Facade (4,304 LOC)",
+        "chart.reexport": "export * re-export (zero breaking imports)",
+        "chart.calls": "internal imports",
+        "section.commits": "Baseline Commits Pushed to origin/main",
+        "section.phases": "Phase 1 → Phase 3E + Zero @ts-nocheck & 5-Subdomain Split",
+        "section.files": "Complete File Change Ledger",
+        "section.guards": "Architectural Invariants & Automated Guards",
+        "section.verify": "Final Baseline (ec408dcf) Verification",
+        "col.commit": "Commit",
+        "col.time": "Timestamp",
+        "col.scope": "Phases",
+        "col.summary": "Summary",
+        "col.filesCount": "Files",
+        "col.diff": "Diff (+/-)",
+        "col.phase": "Phase",
+        "col.topic": "Focus Area",
+        "col.changes": "Key Changes",
+        "col.artifacts": "Modules / Guards",
+        "col.status": "Status",
+        "col.domain": "Domain",
+        "col.path": "File Path",
+        "col.note": "Change Note",
+        "col.checkItem": "Check",
+        "col.command": "Command",
+        "col.result": "Measured Result",
+        "filter.allCommits": "All Commits (3)",
+        "filter.allDomains": "All Domains",
+        "filter.allStatus": "All Statuses",
+        "filter.added": "Added (A)",
+        "filter.modified": "Modified (M)",
+        "filter.searchPlaceholder": "Search path or note...",
+        "status.added": "Added",
+        "status.modified": "Modified",
+        "status.pass": "PASS",
+        "domain.devdef": "Device Def Split",
+        "domain.canvas": "Canvas Layers",
+        "domain.worker": "Routing Worker",
+        "domain.palette": "Command Palette",
+        "domain.backend": "Backend",
+        "domain.frontend": "Frontend Core",
+        "domain.guard": "Tests & Guards",
+        "domain.config": "Build & Docs",
+        "empty.noMatch": "No matching records",
+        "footer.runtime": "Local Dev Ready: Frontend http://127.0.0.1:5173/ · Backend http://127.0.0.1:5174"
+      },
+      "ru-RU": {
+        "page.title": "Отчёт о рефакторинге архитектуры · Graph Modeling Platform",
+        "topbar.title": "Graph Modeling Platform · Сводка рефакторинга",
+        "action.switchTheme": "Переключить тему",
+        "theme.dark": "Тёмная тема",
+        "theme.light": "Светлая тема",
+        "kpi.commits": "Коммиты",
+        "kpi.files": "Файлы",
+        "kpi.nocheck": "@ts-nocheck",
+        "kpi.tests": "Все тесты",
+        "tab.overview": "Обзор и схемы",
+        "tab.phases": "Этапы работ",
+        "tab.files": "Список файлов",
+        "tab.guards": "Контракты и проверка",
+        "chart.slimTitle": "Сокращение монолитных файлов (строки кода)",
+        "chart.dagTitle": "Однонаправленный DAG 5 подмодулей appDeviceDefinitionFactories",
+        "chart.dagMeta": "0 циклов · фасад export *",
+        "chart.before": "До",
+        "chart.after": "После",
+        "chart.facade": "Главный фасад (4 304 стр.)",
+        "chart.reexport": "Реэкспорт export * (совместимость импортов)",
+        "chart.calls": "вызовы",
+        "section.commits": "Базовые коммиты в origin/main",
+        "section.phases": "Матрица изменений: Phase 1 → Phase 3E и декомпозиция",
+        "section.files": "Полный реестр изменённых файлов",
+        "section.guards": "Архитектурные инварианты и автоматические проверки",
+        "section.verify": "Итоговая проверка базовой версии (ec408dcf)",
+        "col.commit": "Коммит",
+        "col.time": "Время",
+        "col.scope": "Этапы",
+        "col.summary": "Ключевые изменения",
+        "col.filesCount": "Файлы",
+        "col.diff": "Строки (+/-)",
+        "col.phase": "Этап",
+        "col.topic": "Направление",
+        "col.changes": "Содержание изменений",
+        "col.artifacts": "Модули / стражи",
+        "col.status": "Статус",
+        "col.domain": "Домен",
+        "col.path": "Путь к файлу",
+        "col.note": "Описание",
+        "col.checkItem": "Проверка",
+        "col.command": "Команда",
+        "col.result": "Результат",
+        "filter.allCommits": "Все коммиты (3)",
+        "filter.allDomains": "Все домены",
+        "filter.allStatus": "Все статусы",
+        "filter.added": "Добавлен (A)",
+        "filter.modified": "Изменён (M)",
+        "filter.searchPlaceholder": "Поиск по пути или описанию...",
+        "status.added": "Добавлен",
+        "status.modified": "Изменён",
+        "status.pass": "ОК",
+        "domain.devdef": "Декомпозиция",
+        "domain.canvas": "Слои холста",
+        "domain.worker": "Воркер трассировки",
+        "domain.palette": "Палитра команд",
+        "domain.backend": "Бэкенд",
+        "domain.frontend": "Ядро фронтенда",
+        "domain.guard": "Тесты и стражи",
+        "domain.config": "Сборка и доки",
+        "empty.noMatch": "Совпадений не найдено",
+        "footer.runtime": "Локальный сервер: Фронтенд http://127.0.0.1:5173/ · Бэкенд http://127.0.0.1:5174"
+      }
+    };
+
+    const COMMITS_DATA = [
+      {
+        id: "ec408dcf",
+        time: "2026-11-26 04:49",
+        scope: "Phase 3E+ / Zero @ts-nocheck",
+        files: 9,
+        add: 5683,
+        del: 5582,
+        summary: {
+          "zh-CN": "彻底摘除全仓最后一个 @ts-nocheck（tsNocheckGuard 白名单清零为 []）；将 appDeviceDefinitionFactories.tsx（9,693→4,304 行，-55.6%）按单向无环 DAG 拆分为 5 个高内聚子域模块并保留 export * 门面。",
+          "en-US": "Eliminated the final @ts-nocheck across the repo (allowlist = []); split appDeviceDefinitionFactories.tsx (9,693→4,304 LOC, -55.6%) into 5 cohesive DAG modules behind an export * facade.",
+          "ru-RU": "Устранён последний @ts-nocheck в репозитории (список исключений = []); файл appDeviceDefinitionFactories.tsx (9 693→4 304 стр., -55,6%) разделён на 5 модулей DAG с фасадом export *."
+        }
+      },
+      {
+        id: "85f82787",
+        time: "2026-11-26 04:13",
+        scope: "Phase 3B · 3C · 3D · 3E",
+        files: 51,
+        add: 8669,
+        del: 4017,
+        summary: {
+          "zh-CN": "画布 6 层 React.memo 渲染拆分；新增 Ctrl+K 命令面板与 ? 快捷键速查；新增常驻批量布线 Web Worker 卸载 3 条高负载路径；后端接入 worker_threads 异步 ZIP 并从 server.mjs 拆出 6 个纯域模块（-40.6%）；摘除 appGraphMeasurementFactories.tsx 的 @ts-nocheck 并建白名单守卫。",
+          "en-US": "6-layer React.memo canvas decoupling; lazy Ctrl+K command palette & ? shortcuts; reusable batch-routing Web Worker; worker_threads async ZIP + 6 pure backend modules (-40.6% server.mjs); removed @ts-nocheck from appGraphMeasurementFactories.tsx + guard.",
+          "ru-RU": "6 слоёв React.memo для холста; палитра Ctrl+K и справка ?; воркер пакетной трассировки; асинхронный ZIP на worker_threads + 6 модулей бэкенда (-40,6% server.mjs); снятие @ts-nocheck с appGraphMeasurementFactories.tsx."
+        }
+      },
+      {
+        id: "469d9b85",
+        time: "2026-11-26 02:20",
+        scope: "Phase 1 · Phase 2 · Phase 3A",
+        files: 35,
+        add: 4130,
+        del: 256,
+        summary: {
+          "zh-CN": "稳定性加固（memoryWatch 修复、RT-WS 状态隔离、双级 ErrorBoundary）；新增 Redo 重做栈、mutationRevision 脏态追踪、rAF 缩放节流、11 处非阻塞全局弹窗与 5 处 useDeferredValue；5 个重型弹窗懒加载与 Vite vendor 分包。",
+          "en-US": "Stability fixes (memoryWatch, RT-WS external store, ErrorBoundaries); Redo stack, mutationRevision dirty tracking, rAF resize batching, 11 non-blocking dialogs & 5 deferred tree searches; 5 lazy dialogs & Vite vendor chunks.",
+          "ru-RU": "Укрепление стабильности (memoryWatch, RT-WS store, ErrorBoundary); стек Redo, mutationRevision, батчинг rAF, 11 неблокирующих диалогов и useDeferredValue; 5 ленивых диалогов и vendor-чанки Vite."
+        }
+      }
+    ];
+
+    const PHASES_DATA = [
+      {
+        phase: "Phase 1",
+        commit: "469d9b85",
+        topic: { "zh-CN": "稳定性与崩溃容错加固", "en-US": "Stability & Crash Isolation", "ru-RU": "Стабильность и отказоустойчивость" },
+        bullets: {
+          "zh-CN": ["修复 memoryWatch 陈旧闭包与 slice(-0) 边界错误", "用 useSyncExternalStore 隔离右上角 RT-WS 状态灯，消除整树重渲染", "补齐显式 useEffect 依赖、将 URL 意图标记迁入 useRef", "新增根级与画布级 ErrorBoundary，崩溃时支持导出恢复用 JSON"],
+          "en-US": ["Fixed memoryWatch stale closure & slice(-0) edge bug", "Isolated RT-WS status indicator via useSyncExternalStore", "Added explicit useEffect deps & moved URL intent flags to useRef", "Added root & canvas ErrorBoundaries with recovery JSON export"],
+          "ru-RU": ["Исправлены устаревшее замыкание и ошибка slice(-0) в memoryWatch", "Изолирован индикатор RT-WS через useSyncExternalStore", "Уточнены зависимости useEffect, флаги URL перенесены в useRef", "Добавлены ErrorBoundary корня и холста с экспортом JSON"]
+        },
+        artifacts: ["src/memoryWatch.ts", "src/runtimeWsIndicatorStore.ts", "src/components/ErrorBoundary.tsx"]
+      },
+      {
+        phase: "Phase 2",
+        commit: "469d9b85",
+        topic: { "zh-CN": "交互体验、撤销重做与渲染减负", "en-US": "UX, Undo/Redo & Render Throttling", "ru-RU": "UX, Undo/Redo и разгрузка рендера" },
+        bullets: {
+          "zh-CN": ["新增 Redo 重做栈（Ctrl+Y / Ctrl+Shift+Z + 顶栏/右键菜单入口）", "以单调递增 mutationRevision 精确追踪脏态；画布缩放 pointermove 走 rAF 合批", "统一 interfaceCustomization 单一数据源保护与 O(1) 索引查询；实例心跳放宽至 30s", "替换 11 处原生阻塞 confirm/prompt 为非阻塞全局对话框；5 处树搜索接入 useDeferredValue"],
+          "en-US": ["Added Redo stack (Ctrl+Y / Ctrl+Shift+Z + topbar/context menu)", "Monotonic mutationRevision dirty tracking; rAF-batched canvas resize", "Single-source interfaceCustomization O(1) lookup; 30s heartbeat", "Replaced 11 native dialogs with global non-blocking dialogs; 5 deferred tree filters"],
+          "ru-RU": ["Добавлен стек Redo (Ctrl+Y / Ctrl+Shift+Z + меню)", "Отслеживание изменений через mutationRevision; батчинг rAF для ресайза", "Единый источник interfaceCustomization с O(1) поиском; heartbeat 30 с", "Замена 11 нативных диалогов на неблокирующие; 5 фильтров с useDeferredValue"]
+        },
+        artifacts: ["src/globalDialogs.ts", "src/undoRedoHistory.test.ts", "src/interfaceCustomization.ts"]
+      },
+      {
+        phase: "Phase 3A",
+        commit: "469d9b85",
+        topic: { "zh-CN": "首屏分包与重型对话框懒加载", "en-US": "Bundle Splitting & Lazy Dialogs", "ru-RU": "Разделение бандла и ленивые диалоги" },
+        bullets: {
+          "zh-CN": ["懒加载 5 个重型对话框（界面定制 / 全网拓扑 / 用户定制 / 电压等级 / 发送模型）", "vite.config.ts 拆分 vendor-antd / vendor-xyflow / vendor-highlight / vendor-tour 独立分包", "补全 areCanvasPropsEqual 缺失比较键并加回归单测"],
+          "en-US": ["Lazy-loaded 5 heavy dialogs (InterfaceCustomization, AllNetworkTopology, etc.)", "Split vendor-antd / xyflow / highlight / tour chunks in vite.config.ts", "Completed missing areCanvasPropsEqual keys with regression tests"],
+          "ru-RU": ["Ленивая загрузка 5 тяжёлых диалогов (топология, уровни напряжения и др.)", "Выделены чанки vendor-antd / xyflow / highlight / tour в vite.config.ts", "Дополнены ключи сравнения areCanvasPropsEqual с регрессионными тестами"]
+        },
+        artifacts: ["vite.config.ts", "scripts/viteConfigContract.test.mjs", "src/App.tsx"]
+      },
+      {
+        phase: "Phase 3B",
+        commit: "85f82787",
+        topic: { "zh-CN": "画布 SVG 六层 React.memo 解耦", "en-US": "6-Layer React.memo Canvas Architecture", "ru-RU": "6-слойная архитектура холста React.memo" },
+        bullets: {
+          "zh-CN": ["将巨型 MemoizedCanvasArea 拆为静态背景、连线路径、瞬态底层、瞬态顶层、HUD 覆盖层 6 个独立渲染层", "建立细粒度层比较器（layerComparators.ts），拖拽/悬浮/框选不再触发静态图元全量重绘", "通过 readLatestScope 消除异步回调陈旧闭包隐患，补齐 appCanvasArea.test.tsx"],
+          "en-US": ["Split MemoizedCanvasArea into 6 React.memo layers (static bg, paths, underlay, overlay, HUD)", "Fine-grained layerComparators prevent full canvas rerenders during drag/hover", "Guarded stale closures with readLatestScope; added appCanvasArea.test.tsx"],
+          "ru-RU": ["MemoizedCanvasArea разделён на 6 слоёв React.memo (фон, связи, оверлеи, HUD)", "Точные компараторы исключают полный перерендер при перетаскивании", "Защита от устаревших замыканий readLatestScope + тесты appCanvasArea"]
+        },
+        artifacts: ["src/appExtracted/canvasLayers/*", "src/appExtracted/appCanvasArea.tsx", "src/appExtracted/appCanvasArea.test.tsx"]
+      },
+      {
+        phase: "Phase 3C",
+        commit: "85f82787",
+        topic: { "zh-CN": "全局命令面板（Ctrl+K）与快捷键速查（?）", "en-US": "Global Command Palette (Ctrl+K) & Shortcut Help (?)", "ru-RU": "Палитра команд (Ctrl+K) и справка клавиш (?)" },
+        bullets: {
+          "zh-CN": ["新增独立 Store 与模糊检索核心，支持跨命令、画布图元、已保存模型统一检索跳转", "支持 Ctrl+K 快速唤起命令面板与 ? 键唤起快捷键速查面板", "弹窗组件按需懒加载分包（CommandPaletteDialog 仅 12.34 kB），零首屏负担"],
+          "en-US": ["Added commandPaletteStore & fuzzy search across actions, devices & saved models", "Keyboard shortcuts Ctrl+K (palette) and ? (shortcut cheat sheet)", "Lazy-loaded CommandPaletteDialog chunk (12.34 kB) with zero initial cost"],
+          "ru-RU": ["Добавлены хранилище и нечёткий поиск по командам, элементам и моделям", "Горячие клавиши Ctrl+K (палитра) и ? (справочник сочетаний)", "Ленивый чанк CommandPaletteDialog (12,34 КБ) без нагрузки на старт"]
+        },
+        artifacts: ["src/commandPalette.ts", "src/commandPaletteStore.ts", "src/components/CommandPaletteDialog.tsx"]
+      },
+      {
+        phase: "Phase 3D",
+        commit: "85f82787",
+        topic: { "zh-CN": "后端异步 ZIP（worker_threads）与 server.mjs 瘦身", "en-US": "Backend Async ZIP & server.mjs Modularization", "ru-RU": "Асинхронный ZIP и декомпозиция server.mjs" },
+        bullets: {
+          "zh-CN": ["引入 worker_threads 异步 ZIP 编解码器（zipWorker.mjs + asyncZip.mjs），消除导出/导入阻塞事件循环", "接入全部 4 个后端打包导出模块与 server.mjs 方案导入解压路径", "将 server/server.mjs 从 6,415 行瘦身至 3,814 行（-40.6%），拆出 6 个零路径常量纯域模块"],
+          "en-US": ["Added worker_threads async ZIP codec avoiding event-loop stalls on export/import", "Wired all 4 archive export modules and server.mjs import extraction path", "Slimmed server.mjs from 6,415→3,814 LOC (-40.6%) into 6 pure domain modules"],
+          "ru-RU": ["Внедрён асинхронный ZIP на worker_threads без блокировки цикла событий", "Подключены все 4 модуля экспорта архивов и распаковка импорта в server.mjs", "server.mjs сокращён с 6 415 до 3 814 строк (-40,6%) с выделением 6 модулей"]
+        },
+        artifacts: ["server/asyncZip.mjs", "server/zipWorker.mjs", "server/projectStorageNormalization.mjs", "server/deviceLibraryNormalization.mjs"]
+      },
+      {
+        phase: "Phase 3E",
+        commit: "85f82787",
+        topic: { "zh-CN": "常驻批量布线 Web Worker 与 @ts-nocheck 首批摘除", "en-US": "Batch-Routing Web Worker & First @ts-nocheck Removal", "ru-RU": "Web Worker трассировки и снятие @ts-nocheck" },
+        bullets: {
+          "zh-CN": ["新增常驻复用（空闲 30s 自动回收）的批量布线 Web Worker，卸载全部 3 条高负载重布线路径", "支持任务版本取消与回退兜底，避免多图元拖拽后主线程掉帧卡顿", "摘除 5,657 行 appGraphMeasurementFactories.tsx 的 @ts-nocheck，建立白名单只减不增守卫"],
+          "en-US": ["Added reusable (30s idle-timeout) batchRoute Web Worker offloading 3 heavy routing paths", "Generation-guarded cancellation + synchronous fallback keeping UI responsive", "Removed @ts-nocheck from 5,657-LOC appGraphMeasurementFactories.tsx + monotonic guard"],
+          "ru-RU": ["Добавлен переиспользуемый batchRoute Web Worker (таймаут 30 с) для 3 тяжёлых путей", "Отмена устаревших задач по поколению и синхронный фолбэк", "Снят @ts-nocheck с appGraphMeasurementFactories.tsx (5 657 стр.) + страж"]
+        },
+        artifacts: ["src/routing/batchRoute.worker.ts", "src/routing/routeWorkerClient.ts", "scripts/tsNocheckGuard.test.mjs"]
+      },
+      {
+        phase: "Zero @ts-nocheck & 5-Split",
+        commit: "ec408dcf",
+        topic: { "zh-CN": "全仓 @ts-nocheck 清零与 appDeviceDefinitionFactories 五子域拆分", "en-US": "Zero @ts-nocheck Repo-Wide & 5-Subdomain Decomposition", "ru-RU": "Полное снятие @ts-nocheck и разделение на 5 подмодулей" },
+        bullets: {
+          "zh-CN": ["摘除全仓最后一个 @ts-nocheck（appDeviceDefinitionFactories.tsx），补全 266 处隐式参数与 React 事件泛型，白名单清零为 []", "按 AST 符号依赖图拆出 5 个高内聚子域模块，形成严格单向无环 DAG（主文件 9,693→4,304 行，-55.6%）", "主文件顶部通过 export * 保持外部导入契约 100% 兼容，严守 appStaticScope 与 showGlobalMessage 隔离红线"],
+          "en-US": ["Removed the last @ts-nocheck file, fixed 266 implicit params & React event generics, zeroed allowlist to []", "AST-verified split into 5 cohesive DAG modules (main file 9,693→4,304 LOC, -55.6%)", "Preserved 100% external API via export * facade while honoring static-scope & test-stub boundaries"],
+          "ru-RU": ["Снят последний @ts-nocheck, добавлено 266 типов и дженериков событий React, список исключений = []", "AST-разделение на 5 модулей строгого DAG (главный файл 9 693→4 304 стр., -55,6%)", "Полная совместимость через фасад export * с соблюдением границ appStaticScope и моков"]
+        },
+        artifacts: ["appStateIconDrawingFactories.tsx", "appExportImportFactories.tsx", "appProjectTreeFactories.tsx", "appEdgeRouteInteractionFactories.tsx", "appImageLibraryFactories.tsx"]
+      }
+    ];
+
+    const GUARDS_DATA = [
+      {
+        name: "scripts/tsNocheckGuard.test.mjs",
+        badge: "0 Files",
+        desc: {
+          "zh-CN": "全仓 @ts-nocheck 白名单已清零为 []，任何新文件引入 @ts-nocheck 立即触发测试失败。",
+          "en-US": "Repo-wide @ts-nocheck allowlist is strictly []; any new directive fails CI immediately.",
+          "ru-RU": "Список исключений @ts-nocheck равен []; любая новая директива немедленно проваливает тест."
+        }
+      },
+      {
+        name: "appDeviceDefinitionFactories Facade",
+        badge: "0 Cycles",
+        desc: {
+          "zh-CN": "6 模块依赖严格单向无环（仅 3 条边：main→stateIcon、main→exportImport、imageLibrary→stateIcon），主文件 export * 零破坏。",
+          "en-US": "Strict acyclic DAG (only 3 edges: main→stateIcon, main→exportImport, imageLibrary→stateIcon) behind export * facade.",
+          "ru-RU": "Строгий ациклический DAG (3 ребра: main→stateIcon, main→exportImport, imageLibrary→stateIcon) за фасадом export *."
+        }
+      },
+      {
+        name: "appStaticScope Cycle Guard",
+        badge: "Protected",
+        desc: {
+          "zh-CN": "GripVertical 图标直接在 appProjectTreeFactories.tsx 导入，不写入 appStaticScope，阻断 appStaticScope↔customDeviceUtils↔App 循环依赖。",
+          "en-US": "GripVertical stays directly imported in appProjectTreeFactories.tsx, preventing appStaticScope↔customDeviceUtils↔App cycles.",
+          "ru-RU": "GripVertical импортируется напрямую в appProjectTreeFactories.tsx без цикла appStaticScope↔customDeviceUtils↔App."
+        }
+      },
+      {
+        name: "showGlobalMessage Stub Isolation",
+        badge: "Protected",
+        desc: {
+          "zh-CN": "appImageLibraryFactories.tsx 的 createChooseImage 保留自由标识符调用，确保 randomSource.test.ts 通过 globalThis 钉桩隔离有效。",
+          "en-US": "createChooseImage keeps free-identifier showGlobalMessage call so randomSource.test.ts globalThis stub stays isolated.",
+          "ru-RU": "createChooseImage сохраняет свободный вызов showGlobalMessage для изоляции моков globalThis в randomSource.test.ts."
+        }
+      },
+      {
+        name: "spacePathConstantGuard",
+        badge: "Protected",
+        desc: {
+          "zh-CN": "从 server.mjs 拆出的 6 个纯域模块严守零空间路径常量原则，空间隔离路径均经 options.paths 显式透传。",
+          "en-US": "All 6 domain modules extracted from server.mjs hold zero space path constants; paths flow explicitly via options.paths.",
+          "ru-RU": "Все 6 модулей из server.mjs не содержат констант путей пространства; пути передаются через options.paths."
+        }
+      },
+      {
+        name: "server/test/nativeLoad.test.mjs",
+        badge: "Protected",
+        desc: {
+          "zh-CN": "真实 Node 进程直载后端三导出适配层，守卫相对 .ts 扩展名与零 .tsx/JSX 混入不变量。",
+          "en-US": "Spawns real Node process to load all 3 export adapters directly, guarding explicit .ts extensions and zero JSX.",
+          "ru-RU": "Запускает реальный процесс Node для прямой загрузки 3 адаптеров экспорта без JSX и с явными .ts."
+        }
+      }
+    ];
+
+    const VERIFY_DATA = [
+      {
+        item: { "zh-CN": "全仓 TypeScript 严格检查", "en-US": "Full TypeScript Check", "ru-RU": "Полная проверка TypeScript" },
+        cmd: "npx tsc --noEmit",
+        result: { "zh-CN": "0 错误（全仓 0 个 @ts-nocheck）", "en-US": "0 errors (0 @ts-nocheck repo-wide)", "ru-RU": "0 ошибок (0 @ts-nocheck в репо)" }
+      },
+      {
+        item: { "zh-CN": "未定义名与属性崩溃审计", "en-US": "Undefined-Name Crash Audit", "ru-RU": "Аудит неопределённых имён" },
+        cmd: "node scripts/audit-undefined-names.mjs --crash-only",
+        result: { "zh-CN": "未发现潜在崩溃点（0 命中）", "en-US": "0 potential runtime crash sites", "ru-RU": "0 потенциальных точек падения" }
+      },
+      {
+        item: { "zh-CN": "Vite 生产构建验证", "en-US": "Vite Production Build", "ru-RU": "Продакшн-сборка Vite" },
+        cmd: "npx vite build --config vite.config.ts",
+        result: { "zh-CN": "3,530 模块构建成功，0 循环依赖告警", "en-US": "3,530 modules built, 0 circular warnings", "ru-RU": "Собрано 3 530 модулей, 0 циклов" }
+      },
+      {
+        item: { "zh-CN": "全量 Vitest 回归测试", "en-US": "Full Vitest Regression Suite", "ru-RU": "Полный регресс Vitest" },
+        cmd: "npx vitest run src scripts server/test/nativeLoad.test.mjs server/test/asyncZip.test.mjs",
+        result: { "zh-CN": "485 passed | 7 skipped (492)，11,603 用例全绿", "en-US": "485 passed | 7 skipped (492), 11,603 tests green", "ru-RU": "485 пройдено | 7 пропущено, 11 603 теста ОК" }
+      }
+    ];
+
+    const FILE_RECORDS = [{"commit":"469d9b85","status":"A","add":2592,"del":0,"file":"docs/code-optimization-report.html","domain":"config","desc":{"zh-CN":"前期代码结构诊断分析 HTML 报告归档","en-US":"Earlier code diagnostic HTML report archive","ru-RU":"Архив предыдущего отчёта диагностики кода"}},{"commit":"469d9b85","status":"M","add":10,"del":8,"file":"scripts/viteConfigContract.test.mjs","domain":"guard","desc":{"zh-CN":"单元测试、强类型夹具对齐与工程契约守卫","en-US":"Unit tests, strict mock alignment & contract guards","ru-RU":"Модульные тесты, выравнивание моков и контрактные стражи"}},{"commit":"469d9b85","status":"M","add":12,"del":44,"file":"server/interfaceCustomization.mjs","domain":"backend","desc":{"zh-CN":"界面定制单一数据源配置校验与实例心跳间隔优化（30s）","en-US":"Single-source UI customization guard & 30s instance heartbeat","ru-RU":"Единый конфиг настройки интерфейса и интервал heartbeat 30 с"}},{"commit":"469d9b85","status":"M","add":4,"del":3,"file":"server/webgrpInstances.mjs","domain":"backend","desc":{"zh-CN":"界面定制单一数据源配置校验与实例心跳间隔优化（30s）","en-US":"Single-source UI customization guard & 30s instance heartbeat","ru-RU":"Единый конфиг настройки интерфейса и интервал heartbeat 30 с"}},{"commit":"469d9b85","status":"M","add":2,"del":1,"file":"src/AllNetworkTopologyDialog.tsx","domain":"frontend","desc":{"zh-CN":"稳定性加固、Redo 入口、懒加载对话框与 useDeferredValue 优化","en-US":"Stability hardening, Redo actions, lazy dialogs & useDeferredValue","ru-RU":"Укрепление стабильности, Redo, ленивые диалоги и useDeferredValue"}},{"commit":"469d9b85","status":"M","add":86,"del":48,"file":"src/App.tsx","domain":"frontend","desc":{"zh-CN":"稳定性加固、Redo 入口、懒加载对话框与 useDeferredValue 优化","en-US":"Stability hardening, Redo actions, lazy dialogs & useDeferredValue","ru-RU":"Укрепление стабильности, Redo, ленивые диалоги и useDeferredValue"}},{"commit":"469d9b85","status":"M","add":8,"del":1,"file":"src/AppStartupRoot.tsx","domain":"frontend","desc":{"zh-CN":"稳定性加固、Redo 入口、懒加载对话框与 useDeferredValue 优化","en-US":"Stability hardening, Redo actions, lazy dialogs & useDeferredValue","ru-RU":"Укрепление стабильности, Redo, ленивые диалоги и useDeferredValue"}},{"commit":"469d9b85","status":"M","add":39,"del":18,"file":"src/InterfaceCustomizationDialog.tsx","domain":"frontend","desc":{"zh-CN":"稳定性加固、Redo 入口、懒加载对话框与 useDeferredValue 优化","en-US":"Stability hardening, Redo actions, lazy dialogs & useDeferredValue","ru-RU":"Укрепление стабильности, Redo, ленивые диалоги и useDeferredValue"}},{"commit":"469d9b85","status":"M","add":15,"del":0,"file":"src/appExtracted/appCanvasArea.test.tsx","domain":"canvas","desc":{"zh-CN":"画布 6 层 React.memo 渲染拆分、细粒度比较器与单测","en-US":"6-layer React.memo canvas split, comparators & tests","ru-RU":"Разделение холста на 6 React.memo-слоёв, компараторы и тесты"}},{"commit":"469d9b85","status":"M","add":7,"del":2,"file":"src/appExtracted/appCanvasArea.tsx","domain":"canvas","desc":{"zh-CN":"画布 6 层 React.memo 渲染拆分、细粒度比较器与单测","en-US":"6-layer React.memo canvas split, comparators & tests","ru-RU":"Разделение холста на 6 React.memo-слоёв, компараторы и тесты"}},{"commit":"469d9b85","status":"M","add":6,"del":1,"file":"src/appExtracted/appContextMenus.tsx","domain":"frontend","desc":{"zh-CN":"稳定性加固、Redo 入口、懒加载对话框与 useDeferredValue 优化","en-US":"Stability hardening, Redo actions, lazy dialogs & useDeferredValue","ru-RU":"Укрепление стабильности, Redo, ленивые диалоги и useDeferredValue"}},{"commit":"469d9b85","status":"M","add":2,"del":0,"file":"src/appExtracted/appCoreCanvasUtilities.tsx","domain":"frontend","desc":{"zh-CN":"稳定性加固、Redo 入口、懒加载对话框与 useDeferredValue 优化","en-US":"Stability hardening, Redo actions, lazy dialogs & useDeferredValue","ru-RU":"Укрепление стабильности, Redo, ленивые диалоги и useDeferredValue"}},{"commit":"469d9b85","status":"M","add":6,"del":5,"file":"src/appExtracted/appDeviceDefinitionFactories.tsx","domain":"devdef","desc":{"zh-CN":"替换原生弹窗为非阻塞全局对话框","en-US":"Replaced native dialogs with non-blocking global dialogs","ru-RU":"Замена нативных диалогов на неблокирующие"}},{"commit":"469d9b85","status":"M","add":16,"del":2,"file":"src/appExtracted/appGraphMeasurementFactories.tsx","domain":"frontend","desc":{"zh-CN":"接入 mutationRevision 脏态追踪与非阻塞弹窗","en-US":"Wired mutationRevision dirty tracking & global dialogs","ru-RU":"Подключено отслеживание mutationRevision и глобальные диалоги"}},{"commit":"469d9b85","status":"M","add":24,"del":5,"file":"src/appExtracted/appProjectCanvasFactories.tsx","domain":"worker","desc":{"zh-CN":"Redo 撤销重做栈、rAF 缩放节流与状态边界加固","en-US":"Redo stack, rAF resize batching & state hardening","ru-RU":"Стек Redo, батчинг rAF и укрепление состояния"}},{"commit":"469d9b85","status":"M","add":5,"del":3,"file":"src/appExtracted/appRenderBatch.tsx","domain":"frontend","desc":{"zh-CN":"稳定性加固、Redo 入口、懒加载对话框与 useDeferredValue 优化","en-US":"Stability hardening, Redo actions, lazy dialogs & useDeferredValue","ru-RU":"Укрепление стабильности, Redo, ленивые диалоги и useDeferredValue"}},{"commit":"469d9b85","status":"M","add":160,"del":56,"file":"src/appExtracted/appSelectionDragFactories.tsx","domain":"worker","desc":{"zh-CN":"Redo 撤销重做栈、rAF 缩放节流与状态边界加固","en-US":"Redo stack, rAF resize batching & state hardening","ru-RU":"Стек Redo, батчинг rAF и укрепление состояния"}},{"commit":"469d9b85","status":"M","add":12,"del":7,"file":"src/appExtracted/appStateBatch.tsx","domain":"frontend","desc":{"zh-CN":"稳定性加固、Redo 入口、懒加载对话框与 useDeferredValue 优化","en-US":"Stability hardening, Redo actions, lazy dialogs & useDeferredValue","ru-RU":"Укрепление стабильности, Redo, ленивые диалоги и useDeferredValue"}},{"commit":"469d9b85","status":"M","add":2,"del":2,"file":"src/appExtracted/appStaticScope.ts","domain":"frontend","desc":{"zh-CN":"稳定性加固、Redo 入口、懒加载对话框与 useDeferredValue 优化","en-US":"Stability hardening, Redo actions, lazy dialogs & useDeferredValue","ru-RU":"Укрепление стабильности, Redo, ленивые диалоги и useDeferredValue"}},{"commit":"469d9b85","status":"M","add":31,"del":2,"file":"src/appExtracted/appToolbarHookFactories.tsx","domain":"frontend","desc":{"zh-CN":"稳定性加固、Redo 入口、懒加载对话框与 useDeferredValue 优化","en-US":"Stability hardening, Redo actions, lazy dialogs & useDeferredValue","ru-RU":"Укрепление стабильности, Redo, ленивые диалоги и useDeferredValue"}},{"commit":"469d9b85","status":"M","add":31,"del":8,"file":"src/appExtracted/appTopbar.tsx","domain":"frontend","desc":{"zh-CN":"稳定性加固、Redo 入口、懒加载对话框与 useDeferredValue 优化","en-US":"Stability hardening, Redo actions, lazy dialogs & useDeferredValue","ru-RU":"Укрепление стабильности, Redo, ленивые диалоги и useDeferredValue"}},{"commit":"469d9b85","status":"M","add":47,"del":22,"file":"src/appExtracted/appView.tsx","domain":"frontend","desc":{"zh-CN":"稳定性加固、Redo 入口、懒加载对话框与 useDeferredValue 优化","en-US":"Stability hardening, Redo actions, lazy dialogs & useDeferredValue","ru-RU":"Укрепление стабильности, Redo, ленивые диалоги и useDeferredValue"}},{"commit":"469d9b85","status":"A","add":67,"del":0,"file":"src/components/ErrorBoundary.test.tsx","domain":"guard","desc":{"zh-CN":"单元测试、强类型夹具对齐与工程契约守卫","en-US":"Unit tests, strict mock alignment & contract guards","ru-RU":"Модульные тесты, выравнивание моков и контрактные стражи"}},{"commit":"469d9b85","status":"A","add":196,"del":0,"file":"src/components/ErrorBoundary.tsx","domain":"frontend","desc":{"zh-CN":"根级与画布级 ErrorBoundary 及恢复用 JSON 导出","en-US":"Root & canvas ErrorBoundary with recovery JSON export","ru-RU":"ErrorBoundary корня и холста с экспортом JSON восстановления"}},{"commit":"469d9b85","status":"A","add":73,"del":0,"file":"src/globalDialogs.test.ts","domain":"guard","desc":{"zh-CN":"单元测试、强类型夹具对齐与工程契约守卫","en-US":"Unit tests, strict mock alignment & contract guards","ru-RU":"Модульные тесты, выравнивание моков и контрактные стражи"}},{"commit":"469d9b85","status":"A","add":31,"del":0,"file":"src/globalDialogs.ts","domain":"frontend","desc":{"zh-CN":"非阻塞全局确认/输入弹窗，替换 11 处原生阻塞对话框","en-US":"Non-blocking global dialogs replacing 11 native prompts","ru-RU":"Неблокирующие глобальные диалоги взамен 11 нативных"}},{"commit":"469d9b85","status":"M","add":1,"del":1,"file":"src/globalMessage.ts","domain":"frontend","desc":{"zh-CN":"非阻塞全局确认/输入弹窗，替换 11 处原生阻塞对话框","en-US":"Non-blocking global dialogs replacing 11 native prompts","ru-RU":"Неблокирующие глобальные диалоги взамен 11 нативных"}},{"commit":"469d9b85","status":"M","add":22,"del":0,"file":"src/interfaceCustomization.test.ts","domain":"guard","desc":{"zh-CN":"单元测试、强类型夹具对齐与工程契约守卫","en-US":"Unit tests, strict mock alignment & contract guards","ru-RU":"Модульные тесты, выравнивание моков и контрактные стражи"}},{"commit":"469d9b85","status":"M","add":43,"del":11,"file":"src/interfaceCustomization.ts","domain":"frontend","desc":{"zh-CN":"界面定制 O(1) 索引查询与单一配置源保护","en-US":"O(1) UI customization lookup & single-source config guard","ru-RU":"O(1) поиск настроек интерфейса и единый источник конфига"}},{"commit":"469d9b85","status":"M","add":67,"del":1,"file":"src/memoryWatch.test.ts","domain":"guard","desc":{"zh-CN":"单元测试、强类型夹具对齐与工程契约守卫","en-US":"Unit tests, strict mock alignment & contract guards","ru-RU":"Модульные тесты, выравнивание моков и контрактные стражи"}},{"commit":"469d9b85","status":"M","add":26,"del":5,"file":"src/memoryWatch.ts","domain":"frontend","desc":{"zh-CN":"修复 memoryWatch 陈旧闭包与 slice(-0) 边界缺陷","en-US":"Fixed memoryWatch stale closure & slice(-0) bug","ru-RU":"Исправлены устаревшее замыкание и ошибка slice(-0) в memoryWatch"}},{"commit":"469d9b85","status":"A","add":62,"del":0,"file":"src/runtimeWsIndicatorStore.test.ts","domain":"guard","desc":{"zh-CN":"单元测试、强类型夹具对齐与工程契约守卫","en-US":"Unit tests, strict mock alignment & contract guards","ru-RU":"Модульные тесты, выравнивание моков и контрактные стражи"}},{"commit":"469d9b85","status":"A","add":73,"del":0,"file":"src/runtimeWsIndicatorStore.ts","domain":"frontend","desc":{"zh-CN":"useSyncExternalStore 隔离 RT-WS 状态灯高频重渲染","en-US":"Isolate RT-WS indicator updates via useSyncExternalStore","ru-RU":"Изоляция индикатора RT-WS через useSyncExternalStore"}},{"commit":"469d9b85","status":"A","add":335,"del":0,"file":"src/undoRedoHistory.test.ts","domain":"guard","desc":{"zh-CN":"单元测试、强类型夹具对齐与工程契约守卫","en-US":"Unit tests, strict mock alignment & contract guards","ru-RU":"Модульные тесты, выравнивание моков и контрактные стражи"}},{"commit":"469d9b85","status":"M","add":17,"del":0,"file":"vite.config.ts","domain":"config","desc":{"zh-CN":"Vite vendor 分包（antd/xyflow/highlight/tour）优化","en-US":"Vite vendor chunk splitting (antd/xyflow/highlight/tour)","ru-RU":"Разделение vendor-чанков Vite (antd/xyflow/highlight/tour)"}},{"commit":"85f82787","status":"A","add":61,"del":0,"file":"scripts/tsNocheckGuard.test.mjs","domain":"guard","desc":{"zh-CN":"新增 @ts-nocheck 只减不增白名单守卫","en-US":"Added monotonic @ts-nocheck allowlist guard","ru-RU":"Добавлен монотонный страж списка @ts-nocheck"}},{"commit":"85f82787","status":"A","add":157,"del":0,"file":"server/asyncZip.mjs","domain":"backend","desc":{"zh-CN":"worker_threads 异步 ZIP 编解码与后端打包导出接入","en-US":"worker_threads async ZIP codec & archive export integration","ru-RU":"Асинхронный ZIP на worker_threads и интеграция экспорта"}},{"commit":"85f82787","status":"A","add":617,"del":0,"file":"server/deviceLibraryNormalization.mjs","domain":"backend","desc":{"zh-CN":"从 server.mjs 拆出的零路径常量纯域规范化/元数据模块","en-US":"Pure zero-path-constant domain module extracted from server.mjs","ru-RU":"Чистый доменный модуль без констант путей, вынесенный из server.mjs"}},{"commit":"85f82787","status":"A","add":221,"del":0,"file":"server/eSectionMetadata.mjs","domain":"backend","desc":{"zh-CN":"从 server.mjs 拆出的零路径常量纯域规范化/元数据模块","en-US":"Pure zero-path-constant domain module extracted from server.mjs","ru-RU":"Чистый доменный модуль без констант путей, вынесенный из server.mjs"}},{"commit":"85f82787","status":"A","add":261,"del":0,"file":"server/iconLibraryArchive.mjs","domain":"backend","desc":{"zh-CN":"worker_threads 异步 ZIP 编解码与后端打包导出接入","en-US":"worker_threads async ZIP codec & archive export integration","ru-RU":"Асинхронный ZIP на worker_threads и интеграция экспорта"}},{"commit":"85f82787","status":"A","add":113,"del":0,"file":"server/imageAssetHelpers.mjs","domain":"backend","desc":{"zh-CN":"从 server.mjs 拆出的零路径常量纯域规范化/元数据模块","en-US":"Pure zero-path-constant domain module extracted from server.mjs","ru-RU":"Чистый доменный модуль без констант путей, вынесенный из server.mjs"}},{"commit":"85f82787","status":"A","add":341,"del":0,"file":"server/measurementConfigNormalization.mjs","domain":"backend","desc":{"zh-CN":"从 server.mjs 拆出的零路径常量纯域规范化/元数据模块","en-US":"Pure zero-path-constant domain module extracted from server.mjs","ru-RU":"Чистый доменный модуль без констант путей, вынесенный из server.mjs"}},{"commit":"85f82787","status":"A","add":1211,"del":0,"file":"server/projectStorageNormalization.mjs","domain":"backend","desc":{"zh-CN":"从 server.mjs 拆出的零路径常量纯域规范化/元数据模块","en-US":"Pure zero-path-constant domain module extracted from server.mjs","ru-RU":"Чистый доменный модуль без констант путей, вынесенный из server.mjs"}},{"commit":"85f82787","status":"M","add":8,"del":6,"file":"server/schemeArchive.mjs","domain":"backend","desc":{"zh-CN":"worker_threads 异步 ZIP 编解码与后端打包导出接入","en-US":"worker_threads async ZIP codec & archive export integration","ru-RU":"Асинхронный ZIP на worker_threads и интеграция экспорта"}},{"commit":"85f82787","status":"M","add":97,"del":2699,"file":"server/server.mjs","domain":"backend","desc":{"zh-CN":"拆离 6 个纯域模块（6,415→3,814 行，-40.6%）并接入异步解压","en-US":"Extracted 6 pure domain modules (6,415→3,814 LOC, -40.6%) + async unzip","ru-RU":"Выделено 6 чистых модулей (6 415→3 814 строк, -40,6%) и асинхр. распаковка"}},{"commit":"85f82787","status":"M","add":12,"del":8,"file":"server/spaceArchive.mjs","domain":"backend","desc":{"zh-CN":"worker_threads 异步 ZIP 编解码与后端打包导出接入","en-US":"worker_threads async ZIP codec & archive export integration","ru-RU":"Асинхронный ZIP на worker_threads и интеграция экспорта"}},{"commit":"85f82787","status":"M","add":6,"del":7,"file":"server/spaceArtifactExport.mjs","domain":"backend","desc":{"zh-CN":"worker_threads 异步 ZIP 编解码与后端打包导出接入","en-US":"worker_threads async ZIP codec & archive export integration","ru-RU":"Асинхронный ZIP на worker_threads и интеграция экспорта"}},{"commit":"85f82787","status":"M","add":10,"del":7,"file":"server/symbolExport.mjs","domain":"backend","desc":{"zh-CN":"worker_threads 异步 ZIP 编解码与后端打包导出接入","en-US":"worker_threads async ZIP codec & archive export integration","ru-RU":"Асинхронный ZIP на worker_threads и интеграция экспорта"}},{"commit":"85f82787","status":"A","add":52,"del":0,"file":"server/test/asyncZip.test.mjs","domain":"backend","desc":{"zh-CN":"worker_threads 异步 ZIP 编解码与后端打包导出接入","en-US":"worker_threads async ZIP codec & archive export integration","ru-RU":"Асинхронный ZIP на worker_threads и интеграция экспорта"}},{"commit":"85f82787","status":"A","add":56,"del":0,"file":"server/zipWorker.mjs","domain":"backend","desc":{"zh-CN":"worker_threads 异步 ZIP 编解码与后端打包导出接入","en-US":"worker_threads async ZIP codec & archive export integration","ru-RU":"Асинхронный ZIP на worker_threads и интеграция экспорта"}},{"commit":"85f82787","status":"M","add":277,"del":0,"file":"src/appExtracted/appCanvasArea.test.tsx","domain":"canvas","desc":{"zh-CN":"画布 6 层 React.memo 渲染拆分、细粒度比较器与单测","en-US":"6-layer React.memo canvas split, comparators & tests","ru-RU":"Разделение холста на 6 React.memo-слоёв, компараторы и тесты"}},{"commit":"85f82787","status":"M","add":1242,"del":963,"file":"src/appExtracted/appCanvasArea.tsx","domain":"canvas","desc":{"zh-CN":"画布 6 层 React.memo 渲染拆分、细粒度比较器与单测","en-US":"6-layer React.memo canvas split, comparators & tests","ru-RU":"Разделение холста на 6 React.memo-слоёв, компараторы и тесты"}},{"commit":"85f82787","status":"M","add":272,"del":209,"file":"src/appExtracted/appGraphMeasurementFactories.tsx","domain":"frontend","desc":{"zh-CN":"摘除 5,657 行文件 @ts-nocheck，补齐强类型与事件标注","en-US":"Removed @ts-nocheck from 5,657-LOC file with strict types","ru-RU":"Снят @ts-nocheck с файла 5 657 строк, добавлена строгая типизация"}},{"commit":"85f82787","status":"M","add":66,"del":18,"file":"src/appExtracted/appProjectCanvasFactories.tsx","domain":"worker","desc":{"zh-CN":"三条批量布线高负载路径卸载至常驻 batchRoute Worker","en-US":"Offloaded 3 heavy batch-routing paths to batchRoute Worker","ru-RU":"Выгрузка 3 тяжёлых путей трассировки в batchRoute Worker"}},{"commit":"85f82787","status":"M","add":183,"del":55,"file":"src/appExtracted/appSelectionDragFactories.tsx","domain":"worker","desc":{"zh-CN":"三条批量布线高负载路径卸载至常驻 batchRoute Worker","en-US":"Offloaded 3 heavy batch-routing paths to batchRoute Worker","ru-RU":"Выгрузка 3 тяжёлых путей трассировки в batchRoute Worker"}},{"commit":"85f82787","status":"M","add":13,"del":0,"file":"src/appExtracted/appToolbarHookFactories.tsx","domain":"frontend","desc":{"zh-CN":"稳定性加固、Redo 入口、懒加载对话框与 useDeferredValue 优化","en-US":"Stability hardening, Redo actions, lazy dialogs & useDeferredValue","ru-RU":"Укрепление стабильности, Redo, ленивые диалоги и useDeferredValue"}},{"commit":"85f82787","status":"M","add":2,"del":0,"file":"src/appExtracted/appView.tsx","domain":"frontend","desc":{"zh-CN":"稳定性加固、Redo 入口、懒加载对话框与 useDeferredValue 优化","en-US":"Stability hardening, Redo actions, lazy dialogs & useDeferredValue","ru-RU":"Укрепление стабильности, Redo, ленивые диалоги и useDeferredValue"}},{"commit":"85f82787","status":"A","add":29,"del":0,"file":"src/appExtracted/canvasLayers/CanvasConnectionPaths.tsx","domain":"canvas","desc":{"zh-CN":"画布 6 层 React.memo 渲染拆分、细粒度比较器与单测","en-US":"6-layer React.memo canvas split, comparators & tests","ru-RU":"Разделение холста на 6 React.memo-слоёв, компараторы и тесты"}},{"commit":"85f82787","status":"A","add":377,"del":0,"file":"src/appExtracted/canvasLayers/CanvasHudOverlays.tsx","domain":"canvas","desc":{"zh-CN":"画布 6 层 React.memo 渲染拆分、细粒度比较器与单测","en-US":"6-layer React.memo canvas split, comparators & tests","ru-RU":"Разделение холста на 6 React.memo-слоёв, компараторы и тесты"}},{"commit":"85f82787","status":"A","add":82,"del":0,"file":"src/appExtracted/canvasLayers/CanvasStaticBackgroundLayer.tsx","domain":"canvas","desc":{"zh-CN":"画布 6 层 React.memo 渲染拆分、细粒度比较器与单测","en-US":"6-layer React.memo canvas split, comparators & tests","ru-RU":"Разделение холста на 6 React.memo-слоёв, компараторы и тесты"}},{"commit":"85f82787","status":"A","add":605,"del":0,"file":"src/appExtracted/canvasLayers/CanvasTransientOverlayLayer.tsx","domain":"canvas","desc":{"zh-CN":"画布 6 层 React.memo 渲染拆分、细粒度比较器与单测","en-US":"6-layer React.memo canvas split, comparators & tests","ru-RU":"Разделение холста на 6 React.memo-слоёв, компараторы и тесты"}},{"commit":"85f82787","status":"A","add":66,"del":0,"file":"src/appExtracted/canvasLayers/CanvasTransientUnderlayLayer.tsx","domain":"canvas","desc":{"zh-CN":"画布 6 层 React.memo 渲染拆分、细粒度比较器与单测","en-US":"6-layer React.memo canvas split, comparators & tests","ru-RU":"Разделение холста на 6 React.memo-слоёв, компараторы и тесты"}},{"commit":"85f82787","status":"A","add":332,"del":0,"file":"src/appExtracted/canvasLayers/layerComparators.ts","domain":"canvas","desc":{"zh-CN":"画布 6 层 React.memo 渲染拆分、细粒度比较器与单测","en-US":"6-layer React.memo canvas split, comparators & tests","ru-RU":"Разделение холста на 6 React.memo-слоёв, компараторы и тесты"}},{"commit":"85f82787","status":"M","add":4,"del":4,"file":"src/appGraphMeasurementFactories.canvasBoundsContent.test.ts","domain":"guard","desc":{"zh-CN":"单元测试、强类型夹具对齐与工程契约守卫","en-US":"Unit tests, strict mock alignment & contract guards","ru-RU":"Модульные тесты, выравнивание моков и контрактные стражи"}},{"commit":"85f82787","status":"M","add":3,"del":3,"file":"src/appGraphMeasurementFactories.graphStoreSetters.test.ts","domain":"guard","desc":{"zh-CN":"单元测试、强类型夹具对齐与工程契约守卫","en-US":"Unit tests, strict mock alignment & contract guards","ru-RU":"Модульные тесты, выравнивание моков и контрактные стражи"}},{"commit":"85f82787","status":"M","add":1,"del":1,"file":"src/appGraphMeasurementFactories.marqueeAndContextHandled.test.ts","domain":"guard","desc":{"zh-CN":"单元测试、强类型夹具对齐与工程契约守卫","en-US":"Unit tests, strict mock alignment & contract guards","ru-RU":"Модульные тесты, выравнивание моков и контрактные стражи"}},{"commit":"85f82787","status":"M","add":11,"del":11,"file":"src/appGraphMeasurementFactories.moveCommit.test.ts","domain":"guard","desc":{"zh-CN":"单元测试、强类型夹具对齐与工程契约守卫","en-US":"Unit tests, strict mock alignment & contract guards","ru-RU":"Модульные тесты, выравнивание моков и контрактные стражи"}},{"commit":"85f82787","status":"M","add":1,"del":1,"file":"src/appGraphMeasurementFactories.nodePreviewImage.test.ts","domain":"guard","desc":{"zh-CN":"单元测试、强类型夹具对齐与工程契约守卫","en-US":"Unit tests, strict mock alignment & contract guards","ru-RU":"Модульные тесты, выравнивание моков и контрактные стражи"}},{"commit":"85f82787","status":"M","add":4,"del":4,"file":"src/appGraphMeasurementFactories.orderedNodes.test.ts","domain":"guard","desc":{"zh-CN":"单元测试、强类型夹具对齐与工程契约守卫","en-US":"Unit tests, strict mock alignment & contract guards","ru-RU":"Модульные тесты, выравнивание моков и контрактные стражи"}},{"commit":"85f82787","status":"M","add":4,"del":4,"file":"src/appGraphMeasurementFactories.previewPathMarkup.test.ts","domain":"guard","desc":{"zh-CN":"单元测试、强类型夹具对齐与工程契约守卫","en-US":"Unit tests, strict mock alignment & contract guards","ru-RU":"Модульные тесты, выравнивание моков и контрактные стражи"}},{"commit":"85f82787","status":"M","add":7,"del":7,"file":"src/appGraphMeasurementFactories.routeStoreDirty.test.ts","domain":"guard","desc":{"zh-CN":"单元测试、强类型夹具对齐与工程契约守卫","en-US":"Unit tests, strict mock alignment & contract guards","ru-RU":"Модульные тесты, выравнивание моков и контрактные стражи"}},{"commit":"85f82787","status":"M","add":2,"del":2,"file":"src/appGraphMeasurementFactories.routingNodesForConnection.test.ts","domain":"guard","desc":{"zh-CN":"单元测试、强类型夹具对齐与工程契约守卫","en-US":"Unit tests, strict mock alignment & contract guards","ru-RU":"Модульные тесты, выравнивание моков и контрактные стражи"}},{"commit":"85f82787","status":"M","add":4,"del":4,"file":"src/appGraphMeasurementFactories.schemeAndPanningSetters.test.ts","domain":"guard","desc":{"zh-CN":"单元测试、强类型夹具对齐与工程契约守卫","en-US":"Unit tests, strict mock alignment & contract guards","ru-RU":"Модульные тесты, выравнивание моков и контрактные стражи"}},{"commit":"85f82787","status":"M","add":2,"del":2,"file":"src/appGraphMeasurementFactories.singleNodeDragCache.test.ts","domain":"guard","desc":{"zh-CN":"单元测试、强类型夹具对齐与工程契约守卫","en-US":"Unit tests, strict mock alignment & contract guards","ru-RU":"Модульные тесты, выравнивание моков и контрактные стражи"}},{"commit":"85f82787","status":"M","add":1,"del":1,"file":"src/appGraphMeasurementFactories.translateStoredGeometry.test.ts","domain":"guard","desc":{"zh-CN":"单元测试、强类型夹具对齐与工程契约守卫","en-US":"Unit tests, strict mock alignment & contract guards","ru-RU":"Модульные тесты, выравнивание моков и контрактные стражи"}},{"commit":"85f82787","status":"M","add":1,"del":1,"file":"src/appGraphMeasurementFactories.voltageColorKeys.test.ts","domain":"guard","desc":{"zh-CN":"单元测试、强类型夹具对齐与工程契约守卫","en-US":"Unit tests, strict mock alignment & contract guards","ru-RU":"Модульные тесты, выравнивание моков и контрактные стражи"}},{"commit":"85f82787","status":"A","add":157,"del":0,"file":"src/commandPalette.test.ts","domain":"palette","desc":{"zh-CN":"Ctrl+K 全局命令面板、? 快捷键速查与懒加载弹窗","en-US":"Ctrl+K command palette, ? shortcut help & lazy dialog","ru-RU":"Палитра команд Ctrl+K, справка ? и ленивый диалог"}},{"commit":"85f82787","status":"A","add":471,"del":0,"file":"src/commandPalette.ts","domain":"palette","desc":{"zh-CN":"Ctrl+K 全局命令面板、? 快捷键速查与懒加载弹窗","en-US":"Ctrl+K command palette, ? shortcut help & lazy dialog","ru-RU":"Палитра команд Ctrl+K, справка ? и ленивый диалог"}},{"commit":"85f82787","status":"A","add":80,"del":0,"file":"src/commandPaletteStore.ts","domain":"palette","desc":{"zh-CN":"Ctrl+K 全局命令面板、? 快捷键速查与懒加载弹窗","en-US":"Ctrl+K command palette, ? shortcut help & lazy dialog","ru-RU":"Палитра команд Ctrl+K, справка ? и ленивый диалог"}},{"commit":"85f82787","status":"A","add":238,"del":0,"file":"src/components/CommandPaletteDialog.tsx","domain":"palette","desc":{"zh-CN":"Ctrl+K 全局命令面板、? 快捷键速查与懒加载弹窗","en-US":"Ctrl+K command palette, ? shortcut help & lazy dialog","ru-RU":"Палитра команд Ctrl+K, справка ? и ленивый диалог"}},{"commit":"85f82787","status":"A","add":24,"del":0,"file":"src/components/CommandPaletteHost.tsx","domain":"palette","desc":{"zh-CN":"Ctrl+K 全局命令面板、? 快捷键速查与懒加载弹窗","en-US":"Ctrl+K command palette, ? shortcut help & lazy dialog","ru-RU":"Палитра команд Ctrl+K, справка ? и ленивый диалог"}},{"commit":"85f82787","status":"M","add":26,"del":0,"file":"src/keyboardShortcuts.ts","domain":"palette","desc":{"zh-CN":"Ctrl+K 全局命令面板、? 快捷键速查与懒加载弹窗","en-US":"Ctrl+K command palette, ? shortcut help & lazy dialog","ru-RU":"Палитра команд Ctrl+K, справка ? и ленивый диалог"}},{"commit":"85f82787","status":"A","add":84,"del":0,"file":"src/routing/batchRoute.worker.ts","domain":"worker","desc":{"zh-CN":"常驻批量布线 Web Worker 与主线程客户端封装及测试","en-US":"Reusable batch-routing Web Worker, client & tests","ru-RU":"Переиспользуемый Web Worker пакетной трассировки, клиент и тесты"}},{"commit":"85f82787","status":"A","add":154,"del":0,"file":"src/routing/routeWorkerClient.test.ts","domain":"worker","desc":{"zh-CN":"常驻批量布线 Web Worker 与主线程客户端封装及测试","en-US":"Reusable batch-routing Web Worker, client & tests","ru-RU":"Переиспользуемый Web Worker пакетной трассировки, клиент и тесты"}},{"commit":"85f82787","status":"A","add":352,"del":0,"file":"src/routing/routeWorkerClient.ts","domain":"worker","desc":{"zh-CN":"常驻批量布线 Web Worker 与主线程客户端封装及测试","en-US":"Reusable batch-routing Web Worker, client & tests","ru-RU":"Переиспользуемый Web Worker пакетной трассировки, клиент и тесты"}},{"commit":"85f82787","status":"M","add":269,"del":0,"file":"src/styles.css","domain":"palette","desc":{"zh-CN":"命令面板、快捷键速查与分层画布样式规则","en-US":"Command palette, shortcut help & layered canvas styles","ru-RU":"Стили палитры команд, справки клавиш и слоёв холста"}},{"commit":"ec408dcf","status":"M","add":2,"del":4,"file":"scripts/tsNocheckGuard.test.mjs","domain":"guard","desc":{"zh-CN":"全仓 @ts-nocheck 白名单清零为 []","en-US":"Zeroed @ts-nocheck allowlist to []","ru-RU":"Обнулён список исключений @ts-nocheck до []"}},{"commit":"ec408dcf","status":"M","add":5,"del":5,"file":"src/appDeviceDefinitionFactories.test.ts","domain":"guard","desc":{"zh-CN":"单元测试、强类型夹具对齐与工程契约守卫","en-US":"Unit tests, strict mock alignment & contract guards","ru-RU":"Модульные тесты, выравнивание моков и контрактные стражи"}},{"commit":"ec408dcf","status":"M","add":2,"del":2,"file":"src/appExtracted/appDeviceDefinitionFactories.projectTreeOrder.test.ts","domain":"guard","desc":{"zh-CN":"单元测试、强类型夹具对齐与工程契约守卫","en-US":"Unit tests, strict mock alignment & contract guards","ru-RU":"Модульные тесты, выравнивание моков и контрактные стражи"}},{"commit":"ec408dcf","status":"M","add":227,"del":5571,"file":"src/appExtracted/appDeviceDefinitionFactories.tsx","domain":"devdef","desc":{"zh-CN":"摘除全仓最后 @ts-nocheck 并拆为 5 子域 + export * 门面（9,693→4,304 行）","en-US":"Removed last @ts-nocheck & split into 5 modules + facade (9,693→4,304 LOC)","ru-RU":"Снят последний @ts-nocheck, разбит на 5 модулей + фасад (9 693→4 304 строк)"}},{"commit":"ec408dcf","status":"A","add":686,"del":0,"file":"src/appExtracted/appEdgeRouteInteractionFactories.tsx","domain":"devdef","desc":{"zh-CN":"拆分连线/折点/线段拖拽与端子连线起点交互子域（686 行）","en-US":"Extracted edge/bend drag & terminal connect module (686 LOC)","ru-RU":"Вынесен модуль перетаскивания рёбер и подключения клемм (686 строк)"}},{"commit":"ec408dcf","status":"A","add":1502,"del":0,"file":"src/appExtracted/appExportImportFactories.tsx","domain":"devdef","desc":{"zh-CN":"拆分 SVG/JSON/E/DOT/ZIP 导入导出与重名冲突子域（1,502 行）","en-US":"Extracted SVG/JSON/E/DOT/ZIP import-export module (1,502 LOC)","ru-RU":"Вынесен модуль импорта/экспорта SVG/JSON/E/DOT/ZIP (1 502 строки)"}},{"commit":"ec408dcf","status":"A","add":483,"del":0,"file":"src/appExtracted/appImageLibraryFactories.tsx","domain":"devdef","desc":{"zh-CN":"拆分图片素材上传、图标库应用与文件夹 CRUD 子域（483 行）","en-US":"Extracted image library upload, icon catalog & folder CRUD (483 LOC)","ru-RU":"Вынесен модуль библиотеки изображений и папок (483 строки)"}},{"commit":"ec408dcf","status":"A","add":960,"del":0,"file":"src/appExtracted/appProjectTreeFactories.tsx","domain":"devdef","desc":{"zh-CN":"拆分方案树/模型树拖拽排序与节点渲染子域（960 行）","en-US":"Extracted scheme/model tree drag-sort & render module (960 LOC)","ru-RU":"Вынесен модуль сортировки и рендера дерева схем (960 строк)"}},{"commit":"ec408dcf","status":"A","add":1816,"del":0,"file":"src/appExtracted/appStateIconDrawingFactories.tsx","domain":"devdef","desc":{"zh-CN":"拆分状态图标画板编辑、几何吸附与选区编组子域（1,816 行）","en-US":"Extracted state-icon drawing, snapping & grouping module (1,816 LOC)","ru-RU":"Вынесен модуль рисования иконок состояний и привязок (1 816 строк)"}}];
+
+    const state = {
+      lang: localStorage.getItem("gmp_report_lang") || "zh-CN",
+      theme: localStorage.getItem("gmp_report_theme") || "precision-dark",
+      tab: "overview",
+      commit: "all",
+      domain: "all",
+      status: "all",
+      search: ""
+    };
+
+    if (!I18N_DICT[state.lang]) state.lang = "zh-CN";
+    if (!["precision-dark", "minimalist-light"].includes(state.theme)) state.theme = "precision-dark";
+
+    function t(key) {
+      return (I18N_DICT[state.lang] && I18N_DICT[state.lang][key]) || I18N_DICT["zh-CN"][key] || key;
+    }
+
+    function pickLang(obj) {
+      return (obj && (obj[state.lang] || obj["zh-CN"])) || "";
+    }
+
+    function escapeHtml(str) {
+      return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+
+    function applyTheme() {
+      document.documentElement.setAttribute("data-theme", state.theme);
+      localStorage.setItem("gmp_report_theme", state.theme);
+      const lbl = document.getElementById("themeLabel");
+      if (lbl) lbl.textContent = state.theme === "precision-dark" ? t("theme.dark") : t("theme.light");
+      const icon = document.getElementById("themeIcon");
+      if (icon) {
+        icon.innerHTML = state.theme === "precision-dark"
+          ? '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>'
+          : '<circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"></path>';
+      }
+    }
+
+    function applyStaticI18n() {
+      document.documentElement.lang = state.lang;
+      localStorage.setItem("gmp_report_lang", state.lang);
+      document.querySelectorAll("[data-i18n]").forEach((el) => {
+        el.textContent = t(el.getAttribute("data-i18n"));
+      });
+      document.querySelectorAll("[data-i18n-placeholder]").forEach((el) => {
+        el.setAttribute("placeholder", t(el.getAttribute("data-i18n-placeholder")));
+      });
+      document.querySelectorAll("[data-i18n-title]").forEach((el) => {
+        el.setAttribute("title", t(el.getAttribute("data-i18n-title")));
+      });
+      applyTheme();
+      populateFilterSelects();
+      renderAll();
+    }
+
+    function populateFilterSelects() {
+      const cSel = document.getElementById("commitFilter");
+      cSel.innerHTML = `
+        <option value="all">${escapeHtml(t("filter.allCommits"))}</option>
+        <option value="ec408dcf">ec408dcf (9)</option>
+        <option value="85f82787">85f82787 (51)</option>
+        <option value="469d9b85">469d9b85 (35)</option>
+      `;
+      cSel.value = state.commit;
+
+      const domains = ["devdef", "canvas", "worker", "palette", "backend", "frontend", "guard", "config"];
+      const dSel = document.getElementById("domainFilter");
+      dSel.innerHTML = `<option value="all">${escapeHtml(t("filter.allDomains"))}</option>` +
+        domains.map((d) => `<option value="${d}">${escapeHtml(t("domain." + d))}</option>`).join("");
+      dSel.value = state.domain;
+
+      const sSel = document.getElementById("statusFilter");
+      sSel.innerHTML = `
+        <option value="all">${escapeHtml(t("filter.allStatus"))}</option>
+        <option value="A">${escapeHtml(t("filter.added"))}</option>
+        <option value="M">${escapeHtml(t("filter.modified"))}</option>
+      `;
+      sSel.value = state.status;
+    }
+
+    function renderSlimChart() {
+      const rows = [
+        { name: "appDeviceDefinitionFactories.tsx", before: 9693, after: 4304, pct: "-55.6%" },
+        { name: "server/server.mjs", before: 6415, after: 3814, pct: "-40.6%" },
+        { name: "appCanvasArea.tsx (monolith→6 layers)", before: 2100, after: 605, pct: "max layer 605" },
+        { name: "Repo @ts-nocheck files (×1000 scale)", before: 2000, after: 0, pct: "2 → 0 (100%)", rawBefore: "2", rawAfter: "0" }
+      ];
+      const maxV = 10000;
+      const w = 640, left = 215, barW = 310, rowH = 52, topPad = 24;
+      const h = topPad + rows.length * rowH + 14;
+
+      let svg = `<svg viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg">`;
+      // Legend
+      svg += `
+        <rect x="${left}" y="5" width="10" height="8" rx="2" fill="var(--text-tertiary)" opacity="0.45"/>
+        <text x="${left + 15}" y="13" fill="var(--text-secondary)" font-size="11" font-family="var(--font-sans)">${escapeHtml(t("chart.before"))}</text>
+        <rect x="${left + 95}" y="5" width="10" height="8" rx="2" fill="var(--ok)"/>
+        <text x="${left + 110}" y="13" fill="var(--text-secondary)" font-size="11" font-family="var(--font-sans)">${escapeHtml(t("chart.after"))}</text>
+      `;
+
+      // Grid lines
+      [0, 2500, 5000, 7500, 10000].forEach((tick) => {
+        const x = left + (tick / maxV) * barW;
+        svg += `<line x1="${x}" y1="${topPad}" x2="${x}" y2="${h - 10}" stroke="var(--grid-line)" stroke-width="1"/>`;
+      });
+
+      rows.forEach((r, idx) => {
+        const y = topPad + idx * rowH + 6;
+        const bwBefore = Math.max(4, (r.before / maxV) * barW);
+        const bwAfter = r.after === 0 ? 3 : Math.max(4, (r.after / maxV) * barW);
+        const lblB = r.rawBefore ?? r.before.toLocaleString();
+        const lblA = r.rawAfter ?? r.after.toLocaleString();
+
+        svg += `
+          <text x="${left - 10}" y="${y + 18}" text-anchor="end" fill="var(--text-primary)" font-size="11" font-family="var(--font-mono)">${escapeHtml(r.name)}</text>
+          <rect x="${left}" y="${y}" width="${bwBefore}" height="12" rx="3" fill="var(--text-tertiary)" opacity="0.38"/>
+          <text x="${left + bwBefore + 6}" y="${y + 10}" fill="var(--text-secondary)" font-size="10.5" font-family="var(--font-mono)">${lblB}</text>
+          <rect x="${left}" y="${y + 16}" width="${bwAfter}" height="12" rx="3" fill="var(--ok)"/>
+          <text x="${left + bwAfter + 6}" y="${y + 26}" fill="var(--ok)" font-size="10.5" font-weight="700" font-family="var(--font-mono)">${lblA} (${r.pct})</text>
+        `;
+      });
+
+      svg += "</svg>";
+      document.getElementById("slimChart").innerHTML = svg;
+    }
+
+    function renderDagChart() {
+      const w = 720, h = 246;
+      const leaves = [
+        { x: 14, y: 120, w: 132, h: 48, title: "StateIconDrawing", lines: "1,816 LOC", accent: true },
+        { x: 158, y: 120, w: 132, h: 48, title: "ExportImport", lines: "1,502 LOC", accent: true },
+        { x: 302, y: 120, w: 132, h: 48, title: "ImageLibrary", lines: "483 LOC", accent: false },
+        { x: 446, y: 120, w: 130, h: 48, title: "ProjectTree", lines: "960 LOC", accent: false },
+        { x: 588, y: 120, w: 118, h: 48, title: "EdgeRoute", lines: "686 LOC", accent: false }
+      ];
+
+      let svg = `<svg viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="arrAccent" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M0 1 L10 5 L0 9 z" fill="var(--accent)"/>
+          </marker>
+          <marker id="arrOk" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M0 1 L10 5 L0 9 z" fill="var(--ok)"/>
+          </marker>
+        </defs>
+      `;
+
+      // Main facade box
+      svg += `
+        <rect x="170" y="14" width="380" height="50" rx="8" fill="var(--bg-subtle)" stroke="var(--accent)" stroke-width="1.5"/>
+        <text x="360" y="34" text-anchor="middle" fill="var(--text-primary)" font-size="12" font-weight="700" font-family="var(--font-mono)">appDeviceDefinitionFactories.tsx · ${escapeHtml(t("chart.facade"))}</text>
+        <text x="360" y="52" text-anchor="middle" fill="var(--accent)" font-size="10.5" font-family="var(--font-sans)">${escapeHtml(t("chart.reexport"))}</text>
+      `;
+
+      // Export* dashed connectors + direct internal call arrows
+      leaves.forEach((b, idx) => {
+        const cx = b.x + b.w / 2;
+        const startX = 210 + idx * 75;
+        svg += `<path d="M ${startX} 64 C ${startX} 92, ${cx} 90, ${cx} ${b.y - 2}" fill="none" stroke="var(--accent)" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#arrAccent)" opacity="0.85"/>`;
+      });
+
+      // Leaf boxes
+      leaves.forEach((b) => {
+        svg += `
+          <rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" rx="6" fill="var(--bg-subtle)" stroke="${b.accent ? 'var(--ok)' : 'var(--border-strong)'}" stroke-width="1.2"/>
+          <text x="${b.x + b.w / 2}" y="${b.y + 20}" text-anchor="middle" fill="var(--text-primary)" font-size="11" font-weight="700" font-family="var(--font-mono)">${b.title}</text>
+          <text x="${b.x + b.w / 2}" y="${b.y + 37}" text-anchor="middle" fill="var(--text-secondary)" font-size="10.5" font-family="var(--font-mono)">${b.lines}</text>
+        `;
+      });
+
+      // Cross-leaf edge: ImageLibrary -> StateIconDrawing (1 symbol)
+      svg += `
+        <path d="M 368 168 C 368 205, 80 205, 80 170" fill="none" stroke="var(--ok)" stroke-width="1.5" marker-end="url(#arrOk)"/>
+        <rect x="130" y="188" width="190" height="20" rx="4" fill="var(--bg-surface)" stroke="var(--ok)" stroke-width="1"/>
+        <text x="225" y="202" text-anchor="middle" fill="var(--ok)" font-size="10" font-family="var(--font-mono)">pushStateIconDrawingHistorySnapshot</text>
+      `;
+
+      // Legend bottom
+      svg += `
+        <text x="14" y="236" fill="var(--text-secondary)" font-size="10.5" font-family="var(--font-mono)">main → stateIcon (4) · main → exportImport (1) · imageLibrary → stateIcon (1)</text>
+      `;
+
+      svg += "</svg>";
+      document.getElementById("dagChart").innerHTML = svg;
+    }
+
+    function renderCommitTable() {
+      const tbody = document.getElementById("commitTableBody");
+      tbody.innerHTML = COMMITS_DATA.map((c) => `
+        <tr>
+          <td class="nowrap"><span class="inline-code">${c.id}</span></td>
+          <td class="mono nowrap" style="color:var(--text-secondary);">${c.time}</td>
+          <td class="nowrap"><span class="badge badge-accent">${escapeHtml(c.scope)}</span></td>
+          <td>${escapeHtml(pickLang(c.summary))}</td>
+          <td class="num mono">${c.files}</td>
+          <td class="num mono"><span class="diff-add">+${c.add.toLocaleString()}</span> / <span class="diff-del">-${c.del.toLocaleString()}</span></td>
+        </tr>
+      `).join("");
+    }
+
+    function renderPhaseTable() {
+      const tbody = document.getElementById("phaseTableBody");
+      tbody.innerHTML = PHASES_DATA.map((p) => {
+        const items = pickLang(p.bullets).map((b) => `<li>${escapeHtml(b)}</li>`).join("");
+        const mods = p.artifacts.map((a) => `<div style="margin-bottom:3px;"><span class="inline-code">${escapeHtml(a)}</span></div>`).join("");
+        return `
+          <tr>
+            <td class="nowrap"><span class="badge badge-accent">${escapeHtml(p.phase)}</span></td>
+            <td class="nowrap"><span class="inline-code">${p.commit}</span></td>
+            <td style="font-weight:600;">${escapeHtml(pickLang(p.topic))}</td>
+            <td><ul class="bullet-list">${items}</ul></td>
+            <td>${mods}</td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    function renderFileTable() {
+      const q = state.search.trim().toLowerCase();
+      const filtered = FILE_RECORDS.filter((r) => {
+        if (state.commit !== "all" && r.commit !== state.commit) return false;
+        if (state.domain !== "all" && r.domain !== state.domain) return false;
+        if (state.status !== "all" && r.status !== state.status) return false;
+        if (q) {
+          const desc = pickLang(r.desc).toLowerCase();
+          if (!r.file.toLowerCase().includes(q) && !desc.includes(q) && !r.commit.includes(q)) return false;
+        }
+        return true;
+      });
+
+      document.getElementById("fileFilterMeta").textContent = `${filtered.length} / ${FILE_RECORDS.length}`;
+      const tbody = document.getElementById("fileTableBody");
+      if (filtered.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" class="empty-row">${escapeHtml(t("empty.noMatch"))}</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = filtered.map((r) => {
+        const stBadge = r.status === "A"
+          ? `<span class="badge badge-ok">${escapeHtml(t("status.added"))}</span>`
+          : `<span class="badge badge-neutral">${escapeHtml(t("status.modified"))}</span>`;
+        return `
+          <tr>
+            <td class="nowrap"><span class="inline-code">${r.commit}</span></td>
+            <td class="nowrap">${stBadge}</td>
+            <td class="nowrap"><span class="badge badge-accent">${escapeHtml(t("domain." + r.domain))}</span></td>
+            <td><span class="path-code">${escapeHtml(r.file)}</span></td>
+            <td style="color:var(--text-secondary);">${escapeHtml(pickLang(r.desc))}</td>
+            <td class="num mono"><span class="diff-add">+${r.add}</span> / <span class="diff-del">-${r.del}</span></td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    function renderGuardsAndVerify() {
+      document.getElementById("guardGrid").innerHTML = GUARDS_DATA.map((g) => `
+        <div class="guard-item">
+          <div class="guard-top">
+            <span class="guard-name mono">${escapeHtml(g.name)}</span>
+            <span class="badge badge-ok">${escapeHtml(g.badge)}</span>
+          </div>
+          <div class="guard-desc">${escapeHtml(pickLang(g.desc))}</div>
+        </div>
+      `).join("");
+
+      document.getElementById("verifyTableBody").innerHTML = VERIFY_DATA.map((v) => `
+        <tr>
+          <td style="font-weight:600;">${escapeHtml(pickLang(v.item))}</td>
+          <td><span class="path-code">${escapeHtml(v.cmd)}</span></td>
+          <td class="mono">${escapeHtml(pickLang(v.result))}</td>
+          <td class="nowrap"><span class="badge badge-ok">${escapeHtml(t("status.pass"))}</span></td>
+        </tr>
+      `).join("");
+    }
+
+    function renderAll() {
+      renderSlimChart();
+      renderDagChart();
+      renderCommitTable();
+      renderPhaseTable();
+      renderFileTable();
+      renderGuardsAndVerify();
+    }
+
+    // Events
+    document.querySelectorAll(".tab-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        state.tab = btn.getAttribute("data-tab");
+        document.querySelectorAll(".tab-btn").forEach((b) => {
+          const active = b === btn;
+          b.classList.toggle("active", active);
+          b.setAttribute("aria-selected", active ? "true" : "false");
+        });
+        document.querySelectorAll(".view-panel").forEach((p) => {
+          p.classList.toggle("active", p.id === "panel-" + state.tab);
+        });
+        document.getElementById("fileFilters").style.display = state.tab === "files" ? "flex" : "none";
+      });
+    });
+
+    document.getElementById("themeToggle").addEventListener("click", () => {
+      state.theme = state.theme === "precision-dark" ? "minimalist-light" : "precision-dark";
+      applyTheme();
+    });
+
+    const langSelect = document.getElementById("langSelect");
+    langSelect.value = state.lang;
+    langSelect.addEventListener("change", (e) => {
+      state.lang = e.target.value;
+      applyStaticI18n();
+    });
+
+    document.getElementById("commitFilter").addEventListener("change", (e) => {
+      state.commit = e.target.value;
+      renderFileTable();
+    });
+    document.getElementById("domainFilter").addEventListener("change", (e) => {
+      state.domain = e.target.value;
+      renderFileTable();
+    });
+    document.getElementById("statusFilter").addEventListener("change", (e) => {
+      state.status = e.target.value;
+      renderFileTable();
+    });
+    document.getElementById("searchInput").addEventListener("input", (e) => {
+      state.search = e.target.value;
+      renderFileTable();
+    });
+
+    // Init
+    applyStaticI18n();
+  </script>
+</body>
+</html>
