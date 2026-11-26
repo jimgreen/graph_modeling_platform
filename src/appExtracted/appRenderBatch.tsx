@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import { ensureStableFactoryStore, getOrCreateStableFactory, type StableFactoryStore } from "./stableScopeFactoryCache";
+import { ensureStableFactoryStore, getOrCreateStableFactory, syncStableLiveScope, type StableFactoryStore } from "./stableScopeFactoryCache";
 // 从 App.tsx 第 3053-6217 行提取
 import { useMemo, useEffect, useCallback, useLayoutEffect, type DragEvent } from "react";
 import type { LibraryPackageScope } from "./appPersistenceLibraryExport";
@@ -246,11 +246,9 @@ export function createMeasurementEditorGroupId(
 }
 
 export function useRenderBatch(__appScope: Record<string, any>) {
-  // 跨渲染帧稳定工厂缓存：700+ 纯延迟解构工厂仅初始化创建一次，经实时 Proxy 读取最新 __appScope
-  const __liveScopeRef = useRef(__appScope);
-  __liveScopeRef.current = __appScope;
+  // 跨渲染帧稳定工厂缓存（零 Proxy 普通对象模式）：710 个纯延迟工厂仅创建一次，零 V8 Proxy 慢路径惩罚
   const __stableFactoryStoreRef = useRef<StableFactoryStore | null>(null);
-  const __stableFactories = ensureStableFactoryStore(__stableFactoryStoreRef, __liveScopeRef);
+  const __stableFactories = ensureStableFactoryStore(__stableFactoryStoreRef, __appScope);
   const __s = <TResult,>(key: string, factory: (scope: Record<string, unknown>) => TResult) =>
     getOrCreateStableFactory(__stableFactories, key, factory);
   const {
@@ -4130,4 +4128,5 @@ export function useRenderBatch(__appScope: Record<string, any>) {
       </g>
     );
   Object.assign(__appScope, { canvasResizeHandles });
+  syncStableLiveScope(__stableFactories, __appScope);
 }
