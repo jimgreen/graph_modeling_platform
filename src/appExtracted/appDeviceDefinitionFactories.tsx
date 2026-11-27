@@ -21,6 +21,7 @@ import {
 } from "../model";
 import { clampNumber } from "../canvasViewport";
 import { fastClonePojo } from "../lib/rafCoalescer";
+import { flushActiveBufferedInput } from "../components/InputComponents";
 import { normalizeImageFitMode } from "../imageFit";
 import { apiPath } from "../config";
 import { promptText } from "../globalDialogs";
@@ -1578,7 +1579,9 @@ export function createSaveDeviceDefinitionVisualDraft(__appScope: DeviceDefiniti
 
 export function createSaveDeviceDefinitionDraft(__appScope: DeviceDefinitionScope) {
   return () => {
-  const { ALLOW_RESIZE_TRANSFORM_PARAM, createDefinitionDraftRows, definitionDeleteAllParametersRequestedRef, definitionDraftRows, definitionDraftSection, definitionMeasurementDraft, deviceDefinitionKeyForTemplate, deviceDefinitionOverrideForTemplate, deviceDefinitionRowId, getTemplateParameterDefinitions, isReservedDeviceDefinitionParamName, libraryTemplates, measurementConfig, measurementConfigDraft, measurementConfigDraftRef, normalizeComponentLibraryName, normalizeDefinitionRowEnumFields, selectedDefinitionTemplate, setDefinitionDraftError, setDefinitionDraftRows, setDefinitionMeasurementDraft = () => undefined, setDeviceDefinitionOverrides, syncExistingNodesWithTemplateDefinitions, templateAllowsResizeTransform } = __appScope;
+    flushActiveBufferedInput();
+    const currentScope = (__appScope.__appScopeRef?.current as DeviceDefinitionScope | undefined) ?? __appScope;
+    const { ALLOW_RESIZE_TRANSFORM_PARAM, createDefinitionDraftRows, definitionDeleteAllParametersRequestedRef, definitionDraftRows, definitionDraftSection, definitionMeasurementDraft, deviceDefinitionKeyForTemplate, deviceDefinitionOverrideForTemplate, deviceDefinitionRowId, getTemplateParameterDefinitions, isReservedDeviceDefinitionParamName, libraryTemplates, measurementConfig, measurementConfigDraft, measurementConfigDraftRef, normalizeComponentLibraryName, normalizeDefinitionRowEnumFields, selectedDefinitionTemplate, setDefinitionDraftError, setDefinitionDraftRows, setDefinitionMeasurementDraft = () => undefined, setDeviceDefinitionOverrides, syncExistingNodesWithTemplateDefinitions, templateAllowsResizeTransform } = currentScope;
     if (!selectedDefinitionTemplate) {
       return;
     }
@@ -4281,7 +4284,9 @@ export function createSaveComponentLibraryDefinition(__appScope: DeviceDefinitio
 
 export function createSaveCustomDeviceDefinitionDialog(__appScope: DeviceDefinitionScope) {
   return (options: { closeAfterSave?: boolean } = {}) => {
-  const { customComponentTreeSelection, customDeviceDefinitionMode, editingCustomDeviceKind, saveBuiltinDeviceDefinitionFromCustomDraft, saveComponentLibraryDefinition, saveCustomDeviceTemplate, selectedCustomComponentTemplate, selectedDefinitionTemplate, showGlobalMessage = () => undefined } = __appScope;
+    flushActiveBufferedInput();
+    const currentScope = (__appScope.__appScopeRef?.current as DeviceDefinitionScope | undefined) ?? __appScope;
+    const { customComponentTreeSelection, customDeviceDefinitionMode, editingCustomDeviceKind, saveBuiltinDeviceDefinitionFromCustomDraft, saveComponentLibraryDefinition, saveCustomDeviceTemplate, selectedCustomComponentTemplate, selectedDefinitionTemplate, showGlobalMessage = () => undefined } = currentScope;
     if (customDeviceDefinitionMode === "create") {
       return saveCustomDeviceTemplate(options) === true;
     }

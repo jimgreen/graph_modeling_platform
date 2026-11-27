@@ -1,7 +1,29 @@
 // 缓冲输入组件 — 延迟提交的表单输入控件
 
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import { flushSync } from "react-dom";
 import { ColorPicker, Input, Select, Button, type ColorPickerProps } from "antd";
+
+const dirtyBufferedInputFlushers = new Set<() => boolean>();
+
+/**
+ * 同步刷出当前所有尚未提交的缓冲输入草稿（BufferedTextInput / BufferedTextarea / InlineEditableValue）。
+ * 无脏草稿时 O(1) 短路返回 false；有脏草稿时经 flushSync 同步推进 React 状态且保留原输入焦点。
+ */
+export function flushActiveBufferedInput(): boolean {
+  if (dirtyBufferedInputFlushers.size === 0) {
+    return false;
+  }
+  let flushed = false;
+  flushSync(() => {
+    for (const flusher of Array.from(dirtyBufferedInputFlushers)) {
+      if (flusher()) {
+        flushed = true;
+      }
+    }
+  });
+  return flushed;
+}
 
 const { TextArea } = Input;
 
@@ -255,8 +277,11 @@ function useBufferedCommit<T extends HTMLElement>(
 ) {
   const normalizedValue = String(value ?? "");
   const [draftValue, setDraftValue] = useState(normalizedValue);
+  const draftValueRef = useRef(normalizedValue);
   const committedValueRef = useRef(normalizedValue);
   const onCommitRef = useRef(onCommit);
+  const disabledRef = useRef(disabled);
+  disabledRef.current = disabled;
 
   /**
    * Escape 的 revertDraft() 与紧随其后的 blur() 在**同一个同步块**里。
@@ -272,11 +297,40 @@ function useBufferedCommit<T extends HTMLElement>(
    * 就等不到随后的 blur 来消费，会把用户之后正常编辑后的一次真实提交也吞掉。
    */
   const revertingRef = useRef(false);
+  const flusherRef = useRef<(() => boolean) | null>(null);
+  if (!flusherRef.current) {
+    flusherRef.current = () => {
+      dirtyBufferedInputFlushers.delete(flusherRef.current!);
+      if (disabledRef.current || revertingRef.current) {
+        return false;
+      }
+      const nextValue = draftValueRef.current;
+      if (nextValue !== committedValueRef.current) {
+        committedValueRef.current = nextValue;
+        onCommitRef.current(nextValue);
+        return true;
+      }
+      return false;
+    };
+  }
+
+  const updateDraftValue = (nextValue: string) => {
+    draftValueRef.current = nextValue;
+    setDraftValue(nextValue);
+    const flusher = flusherRef.current!;
+    if (!disabledRef.current && nextValue !== committedValueRef.current) {
+      dirtyBufferedInputFlushers.add(flusher);
+    } else {
+      dirtyBufferedInputFlushers.delete(flusher);
+    }
+  };
 
   const commitValue = (nextValue: string) => {
+    dirtyBufferedInputFlushers.delete(flusherRef.current!);
     if (disabled) {
       return;
     }
+    draftValueRef.current = nextValue;
     if (nextValue !== committedValueRef.current) {
       committedValueRef.current = nextValue;
       onCommitRef.current(nextValue);
@@ -288,22 +342,33 @@ function useBufferedCommit<T extends HTMLElement>(
   }, [onCommit]);
 
   useEffect(() => {
+    draftValueRef.current = normalizedValue;
+    dirtyBufferedInputFlushers.delete(flusherRef.current!);
     committedValueRef.current = normalizedValue;
     setDraftValue(normalizedValue);
   }, [normalizedValue]);
 
+  useEffect(() => {
+    const flusher = flusherRef.current!;
+    return () => {
+      dirtyBufferedInputFlushers.delete(flusher);
+    };
+  }, []);
+
   return {
     draftValue,
-    setDraftValue,
+    setDraftValue: updateDraftValue,
     commitValue,
     commitDraft: () => {
       if (revertingRef.current) {
         return;
       }
-      commitValue(draftValue);
+      commitValue(draftValueRef.current);
     },
     revertDraft: () => {
       revertingRef.current = true;
+      dirtyBufferedInputFlushers.delete(flusherRef.current!);
+      draftValueRef.current = committedValueRef.current;
       setDraftValue(committedValueRef.current);
       queueMicrotask(() => {
         revertingRef.current = false;
@@ -423,28 +488,72 @@ export function InlineEditableValue({
   const [editing, setEditing] = useState(false);
   const [draftValue, setDraftValue] = useState(normalizedValue);
   const [selectOpen, setSelectOpen] = useState(false);
+  const draftValueRef = useRef(normalizedValue);
+  const normalizedValueRef = useRef(normalizedValue);
+  normalizedValueRef.current = normalizedValue;
+  const onCommitRef = useRef(onCommit);
+  onCommitRef.current = onCommit;
+  const committedInSessionRef = useRef(false);
+  const flusherRef = useRef<(() => boolean) | null>(null);
+  if (!flusherRef.current) {
+    flusherRef.current = () => {
+      dirtyBufferedInputFlushers.delete(flusherRef.current!);
+      if (committedInSessionRef.current) {
+        return false;
+      }
+      if (draftValueRef.current !== normalizedValueRef.current) {
+        committedInSessionRef.current = true;
+        const nextValue = draftValueRef.current;
+        normalizedValueRef.current = nextValue;
+        onCommitRef.current(nextValue);
+        setEditing(false);
+        return true;
+      }
+      return false;
+    };
+  }
 
   useEffect(() => {
     if (!editing) {
+      draftValueRef.current = normalizedValue;
+      dirtyBufferedInputFlushers.delete(flusherRef.current!);
       setDraftValue(normalizedValue);
     }
   }, [editing, normalizedValue]);
+
+  useEffect(() => {
+    const flusher = flusherRef.current!;
+    return () => {
+      dirtyBufferedInputFlushers.delete(flusher);
+    };
+  }, []);
 
   const activate = () => {
     if (disabled || readOnly) {
       return;
     }
+    committedInSessionRef.current = false;
+    draftValueRef.current = normalizedValue;
+    dirtyBufferedInputFlushers.delete(flusherRef.current!);
     setDraftValue(normalizedValue);
     setEditing(true);
     setSelectOpen(Boolean(options?.length));
   };
 
   const commitText = () => {
-    onCommit(draftValue);
+    dirtyBufferedInputFlushers.delete(flusherRef.current!);
+    if (committedInSessionRef.current) {
+      return;
+    }
+    committedInSessionRef.current = true;
+    onCommitRef.current(draftValueRef.current);
     setEditing(false);
   };
 
   const cancelText = () => {
+    dirtyBufferedInputFlushers.delete(flusherRef.current!);
+    committedInSessionRef.current = true;
+    draftValueRef.current = normalizedValue;
     setDraftValue(normalizedValue);
     setEditing(false);
   };
@@ -527,7 +636,17 @@ export function InlineEditableValue({
     title,
     "aria-label": ariaLabel,
     ...modifiedAttributes,
-    onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setDraftValue(event.target.value),
+    onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      const nextValue = event.target.value;
+      draftValueRef.current = nextValue;
+      setDraftValue(nextValue);
+      const flusher = flusherRef.current!;
+      if (nextValue !== normalizedValueRef.current) {
+        dirtyBufferedInputFlushers.add(flusher);
+      } else {
+        dirtyBufferedInputFlushers.delete(flusher);
+      }
+    },
     onBlur: commitText,
     onKeyDown: (event: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       if (event.key === "Enter" && !multiline) {

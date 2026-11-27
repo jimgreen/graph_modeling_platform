@@ -173,6 +173,23 @@ function applyHistorySnapshot(__appScope: SelectionDragScope, snapshot: UndoSnap
   setOperationLogText(operationLog);
 }
 
+function abortActiveInteractionsBeforeHistory(__appScope: SelectionDragScope) {
+  const interactiveScope = __appScope as SelectionDragScope & {
+    cancelActiveEditInteractions?: () => void;
+    finishMeasurementDrag?: () => void;
+    setRoutableLinePlacement?: (value: null) => void;
+    resetRoutableLinePreviewState?: () => void;
+    setRoutableLineEndpointDrag?: (value: null) => void;
+    setRoutableLineSegmentDrag?: (value: null) => void;
+  };
+  interactiveScope.cancelActiveEditInteractions?.();
+  interactiveScope.finishMeasurementDrag?.();
+  interactiveScope.setRoutableLinePlacement?.(null);
+  interactiveScope.resetRoutableLinePreviewState?.();
+  interactiveScope.setRoutableLineEndpointDrag?.(null);
+  interactiveScope.setRoutableLineSegmentDrag?.(null);
+}
+
 export function createUndoLastOperation(__appScope: SelectionDragScope) {
   return () => {
     const { cloneProjectState, currentMutationRevisionRef, deferredMoveOptimizationCancelRef, deferredRoutableLineRouteRepairCancelRef, pendingBusTerminalSyncNodeIdsRef, pendingStoredRouteEdgeIdsRef, redoStackRef, setRedoStack, setUndoStack, undoStackRef } = __appScope;
@@ -191,6 +208,7 @@ export function createUndoLastOperation(__appScope: SelectionDragScope) {
       if (!snapshot) {
         return;
       }
+      abortActiveInteractionsBeforeHistory(__appScope);
       if (typeof cloneProjectState === "function" && setRedoStack) {
         const redoEntry: UndoSnapshot = cloneProjectState(false);
         redoEntry.label = snapshot.label;
@@ -217,6 +235,7 @@ export function createUndoLastOperation(__appScope: SelectionDragScope) {
       if (!snapshot) {
         return current;
       }
+      abortActiveInteractionsBeforeHistory(__appScope);
       applyHistorySnapshot(__appScope, snapshot, "撤销上一步操作");
       return current.slice(0, -1);
     });
@@ -242,6 +261,7 @@ export function createRedoLastOperation(__appScope: SelectionDragScope) {
       if (!snapshot) {
         return;
       }
+      abortActiveInteractionsBeforeHistory(__appScope);
       if (typeof cloneProjectState === "function" && setUndoStack) {
         const undoEntry: UndoSnapshot = cloneProjectState(false);
         undoEntry.label = snapshot.label;
@@ -268,6 +288,7 @@ export function createRedoLastOperation(__appScope: SelectionDragScope) {
       if (!snapshot) {
         return currentRedo;
       }
+      abortActiveInteractionsBeforeHistory(__appScope);
       applyHistorySnapshot(__appScope, snapshot, "重做上一步操作");
       return currentRedo.slice(0, -1);
     });

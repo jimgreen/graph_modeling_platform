@@ -263,3 +263,77 @@ export function createIdleTaskScheduler(timeoutMs = 300): IdleTaskScheduler {
 
   return { schedule, flush, cancel };
 }
+
+export interface SerialLatestAsyncRunner<T> {
+  /** 提交最新载荷执行异步任务；若前序请求仍在途，自动合并中间载荷，仅在前序结束后串行发送最后一次最新值。 */
+  run(payload: T): Promise<void>;
+  /** 当前是否有在途异步任务。 */
+  isBusy(): boolean;
+}
+
+/**
+ * 创建单通道串行 + 最新值合并异步执行器：
+ * 适用于单文件全量覆盖型后台 PUT 接口（配色配置、图元库、量测配置），
+ * 消除连续微调时多个并发请求在网络抖动下乱序落盘导致旧配置覆盖新配置的竞态。
+ */
+export function createSerialLatestAsyncRunner<T>(
+  task: (payload: T) => Promise<void>
+): SerialLatestAsyncRunner<T> {
+  let inFlight = false;
+  let hasNext = false;
+  let nextPayload: T | undefined;
+  let tailWaiters: Array<{ resolve: () => void; reject: (reason: unknown) => void }> = [];
+
+  const pump = async (initialPayload: T): Promise<void> => {
+    inFlight = true;
+    let currentPayload: T | undefined = initialPayload;
+    let hasCurrent = true;
+    try {
+      while (hasCurrent) {
+        const payloadToSend = currentPayload as T;
+        currentPayload = undefined;
+        hasCurrent = false;
+        const batchWaiters = tailWaiters;
+        tailWaiters = [];
+        try {
+          await task(payloadToSend);
+          if (!hasNext) {
+            for (const waiter of batchWaiters) waiter.resolve();
+          } else {
+            tailWaiters = [...batchWaiters, ...tailWaiters];
+          }
+        } catch (error) {
+          if (!hasNext) {
+            for (const waiter of batchWaiters) waiter.reject(error);
+          } else {
+            tailWaiters = [...batchWaiters, ...tailWaiters];
+          }
+        }
+        if (hasNext) {
+          currentPayload = nextPayload as T;
+          nextPayload = undefined;
+          hasNext = false;
+          hasCurrent = true;
+        }
+      }
+    } finally {
+      inFlight = false;
+    }
+  };
+
+  const run = (payload: T): Promise<void> =>
+    new Promise<void>((resolve, reject) => {
+      tailWaiters.push({ resolve, reject });
+      if (!inFlight) {
+        void pump(payload);
+      } else {
+        nextPayload = payload;
+        hasNext = true;
+      }
+    });
+
+  return {
+    run,
+    isBusy: () => inFlight
+  };
+}

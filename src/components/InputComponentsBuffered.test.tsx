@@ -18,7 +18,7 @@
 import * as ReactNamespace from "react";
 import { createElement } from "react";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { BufferedTextInput, BufferedTextarea } from "./InputComponents";
+import { BufferedTextInput, BufferedTextarea, flushActiveBufferedInput } from "./InputComponents";
 
 async function readSource(): Promise<string> {
   const { readFileSync } = await import("node:fs");
@@ -615,5 +615,30 @@ describe("两个组件的提交键差异（源码契约）", () => {
     expect(forwardCount).toBe(2);
     const preventCount = (source.match(/if \(event\.defaultPrevented\) \{\s*return;/g) ?? []).length;
     expect(preventCount).toBe(2);
+  });
+});
+
+describe("flushActiveBufferedInput（未失焦草稿同步刷出）", () => {
+  test("无脏草稿时 O(1) 返回 false，有未失焦输入时立即同步触发 onCommit 且后续 blur 不重复提交", () => {
+    // 先排空前序轻量 dispatcher 测试桩（未执行 unmount cleanup）遗留的挂起项
+    flushActiveBufferedInput();
+
+    const onCommit = vi.fn();
+    const ui = mountBuffered(BufferedTextInput as Buffered, ORIGINAL, onCommit);
+
+    expect(flushActiveBufferedInput()).toBe(false);
+    expect(onCommit).not.toHaveBeenCalled();
+
+    ui.type("主变_未失焦草稿");
+    expect(onCommit).not.toHaveBeenCalled();
+
+    expect(flushActiveBufferedInput()).toBe(true);
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    expect(onCommit).toHaveBeenCalledWith("主变_未失焦草稿");
+
+    // 紧接着再调或后续自然失焦，均保持幂等，不二次触发提交
+    expect(flushActiveBufferedInput()).toBe(false);
+    ui.blur();
+    expect(onCommit).toHaveBeenCalledTimes(1);
   });
 });

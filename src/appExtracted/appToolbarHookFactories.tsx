@@ -13,6 +13,7 @@ import { computeMeasurementColumnPositions } from "./appGraphMeasurementFactorie
 import { isCommandPaletteShortcut, isShortcutHelpShortcut } from "../keyboardShortcuts";
 import { toggleCommandPalette } from "../commandPaletteStore";
 import { createRafLatestScheduler } from "../lib/rafCoalescer";
+import { flushActiveBufferedInput } from "../components/InputComponents";
 // LOD 分块里的一条路由元素：route 存几何，edge 存身份，另带渲染态标记。
 type LodRouteChunkItem = {
   route: DragGhostRoute;
@@ -3894,9 +3895,19 @@ export function createAppHookCallback110(__appScope: ToolbarHookScope) {
         return;
       }
       event.preventDefault();
-      // __appScope 每帧重建；键盘事件可能在模型切换后的 effect 重绑前到达。
-      // 保存必须读取当前帧，否则 Ctrl+S 会调用上一个模型的保存闭包。
-      const currentScope = (__appScope.__appScopeRef?.current ?? __appScope) as Record<string, any>;
+      // 先同步刷出聚焦缓冲输入框中的未提交草稿，再从最新 __appScopeRef 读取保存闭包与模型状态。
+      flushActiveBufferedInput();
+      const currentScope = (__appScope.__appScopeRef?.current ?? __appScope) as Record<string, unknown> & {
+        customDeviceDialogOpen?: boolean;
+        saveCustomDeviceDefinitionDialog?: (options?: { closeAfterSave?: boolean }) => unknown;
+        currentModelSelectionRef?: { current?: unknown };
+        activeProjectKey?: string;
+        activeSchemeKey?: string;
+        projectName?: string;
+        nodes?: unknown[];
+        latestActiveProjectPointerRef?: { current?: unknown };
+        saveCurrentProject?: () => Promise<unknown> | unknown;
+      };
       if (currentScope.customDeviceDialogOpen) {
         currentScope.saveCustomDeviceDefinitionDialog?.({ closeAfterSave: false });
       } else {
@@ -3937,9 +3948,12 @@ export function createAppHookCallback110(__appScope: ToolbarHookScope) {
       });
       const isCanvasShortcutTarget = shortcutScope === "canvas";
       const isRecordShortcutTarget = shortcutScope === "records";
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z" && !isTextInputTarget) {
         event.preventDefault();
-        const latestScope = (__appScope.__appScopeRef?.current ?? __appScope) as Record<string, any>;
+        const latestScope = (__appScope.__appScopeRef?.current ?? __appScope) as {
+          redoLastOperation?: () => void;
+          undoLastOperation?: () => void;
+        };
         if (event.shiftKey) {
           latestScope.redoLastOperation?.();
         } else {
@@ -4215,7 +4229,10 @@ export function createAppHookCallback120(__appScope: ToolbarHookScope) {
 
 export function createAppHookCallback121(__appScope: ToolbarHookScope) {
   return () => {
-  const { VOLTAGE_BASE_SET_PRESETS, nodes, normalizeVoltageBaseInput } = __appScope;
+  const { VOLTAGE_BASE_SET_PRESETS, nodes, normalizeVoltageBaseInput, voltageBaseSetDialogOpen } = __appScope;
+    if (!voltageBaseSetDialogOpen) {
+      return [...VOLTAGE_BASE_SET_PRESETS];
+    }
     const values = new Set(VOLTAGE_BASE_SET_PRESETS);
     const includeValue = (value: string | undefined) => {
       const normalized = normalizeVoltageBaseInput(value);
@@ -4249,7 +4266,10 @@ export function createAppHookCallback122(__appScope: ToolbarHookScope) {
 
 export function createAppHookCallback123(__appScope: ToolbarHookScope) {
   return () => {
-  const { voltageBaseSetCandidateNodes, voltageBaseSettingModeForNode, voltageBaseTerminalValues } = __appScope;
+  const { voltageBaseSetCandidateNodes, voltageBaseSetDialogOpen, voltageBaseSettingModeForNode, voltageBaseTerminalValues } = __appScope;
+    if (!voltageBaseSetDialogOpen) {
+      return [];
+    }
     return voltageBaseSetCandidateNodes
       .filter((node: ModelNode) => voltageBaseSettingModeForNode(node) === "terminal" && node.terminals.length > 1)
       .flatMap((node: ModelNode) => node.terminals.map((terminal: Terminal, index: number) => ({

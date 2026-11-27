@@ -3,6 +3,7 @@ import {
   createElementRectCache,
   createIdleTaskScheduler,
   createRafLatestScheduler,
+  createSerialLatestAsyncRunner,
   fastClonePojo
 } from "./rafCoalescer";
 
@@ -181,5 +182,54 @@ describe("createIdleTaskScheduler", () => {
     scheduler.schedule(() => ran.push(1));
     scheduler.schedule(() => ran.push(2));
     expect(ran).toEqual([1, 2]);
+  });
+});
+
+describe("createSerialLatestAsyncRunner", () => {
+  test("在途请求期间到达的多次更新自动合并为仅在尾部串行发送最后一次最新载荷", async () => {
+    const sent: string[] = [];
+    const resolvers: Array<() => void> = [];
+    const runner = createSerialLatestAsyncRunner<string>((payload) => {
+      sent.push(payload);
+      return new Promise<void>((resolve) => {
+        resolvers.push(resolve);
+      });
+    });
+
+    const p1 = runner.run("v1");
+    const p2 = runner.run("v2");
+    const p3 = runner.run("v3");
+    const p4 = runner.run("v4");
+
+    // 仅首包立即在途，v2..v4 被合并挂起
+    expect(sent).toEqual(["v1"]);
+    expect(runner.isBusy()).toBe(true);
+
+    // 完成首包后，自动只发出最新的 v4
+    resolvers[0]();
+    await Promise.resolve();
+    expect(sent).toEqual(["v1", "v4"]);
+    expect(runner.isBusy()).toBe(true);
+
+    resolvers[1]();
+    await Promise.all([p1, p2, p3, p4]);
+    expect(sent).toEqual(["v1", "v4"]);
+    expect(runner.isBusy()).toBe(false);
+  });
+
+  test("单次独立请求失败原样向上抛出错误并释放队列锁", async () => {
+    let callCount = 0;
+    const runner = createSerialLatestAsyncRunner<string>(async (payload) => {
+      callCount += 1;
+      if (payload === "bad") {
+        throw new Error("network-error");
+      }
+    });
+
+    await expect(runner.run("bad")).rejects.toThrow("network-error");
+    expect(runner.isBusy()).toBe(false);
+
+    await expect(runner.run("good")).resolves.toBeUndefined();
+    expect(callCount).toBe(2);
   });
 });

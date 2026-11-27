@@ -23,6 +23,7 @@ import { decodeGbk } from "../encoding/gbk";
 import { E_DEVICE_TEMPLATE_ALLOWED_MODEL_TYPES } from "../eDeviceTemplateTypePolicy";
 import type { SavedExportFile, TextFileEncoding } from "../fileIO";
 import { schemePathQueryParam } from "./appPersistenceLibraryExport";
+import { flushActiveBufferedInput } from "../components/InputComponents";
 
 export { createSvgExportReferencedImageHrefById } from "../export/svg-images.ts";
 
@@ -39,8 +40,10 @@ export function getSkipSaveCheck(): boolean {
 
 export function createEnsureSavedBeforeExport(__appScope: ExportImportScope) {
   return () => {
-    // 使用模块级变量，避免闭包捕获旧值
-    if (getSkipSaveCheck() || __appScope.canExportCurrentModel) {
+    flushActiveBufferedInput();
+    const currentScope = (__appScope.__appScopeRef?.current as ExportImportScope | undefined) ?? __appScope;
+    // 使用模块级变量与最新帧引用，避免未失焦草稿漏检或闭包捕获旧值
+    if (getSkipSaveCheck() || currentScope.canExportCurrentModel) {
       return true;
     }
     showGlobalMessage("当前模型存在未保存修改，请先保存后再导出文件。");

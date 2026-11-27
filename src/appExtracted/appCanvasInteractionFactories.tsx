@@ -2,6 +2,8 @@
 
 import type { CanvasInteractionScope } from "./appScopeTypes";
 import { degreesToRadians } from "../formatUtils";
+import { flushActiveBufferedInput } from "../components/InputComponents";
+import { sharedElementRectCache } from "../lib/rafCoalescer";
 import { WindowCloseButton } from "../WindowCloseButton";
 import {
   commitContainerMembership,
@@ -646,7 +648,9 @@ export function createCancelNodeDoubleClickDialog(__appScope: CanvasInteractionS
 
 export function createConfirmNodeDoubleClickDialog(__appScope: CanvasInteractionScope) {
   return () => {
-  const { finishNodeDoubleClickDialogPointerOperation, nodeById, nodeDoubleClickDialog, nodeDoubleClickDraft, nodeDoubleClickDraftHasModelChanges, patchGraphNodes, pushNodeOnlyUndoSnapshot, rememberNodeDoubleClickDialogGuard, setNodeDoubleClickDialog, setNodeDoubleClickDraft } = __appScope;
+    flushActiveBufferedInput();
+    const currentScope = (__appScope.__appScopeRef?.current as CanvasInteractionScope | undefined) ?? __appScope;
+    const { finishNodeDoubleClickDialogPointerOperation, nodeById, nodeDoubleClickDialog, nodeDoubleClickDraft, nodeDoubleClickDraftHasModelChanges, patchGraphNodes, pushNodeOnlyUndoSnapshot, rememberNodeDoubleClickDialogGuard, setNodeDoubleClickDialog, setNodeDoubleClickDraft } = currentScope;
     const dialog = nodeDoubleClickDialog;
     if (!dialog) {
       return;
@@ -930,7 +934,7 @@ export function createPointerInsideElementRect(__appScope: CanvasInteractionScop
     if (!element) {
       return false;
     }
-    const rect = element.getBoundingClientRect();
+    const rect = sharedElementRectCache.getRect(element);
     return (
       event.clientX >= rect.left - padding &&
       event.clientX <= rect.right + padding &&
@@ -1617,7 +1621,7 @@ export function createStartCanvasResizeFromRightOverlay(__appScope: CanvasIntera
     if (!svgRef.current) {
       return false;
     }
-    const svgRect = svgRef.current.getBoundingClientRect();
+    const svgRect = sharedElementRectCache.getRect(svgRef.current);
     if (svgRect.width <= 0 || svgRect.height <= 0) {
       return false;
     }
@@ -1644,7 +1648,7 @@ export function createStartCanvasResizeFromLeftOverlay(__appScope: CanvasInterac
     if (!svgRef.current) {
       return false;
     }
-    const svgRect = svgRef.current.getBoundingClientRect();
+    const svgRect = sharedElementRectCache.getRect(svgRef.current);
     if (svgRect.width <= 0 || svgRect.height <= 0) {
       return false;
     }
@@ -1671,7 +1675,7 @@ export function createStartCanvasResizeFromBottomOverlay(__appScope: CanvasInter
     if (!svgRef.current) {
       return false;
     }
-    const svgRect = svgRef.current.getBoundingClientRect();
+    const svgRect = sharedElementRectCache.getRect(svgRef.current);
     if (svgRect.width <= 0 || svgRect.height <= 0) {
       return false;
     }
@@ -1698,7 +1702,7 @@ export function createStartCanvasResizeFromTopOverlay(__appScope: CanvasInteract
     if (!svgRef.current) {
       return false;
     }
-    const svgRect = svgRef.current.getBoundingClientRect();
+    const svgRect = sharedElementRectCache.getRect(svgRef.current);
     if (svgRect.width <= 0 || svgRect.height <= 0) {
       return false;
     }

@@ -13,6 +13,7 @@ import { containerGatewayUnbindNotice, finalizeContainerAfterNodeDeletion } from
 import { modelTrace } from "../modelTrace";
 import { runTopologyOperation } from "../topology-operation";
 import { isFrontendExportMode, sendFrontendExportArtifacts } from "../frontendExport";
+import { flushActiveBufferedInput } from "../components/InputComponents";
 import type {
   Edge,
   ElementTreeItem,
@@ -1028,8 +1029,10 @@ export function createRenderMeasurementEditorDialog(__appScope: ProjectCanvasSco
 
 export function createSaveCurrentProject(__appScope: ProjectCanvasScope) {
   return async (targetId?: string) => {
-  const { clearRefreshRecoveryProject, createSavedProject, currentGraphDirtyBaseline, currentModelSelectionRef, currentProject, deferredMoveOptimizationCancelRef, deferredRoutableLineRouteRepairCancelRef, finalizeSavedGlobalLineProjectNodes, findProjectRecordByNameInScheme, findSavedSchemeById, findSchemeForProject, graphDirtyBaselineRef, projectById, rememberPersistedSchemesPayload, saveActiveProjectPointer, saveBackendProjectRecord, savedSchemePathForId, savedUndoStackLengthRef, selectedSchemeId, serializeSchemesForStorage, setActiveProjectKey, setActiveSchemeKey, setHasUnsavedChanges, setProjectName, setSchemes, suppressNextGraphDirtyRef, undoStack, upsertSavedProjectInScheme, writeOperationLog } = __appScope;
+    flushActiveBufferedInput();
     const latestScope = () => (__appScope.__appScopeRef?.current as ProjectCanvasScope | undefined) ?? __appScope;
+    const initial = latestScope();
+    const { clearRefreshRecoveryProject, createSavedProject, currentGraphDirtyBaseline, currentModelSelectionRef, currentProject, deferredMoveOptimizationCancelRef, deferredRoutableLineRouteRepairCancelRef, finalizeSavedGlobalLineProjectNodes, findProjectRecordByNameInScheme, findSavedSchemeById, findSchemeForProject, graphDirtyBaselineRef, projectById, rememberPersistedSchemesPayload, saveActiveProjectPointer, saveBackendProjectRecord, savedSchemePathForId, savedUndoStackLengthRef, selectedSchemeId, serializeSchemesForStorage, setActiveProjectKey, setActiveSchemeKey, setHasUnsavedChanges, setProjectName, setSchemes, suppressNextGraphDirtyRef, undoStack, upsertSavedProjectInScheme, writeOperationLog } = initial;
     const sendFrontendExportsAfterSave = async (savedProject: ProjectFile) => {
       const scopeSnapshot = latestScope();
       if (!isFrontendExportMode(scopeSnapshot)) {
@@ -1044,7 +1047,6 @@ export function createSaveCurrentProject(__appScope: ProjectCanvasScope) {
         writeOperationLog(`前端模式导出发送失败：${message}`);
       }
     };
-    const initial = latestScope();
     const initialActiveProjectKey = initial.activeProjectKey;
     const initialActiveSchemeKey = initial.activeSchemeKey;
     const initialProjectName = initial.projectName;

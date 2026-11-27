@@ -5,7 +5,7 @@ import { normalizeCategoryLibraryName } from "../export/device-definition-shared
 import { normalizeElectricFlowSettings } from "../export/electric-flow-markup";
 import { memo, MouseEvent, type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { createIdleTaskScheduler } from "../lib/rafCoalescer";
+import { createIdleTaskScheduler, createSerialLatestAsyncRunner } from "../lib/rafCoalescer";
 import { apiPath } from "../config";
 import { normalizeCanvasThemeMode, migrateLegacyCanvasBackground, type CanvasThemeMode } from "../canvasTheme";
 import { Select, Input, Button, type InputRef } from "antd";
@@ -474,12 +474,16 @@ export async function fetchBackendColorConfig(): Promise<{ colorDisplayMode: Col
   };
 }
 
-export async function saveBackendColorConfigPayload(normalizedColorConfigPayload: string): Promise<void> {
+const colorConfigSaveRunner = createSerialLatestAsyncRunner<string>(async (normalizedColorConfigPayload) => {
   await fetchBackendJson<{ ok?: boolean }>(
     apiPath("/color-config"),
     "保存配色配置到后台失败。",
     backendJsonRequest("PUT", normalizedColorConfigPayload)
   );
+});
+
+export async function saveBackendColorConfigPayload(normalizedColorConfigPayload: string): Promise<void> {
+  await colorConfigSaveRunner.run(normalizedColorConfigPayload);
 }
 
 export function serializeDeviceLibraryForStorage(payload: DeviceLibraryPersistencePayload) {
@@ -508,12 +512,16 @@ export async function fetchBackendDeviceLibrary(): Promise<DeviceLibraryPersiste
   };
 }
 
-export async function saveBackendDeviceLibraryPayload(normalizedDeviceLibraryPayload: string): Promise<void> {
+const deviceLibrarySaveRunner = createSerialLatestAsyncRunner<string>(async (normalizedDeviceLibraryPayload) => {
   await fetchBackendJson<{ ok?: boolean }>(
     apiPath("/device-library"),
     "保存图元库到后台失败。",
     backendJsonRequest("PUT", normalizedDeviceLibraryPayload)
   );
+});
+
+export async function saveBackendDeviceLibraryPayload(normalizedDeviceLibraryPayload: string): Promise<void> {
+  await deviceLibrarySaveRunner.run(normalizedDeviceLibraryPayload);
 }
 
 // 图元 Symbol 导出方案：独立后端文件（<空间>/settings/symbol-export-schemes.json），
@@ -684,12 +692,16 @@ export async function fetchBackendMeasurementConfig(): Promise<PlatformMeasureme
   };
 }
 
-export async function saveBackendMeasurementConfigPayload(normalizedMeasurementConfigPayload: string): Promise<void> {
+const measurementConfigSaveRunner = createSerialLatestAsyncRunner<string>(async (normalizedMeasurementConfigPayload) => {
   await fetchBackendJson<{ ok?: boolean }>(
     apiPath("/measurement-config"),
     "保存动态量测配置到后台失败。",
     backendJsonRequest("PUT", normalizedMeasurementConfigPayload)
   );
+});
+
+export async function saveBackendMeasurementConfigPayload(normalizedMeasurementConfigPayload: string): Promise<void> {
+  await measurementConfigSaveRunner.run(normalizedMeasurementConfigPayload);
 }
 
 export const LIBRARY_PACKAGE_FORMAT = "graph-modeling-platform-library-package";

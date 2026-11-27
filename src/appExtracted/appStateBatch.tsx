@@ -1538,7 +1538,7 @@ export function useAppStateBatch(__appScope: Record<string, any>) {
     }
   const refreshRecoveryProjectSnapshot = useMemo<RefreshRecoveryProjectState>(() => ({
       dirty: true,
-      savedAt: new Date().toISOString(),
+      savedAt: "",
       projectName,
       activeProjectKey,
       activeSchemeKey,

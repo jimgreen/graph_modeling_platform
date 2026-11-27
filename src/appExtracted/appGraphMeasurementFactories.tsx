@@ -1277,13 +1277,19 @@ export function createPushUndoSnapshot(__appScope: GraphMeasurementScope) {
         snapshot.target = `${idx} ${selected.name ?? ""}`.trim();
       }
     }
-    setUndoStack((current: UndoSnapshot[]) => {
-      const next = [...current.slice(-49), snapshot];
-      if (undoStackRef) {
-        undoStackRef.current = next;
-      }
-      return next;
-    });
+    if (undoStackRef && Array.isArray(undoStackRef.current)) {
+      const next = [...(undoStackRef.current as UndoSnapshot[]).slice(-49), snapshot];
+      undoStackRef.current = next;
+      setUndoStack(next);
+    } else {
+      setUndoStack((current: UndoSnapshot[]) => {
+        const next = [...current.slice(-49), snapshot];
+        if (undoStackRef) {
+          undoStackRef.current = next;
+        }
+        return next;
+      });
+    }
     if (redoStackRef) {
       redoStackRef.current = [];
     }

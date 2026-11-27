@@ -2140,13 +2140,16 @@ export function useRenderBatch(__appScope: Record<string, any>) {
   const applySelectedNodeLayout = __s("applySelectedNodeLayout", createApplySelectedNodeLayout); Object.assign(__appScope, { applySelectedNodeLayout });
   const autoSpreadCanvasGraphics = __s("autoSpreadCanvasGraphics", createAutoSpreadCanvasGraphics); Object.assign(__appScope, { autoSpreadCanvasGraphics });
   const autoAlignCanvasGraphics = __s("autoAlignCanvasGraphics", createAutoAlignCanvasGraphics); Object.assign(__appScope, { autoAlignCanvasGraphics });
-  const voltageBaseSetOptions = useMemo(createAppHookCallback121(__appScope), [nodes]);
+  const voltageBaseSetOptions = useMemo(createAppHookCallback121(__appScope), [nodes, voltageBaseSetDialogOpen]);
   Object.assign(__appScope, { voltageBaseSetOptions });
   const defaultVoltageBaseSetValue = __s("defaultVoltageBaseSetValue", createDefaultVoltageBaseSetValue); Object.assign(__appScope, { defaultVoltageBaseSetValue });
   const voltageBaseSetCandidateNodes = useMemo(createAppHookCallback122(__appScope), [activeSelectedNodeIds, nodes]);
   Object.assign(__appScope, { voltageBaseSetCandidateNodes });
-  const voltageBaseSetHasUniformTargets = voltageBaseSetCandidateNodes.some((node: ModelNode) => voltageBaseSettingModeForNode(node) === "uniform"); Object.assign(__appScope, { voltageBaseSetHasUniformTargets });
-  const voltageBaseSetHasTerminalTargets = voltageBaseSetCandidateNodes.some((node: ModelNode) => voltageBaseSettingModeForNode(node) === "terminal"); Object.assign(__appScope, { voltageBaseSetHasTerminalTargets });
+  const { voltageBaseSetHasUniformTargets, voltageBaseSetHasTerminalTargets } = useMemo(() => ({
+    voltageBaseSetHasUniformTargets: voltageBaseSetCandidateNodes.some((node: ModelNode) => voltageBaseSettingModeForNode(node) === "uniform"),
+    voltageBaseSetHasTerminalTargets: voltageBaseSetCandidateNodes.some((node: ModelNode) => voltageBaseSettingModeForNode(node) === "terminal")
+  }), [voltageBaseSetCandidateNodes]);
+  Object.assign(__appScope, { voltageBaseSetHasUniformTargets, voltageBaseSetHasTerminalTargets });
   const recommendedVoltageBaseSetMode = __s("recommendedVoltageBaseSetMode", createRecommendedVoltageBaseSetMode); Object.assign(__appScope, { recommendedVoltageBaseSetMode });
   const voltageBaseSetModeLabel =
       voltageBaseSetMode === "byDevice"
@@ -2155,7 +2158,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
           ? "按端子设置"
           : "统一设置";
   Object.assign(__appScope, { voltageBaseSetModeLabel });
-  const voltageBaseSetTerminalRows = useMemo(createAppHookCallback123(__appScope), [voltageBaseSetCandidateNodes, voltageBaseTerminalValues]);
+  const voltageBaseSetTerminalRows = useMemo(createAppHookCallback123(__appScope), [voltageBaseSetCandidateNodes, voltageBaseSetDialogOpen, voltageBaseTerminalValues]);
   Object.assign(__appScope, { voltageBaseSetTerminalRows });
   const voltageBaseTerminalRowKey = (row: { nodeId: string; terminalId: string }) => `${row.nodeId}:${row.terminalId}`;
   Object.assign(__appScope, { voltageBaseTerminalRowKey });
@@ -2418,54 +2421,64 @@ export function useRenderBatch(__appScope: Record<string, any>) {
   const renderProjectSchemeNode = __s("renderProjectSchemeNode", createRenderProjectSchemeNode); Object.assign(__appScope, { renderProjectSchemeNode });
   const openBlankProjectLibraryContextMenu = __s("openBlankProjectLibraryContextMenu", createOpenBlankProjectLibraryContextMenu); Object.assign(__appScope, { openBlankProjectLibraryContextMenu });
   const renderProjectPanel = createRenderProjectPanel(__appScope); Object.assign(__appScope, { renderProjectPanel });
-  const customDraftTerminalTypes = customDeviceDraft.terminalTypes.slice(0, customDeviceDraft.terminalCount); Object.assign(__appScope, { customDraftTerminalTypes });
-  const customDraftTerminalAssociations = normalizeContainerTerminalAssociations(
-      customDraftTerminalTypes,
+  const {
+    customDraftTerminalTypes,
+    customDraftTerminalAssociations,
+    customDraftDefinitionClassName,
+    customDraftEditableClassDefinition,
+    customDraftInheritedParameterDefinitions,
+    customDraftInheritedMeasurementDefinitions,
+    customDraftDefaultParams,
+    customDraftDefaultParamKeySet,
+    customDraftMergedDefaultParams,
+    customDraftVisibleParams,
+    customDeviceMeasurementParameterDefinitions,
+    customDeviceMeasurementPositionDefinitions
+  } = useMemo(() => {
+    const terminalTypes = customDeviceDraft.terminalTypes.slice(0, customDeviceDraft.terminalCount);
+    const terminalAssociations = normalizeContainerTerminalAssociations(
+      terminalTypes,
       customDeviceDraft.terminalAssociations,
       customDeviceDraft.terminalCount
     );
-  Object.assign(__appScope, { customDraftTerminalAssociations });
-  const customDraftIsComponentLibraryDefinition = customComponentTreeSelection?.kind === "componentLibrary" &&
-    customDeviceDefinitionMode === "edit";
-  const customDraftDefinitionClassName = customDraftIsComponentLibraryDefinition
-    ? normalizeComponentLibraryName(customComponentTreeSelection.section)
-    : normalizeComponentLibraryName(
-        customDeviceDraft.isDerivedComponentLibrary
-          ? customDeviceDraft.derivedComponentLibrary
-          : customDeviceDraft.componentLibrary
-      );
-  const customDraftEditableClassDefinition = customDraftIsComponentLibraryDefinition
-    ? resolveEditableComponentLibraryDefinition({
-        className: customDraftDefinitionClassName,
-        categoryLibraryName: customComponentTreeSelection.categoryLibraryName,
-        customComponentLibraries,
-        templates: libraryTemplates,
-        overrides: deviceDefinitionOverrides
-      })
-    : null;
-  const customDraftInheritedParameterDefinitions =
-    customDraftEditableClassDefinition?.inheritedParameterDefinitions ?? [];
-  const customDraftInheritedMeasurementDefinitions =
-    customDraftEditableClassDefinition?.inheritedMeasurementDefinitions ?? [];
-  Object.assign(__appScope, {
-    customDraftEditableClassDefinition,
-    customDraftInheritedParameterDefinitions,
-    customDraftInheritedMeasurementDefinitions
-  });
-  const customDraftDefaultParams = (customDraftIsComponentLibraryDefinition
-    ? customDeviceDraft.isDerivedComponentLibrary
-      ? []
-      : buildComponentLibraryDefaultParameterDefinitions(customDraftDefinitionClassName, customDraftTerminalTypes, {
-        isContainer: customDeviceDraft.isContainer,
-        terminalRoles: customDeviceDraft.terminalRoles.slice(0, customDeviceDraft.terminalCount),
-        terminalAssociations: customDraftTerminalAssociations
-      })
-    : customDefaultDefinitions(customDraftTerminalTypes, {
-      isContainer: customDeviceDraft.isContainer,
-      isDerivedComponentLibrary: customDeviceDraft.isDerivedComponentLibrary as never,
-      terminalAssociations: customDraftTerminalAssociations,
-      existingDefinitions: customDeviceDraft.params
-    })).map((definition) => ({
+    const isComponentLibraryDefinition =
+      customComponentTreeSelection?.kind === "componentLibrary" &&
+      customDeviceDefinitionMode === "edit";
+    const definitionClassName = isComponentLibraryDefinition
+      ? normalizeComponentLibraryName(customComponentTreeSelection.section)
+      : normalizeComponentLibraryName(
+          customDeviceDraft.isDerivedComponentLibrary
+            ? customDeviceDraft.derivedComponentLibrary
+            : customDeviceDraft.componentLibrary
+        );
+    const editableClassDefinition = isComponentLibraryDefinition
+      ? resolveEditableComponentLibraryDefinition({
+          className: definitionClassName,
+          categoryLibraryName: customComponentTreeSelection.categoryLibraryName,
+          customComponentLibraries,
+          templates: libraryTemplates,
+          overrides: deviceDefinitionOverrides
+        })
+      : null;
+    const inheritedParameterDefinitions =
+      editableClassDefinition?.inheritedParameterDefinitions ?? [];
+    const inheritedMeasurementDefinitions =
+      editableClassDefinition?.inheritedMeasurementDefinitions ?? [];
+    const defaultParams = (isComponentLibraryDefinition
+      ? customDeviceDraft.isDerivedComponentLibrary
+        ? []
+        : buildComponentLibraryDefaultParameterDefinitions(definitionClassName, terminalTypes, {
+            isContainer: customDeviceDraft.isContainer,
+            terminalRoles: customDeviceDraft.terminalRoles.slice(0, customDeviceDraft.terminalCount),
+            terminalAssociations
+          })
+      : customDefaultDefinitions(terminalTypes, {
+          isContainer: customDeviceDraft.isContainer,
+          isDerivedComponentLibrary: customDeviceDraft.isDerivedComponentLibrary as never,
+          terminalAssociations,
+          existingDefinitions: customDeviceDraft.params
+        })
+    ).map((definition) => ({
       ...definition,
       ...resolveDeviceParameterDefinitionExportSettings(
         customDeviceDraft.componentKind || customDeviceDraft.componentLibrary,
@@ -2473,45 +2486,43 @@ export function useRenderBatch(__appScope: Record<string, any>) {
         definition
       )
     }));
-  Object.assign(__appScope, { customDraftDefaultParams });
-  const customDraftDefaultParamKeySet = new Set(customDraftDefaultParams.map((row) => row.enName.trim().toLowerCase()));
-  const customDraftDefaultParamOverrideMap = new Map<string, CustomParamDraft>(
-    customDeviceDraft.params
-      .filter((row: CustomParamDraft) => customDraftDefaultParamKeySet.has(row.enName.trim().toLowerCase()))
-      .map((row: CustomParamDraft) => [row.enName.trim().toLowerCase(), row] as [string, CustomParamDraft])
-  );
-  const customDraftMergedDefaultParams = customDraftDefaultParams.map((row) => {
-    const override = customDraftDefaultParamOverrideMap.get(row.enName.trim().toLowerCase());
-    return override
-      ? normalizeDefinitionRowEnumFields({
-          ...row,
-          valueType: override.valueType,
-          typicalValue: override.typicalValue,
-          enumOptions: override.enumOptions,
-          enumValues: override.enumValues,
-          readonly: row.readonly,
-          ...(typeof override.exportEnabled === "boolean" ? { exportEnabled: override.exportEnabled } : {}),
-          ...(typeof override.exportName === "string" ? { exportName: override.exportName } : {})
-        })
-      : row;
-  });
-  const customDraftDerivedBaseComponentLibrary =
-    customDeviceDraft.derivedFromComponentLibrary || customDeviceDraft.componentLibrary;
-  const customDraftParamIsHiddenDerivedBaseRow = (row: { enName?: unknown }) =>
-    !customDraftIsComponentLibraryDefinition &&
-    customDeviceDraft.isDerivedComponentLibrary &&
-    isDerivedComponentBaseParamName(row.enName, customDraftDerivedBaseComponentLibrary);
-  const customDraftVisibleParams = customDeviceDraft.params.filter((row: CustomParamDraft) =>
-    !customDraftDefaultParamKeySet.has(row.enName.trim().toLowerCase()) &&
-    !customDraftParamIsHiddenDerivedBaseRow(row)
-  );
-  Object.assign(__appScope, { customDraftDefaultParamKeySet, customDraftMergedDefaultParams, customDraftVisibleParams });
-  const customDeviceMeasurementParameterDefinitions = [
-    ...customDraftInheritedParameterDefinitions,
-    ...customDraftMergedDefaultParams,
-    ...customDraftVisibleParams
-  ];
-  const customDeviceMeasurementPositionDefinitions = buildMeasurementProfilePositionDefinitions({
+    const defaultParamKeySet = new Set(defaultParams.map((row) => row.enName.trim().toLowerCase()));
+    const defaultParamOverrideMap = new Map<string, CustomParamDraft>(
+      customDeviceDraft.params
+        .filter((row: CustomParamDraft) => defaultParamKeySet.has(row.enName.trim().toLowerCase()))
+        .map((row: CustomParamDraft) => [row.enName.trim().toLowerCase(), row] as [string, CustomParamDraft])
+    );
+    const mergedDefaultParams = defaultParams.map((row) => {
+      const override = defaultParamOverrideMap.get(row.enName.trim().toLowerCase());
+      return override
+        ? normalizeDefinitionRowEnumFields({
+            ...row,
+            valueType: override.valueType,
+            typicalValue: override.typicalValue,
+            enumOptions: override.enumOptions,
+            enumValues: override.enumValues,
+            readonly: row.readonly,
+            ...(typeof override.exportEnabled === "boolean" ? { exportEnabled: override.exportEnabled } : {}),
+            ...(typeof override.exportName === "string" ? { exportName: override.exportName } : {})
+          })
+        : row;
+    });
+    const derivedBaseComponentLibrary =
+      customDeviceDraft.derivedFromComponentLibrary || customDeviceDraft.componentLibrary;
+    const isHiddenDerivedBaseRow = (row: { enName?: unknown }) =>
+      !isComponentLibraryDefinition &&
+      customDeviceDraft.isDerivedComponentLibrary &&
+      isDerivedComponentBaseParamName(row.enName, derivedBaseComponentLibrary);
+    const visibleParams = customDeviceDraft.params.filter((row: CustomParamDraft) =>
+      !defaultParamKeySet.has(row.enName.trim().toLowerCase()) &&
+      !isHiddenDerivedBaseRow(row)
+    );
+    const measurementParameterDefinitions = [
+      ...inheritedParameterDefinitions,
+      ...mergedDefaultParams,
+      ...visibleParams
+    ];
+    const customDeviceMeasurementPositionDefinitions = buildMeasurementProfilePositionDefinitions({
       source: {
         kind:
           customDeviceDraft.componentKind ||
@@ -2521,7 +2532,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
           "custom-device-draft",
         label: customDeviceDraft.componentName,
         params: {
-          component_type: customDraftDefinitionClassName || customDeviceDraft.componentLibrary,
+          component_type: definitionClassName || customDeviceDraft.componentLibrary,
           ...(customDeviceDraft.isDerivedComponentLibrary ? {
             derived_from_component_type: customDeviceDraft.derivedFromComponentLibrary || customDeviceDraft.componentLibrary,
             derived_component_type: customDeviceDraft.derivedComponentLibrary,
@@ -2535,18 +2546,54 @@ export function useRenderBatch(__appScope: Record<string, any>) {
           : "",
         derivedComponentLibrary: customDeviceDraft.isDerivedComponentLibrary ? customDeviceDraft.derivedComponentLibrary : "",
         derivedComponentLibraryLabel: customDeviceDraft.isDerivedComponentLibrary ? customDeviceDraft.derivedComponentLibraryLabel : "",
-        terminalType: customDraftTerminalTypes[0] ?? "ac",
-        terminalCount: customDraftTerminalTypes.length,
-        terminalTypes: customDraftTerminalTypes,
-        terminalLabels: customDeviceDraft.terminalLabels.slice(0, customDraftTerminalTypes.length),
-        terminalRoles: customDeviceDraft.terminalRoles.slice(0, customDraftTerminalTypes.length),
-        terminalAssociations: customDeviceDraft.isContainer ? customDraftTerminalAssociations : undefined,
+        terminalType: terminalTypes[0] ?? "ac",
+        terminalCount: terminalTypes.length,
+        terminalTypes,
+        terminalLabels: customDeviceDraft.terminalLabels.slice(0, terminalTypes.length),
+        terminalRoles: customDeviceDraft.terminalRoles.slice(0, terminalTypes.length),
+        terminalAssociations: customDeviceDraft.isContainer ? terminalAssociations : undefined,
         isContainer: customDeviceDraft.isContainer,
-        parameterDefinitions: customDeviceMeasurementParameterDefinitions
+        parameterDefinitions: measurementParameterDefinitions
       },
-      parameterDefinitions: customDeviceMeasurementParameterDefinitions,
+      parameterDefinitions: measurementParameterDefinitions,
       libraryTemplates
     });
+    return {
+      customDraftTerminalTypes: terminalTypes,
+      customDraftTerminalAssociations: terminalAssociations,
+      customDraftDefinitionClassName: definitionClassName,
+      customDraftEditableClassDefinition: editableClassDefinition,
+      customDraftInheritedParameterDefinitions: inheritedParameterDefinitions,
+      customDraftInheritedMeasurementDefinitions: inheritedMeasurementDefinitions,
+      customDraftDefaultParams: defaultParams,
+      customDraftDefaultParamKeySet: defaultParamKeySet,
+      customDraftMergedDefaultParams: mergedDefaultParams,
+      customDraftVisibleParams: visibleParams,
+      customDeviceMeasurementParameterDefinitions: measurementParameterDefinitions,
+      customDeviceMeasurementPositionDefinitions
+    };
+  }, [
+    customComponentLibraries,
+    customComponentTreeSelection,
+    customDeviceDefinitionMode,
+    customDeviceDraft,
+    deviceDefinitionOverrides,
+    editingCustomDeviceKind,
+    libraryTemplates,
+    selectedCustomComponentTemplate,
+    selectedDefinitionTemplate
+  ]);
+  Object.assign(__appScope, {
+    customDraftTerminalTypes,
+    customDraftTerminalAssociations,
+    customDraftEditableClassDefinition,
+    customDraftInheritedParameterDefinitions,
+    customDraftInheritedMeasurementDefinitions,
+    customDraftDefaultParams,
+    customDraftDefaultParamKeySet,
+    customDraftMergedDefaultParams,
+    customDraftVisibleParams
+  });
   const customDeviceMeasurementTarget: DeviceDefinitionMeasurementPanelTarget = {
       deviceKind:
         customDraftDefinitionClassName ||
@@ -2597,9 +2644,13 @@ export function useRenderBatch(__appScope: Record<string, any>) {
       resolveStateVisualImageHref(customStatePreviewVisual, imageAssets) ||
       customDeviceDraft.backgroundImage;
   Object.assign(__appScope, { customDevicePreviewImageHref });
+  const customDeviceFallbackImage = useMemo(
+      () => generateCustomDeviceImage(customDevicePreviewLabel, customDraftTerminalTypes.length > 0 ? customDraftTerminalTypes : ["ac"]),
+      [customDevicePreviewLabel, customDraftTerminalTypes]
+    );
   const customDevicePreviewImage =
       customDevicePreviewImageHref ||
-      generateCustomDeviceImage(customDevicePreviewLabel, customDraftTerminalTypes.length > 0 ? customDraftTerminalTypes : ["ac"]);
+      customDeviceFallbackImage;
   Object.assign(__appScope, { customDevicePreviewImage });
   const customDefaultStateSelected = isDefaultStatePageId(customDeviceStatePageId); Object.assign(__appScope, { customDefaultStateSelected });
   const customDevicePreviewWidth = Math.max(1, customDeviceDraft.size.width || 104); Object.assign(__appScope, { customDevicePreviewWidth });
@@ -2645,7 +2696,11 @@ export function useRenderBatch(__appScope: Record<string, any>) {
       customStatePreviewVisual?.value
     ]);
   Object.assign(__appScope, { customDevicePreviewNode });
-  const customDeviceTerminalAnchors = createDefaultCustomDeviceTerminalAnchors(customDeviceDraft.terminalCount, customDeviceDraft.terminalAnchors); Object.assign(__appScope, { customDeviceTerminalAnchors });
+  const customDeviceTerminalAnchors = useMemo(
+      () => createDefaultCustomDeviceTerminalAnchors(customDeviceDraft.terminalCount, customDeviceDraft.terminalAnchors),
+      [customDeviceDraft.terminalCount, customDeviceDraft.terminalAnchors]
+    );
+  Object.assign(__appScope, { customDeviceTerminalAnchors });
   const customDeviceTerminalAnchorValue = (value: number) =>
       normalizeCustomDeviceTerminalAnchorCoordinate(value);
   Object.assign(__appScope, { customDeviceTerminalAnchorValue });
