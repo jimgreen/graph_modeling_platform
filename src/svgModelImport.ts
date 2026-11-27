@@ -31,6 +31,9 @@ import {
   type MeasurementStyleOverride
 } from "./measurements";
 import { commitContainerMembership, normalizeInboundContainerNode } from "./acContainer";
+import { svgDataUrl } from "./svgDataUrl.ts";
+
+export { svgDataUrl };
 
 export type SvgModelImportMode = "platform" | "generic";
 
@@ -202,10 +205,6 @@ function decodeSvgDataUrl(value: string) {
  *
  * 导出仅为供 src/sharedIconLibrary.ts 复用（单一来源）与单测钉桩前缀。
  */
-export function svgDataUrl(svg: string) {
-  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
-}
-
 function sanitizeSvgDataUrl(value: string, dom: SvgDomAdapter, warnings: string[], depth: number) {
   const decoded = decodeSvgDataUrl(value);
   if (decoded === null) {

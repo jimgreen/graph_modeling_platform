@@ -59,6 +59,23 @@ export * from "./appMeasurementDomainFactories";
 // 告警消息下移到画布区域顶部，避免与顶部工具栏重叠
 message.config({ top: 50 });
 
+const MEASUREMENT_FONT_SIZE_OPTIONS = Array.from({ length: 17 }, (_, i) => {
+  const size = String(i + 8);
+  return { value: size, label: size };
+});
+
+const MEASUREMENT_FONT_WEIGHT_OPTIONS = [
+  { value: "400", label: "细" },
+  { value: "500", label: "中" },
+  { value: "700", label: "粗" }
+] as const;
+
+const MEASUREMENT_FONT_WEIGHT_LABELS: Record<string, string> = {
+  "400": "细",
+  "500": "中",
+  "700": "粗"
+};
+
 export function createHandleCanvasFrameScroll(__appScope: GraphMeasurementScope) {
   return () => {
   const { canvasBoundsScrollSyncPendingRef, canvasFrameProgrammaticScrollRef, canvasFrameScrollIsUserDriven, canvasFrameUserScrollRef, panningRef, scheduleCanvasVisibleViewBoxUpdate } = __appScope;
@@ -2388,7 +2405,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: GraphMeasur
                   { value: "horizontal", label: "横向" },
                   { value: "grid", label: "两列" }
                 ]}
-                onCommit={(value) => updateSelectedMeasurementGroups((current: any) => ({ ...current, layout: value as MeasurementGroup["layout"] }))}
+                onCommit={(value) => updateSelectedMeasurementGroups((current: MeasurementGroup) => ({ ...current, layout: value as MeasurementGroup["layout"] }))}
               />
               <Button
                 type="text"
@@ -2397,7 +2414,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: GraphMeasur
                 data-modified={isCommonMeasurementGroupModified("visible") ? "true" : undefined}
                 data-selected={selectedMeasurementGroupCommonDraft.visible === false}
 
-                onClick={() => updateSelectedMeasurementGroups((current: any) => ({ ...current, visible: !current.visible }))}
+                onClick={() => updateSelectedMeasurementGroups((current: MeasurementGroup) => ({ ...current, visible: !current.visible }))}
                 title={selectedMeasurementGroupCommonDraft.visible ? "隐藏量测" : "显示量测"}
               >
                 {selectedMeasurementGroupCommonDraft.visible
@@ -2418,7 +2435,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: GraphMeasur
                   { value: "1", label: "单位" },
                   { value: "0", label: "无单位" }
                 ]}
-                onCommit={(value) => updateSelectedMeasurementGroups((current: any) => ({ ...current, unitVisible: value === "1" }))}
+                onCommit={(value) => updateSelectedMeasurementGroups((current: MeasurementGroup) => ({ ...current, unitVisible: value === "1" }))}
               />
               <Button
                 type="text"
@@ -2427,7 +2444,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: GraphMeasur
                 data-modified={isCommonMeasurementGroupModified("labelVisible") ? "true" : undefined}
                 data-selected={selectedMeasurementGroupCommonDraft.labelVisible === false}
 
-                onClick={() => updateSelectedMeasurementGroups((current: any) => ({ ...current, labelVisible: current.labelVisible === false ? true : false }))}
+                onClick={() => updateSelectedMeasurementGroups((current: MeasurementGroup) => ({ ...current, labelVisible: current.labelVisible === false ? true : false }))}
                 title={selectedMeasurementGroupCommonDraft.labelVisible === false ? "显示标签" : "隐藏标签"}
               >
                 {selectedMeasurementGroupCommonDraft.labelVisible === false
@@ -2449,7 +2466,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: GraphMeasur
                 max={24}
                 step={1}
                 aria-label="量测组字体大小"
-                onCommit={(value) => updateSelectedMeasurementGroups((current: any) => ({
+                onCommit={(value) => updateSelectedMeasurementGroups((current: MeasurementGroup) => ({
                   ...current,
                   groupStyleOverride: {
                     ...(current.groupStyleOverride ?? {}),
@@ -2463,7 +2480,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: GraphMeasur
                 modified={isCommonMeasurementGroupModified("fontColor")}
 
                 aria-label="量测组字体颜色"
-                onCommit={(value: any) => updateSelectedMeasurementGroups((current: any) => ({
+                onCommit={(value: string) => updateSelectedMeasurementGroups((current: MeasurementGroup) => ({
                   ...current,
                   groupStyleOverride: { ...(current.groupStyleOverride ?? {}), color: value }
                 }), "修改量测组字体颜色")}
@@ -2479,7 +2496,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: GraphMeasur
                 modified={isCommonMeasurementGroupModified("backgroundColor")}
 
                 options={[{ value: "1", label: "显示" }, { value: "0", label: "透明" }]}
-                onCommit={(value) => updateSelectedMeasurementGroups((current: any) => ({
+                onCommit={(value) => updateSelectedMeasurementGroups((current: MeasurementGroup) => ({
                   ...current,
                   backgroundColor: value === "1"
                     ? current.backgroundColor === "transparent" ? "#ffffff" : current.backgroundColor ?? "#ffffff"
@@ -2492,7 +2509,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: GraphMeasur
                 modified={isCommonMeasurementGroupModified("backgroundColor")}
 
                 aria-label="量测组背景颜色"
-                onCommit={(value: any) => updateSelectedMeasurementGroups((current: any) => ({ ...current, backgroundColor: value }), "修改量测组背景颜色")}
+                onCommit={(value: string) => updateSelectedMeasurementGroups((current: MeasurementGroup) => ({ ...current, backgroundColor: value }), "修改量测组背景颜色")}
               />
             </td>
           </tr>
@@ -2513,7 +2530,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: GraphMeasur
                   ]}
                   onCommit={(value) => {
                     const borderStyle = value as MeasurementGroup["borderStyle"];
-                    updateSelectedMeasurementGroups((current: any) => ({
+                    updateSelectedMeasurementGroups((current: MeasurementGroup) => ({
                       ...current,
                       borderStyle,
                       borderWidth: borderStyle === "none" ? 0 : Math.max(1, current.borderWidth ?? 0)
@@ -2529,7 +2546,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: GraphMeasur
                   modified={isCommonMeasurementGroupModified("borderWidth")}
                   disabled={(selectedMeasurementGroupCommonDraft.borderStyle ?? "none") === "none"}
                   aria-label="量测组边框宽度"
-                  onCommit={(nextValue) => updateSelectedMeasurementGroups((current: any) => ({
+                  onCommit={(nextValue) => updateSelectedMeasurementGroups((current: MeasurementGroup) => ({
                     ...current,
                     borderWidth: clampNumber(Number(nextValue), 0, 12)
                   }), "修改量测组边框宽度")}
@@ -2541,7 +2558,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: GraphMeasur
                 modified={isCommonMeasurementGroupModified("borderColor")}
                 disabled={(selectedMeasurementGroupCommonDraft.borderStyle ?? "none") === "none"}
                 aria-label="量测组边框颜色"
-                onCommit={(value: any) => updateSelectedMeasurementGroups((current: any) => ({ ...current, borderColor: value }), "修改量测组边框颜色")}
+                onCommit={(value: string) => updateSelectedMeasurementGroups((current: MeasurementGroup) => ({ ...current, borderColor: value }), "修改量测组边框颜色")}
               />
             </td>
           </tr>
@@ -2590,16 +2607,16 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: GraphMeasur
                     <div className="measurement-item-toolbar" style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "nowrap" }}>
                       <InlineEditableValue
                         value={item.measurementTypeId}
-                        displayValue={measurementTypeOptions.find((candidate: any) => candidate.id === item.measurementTypeId)?.name ?? item.measurementTypeId}
+                        displayValue={measurementTypeOptions.find((candidate: MeasurementTypeDefinition) => candidate.id === item.measurementTypeId)?.name ?? item.measurementTypeId}
                         modified={isMeasurementItemModified(group, item, "measurementTypeId")}
 
                         options={[
-                          ...(!measurementTypeOptions.some((candidate: any) => candidate.id === item.measurementTypeId) ? [{ value: item.measurementTypeId, label: item.measurementTypeId }] : []),
-                          ...measurementTypeOptions.map((candidate: any) => ({ value: candidate.id, label: candidate.name }))
+                          ...(!measurementTypeOptions.some((candidate: MeasurementTypeDefinition) => candidate.id === item.measurementTypeId) ? [{ value: item.measurementTypeId, label: item.measurementTypeId }] : []),
+                          ...measurementTypeOptions.map((candidate: MeasurementTypeDefinition) => ({ value: candidate.id, label: candidate.name }))
                         ]}
                         onCommit={(value) => {
                           const nextTypeId = value;
-                          updateMeasurementItem(group.id, item.id, (current: any) => ({
+                          updateMeasurementItem(group.id, item.id, (current: MeasurementItemBinding) => ({
                             ...current,
                             measurementTypeId: nextTypeId,
                             sourcePoint: current.sourcePoint || (group.terminalId ? `${node.id}.${group.terminalId}.${nextTypeId}` : `${node.id}.${nextTypeId}`)
@@ -2614,7 +2631,7 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: GraphMeasur
                         data-modified={isMeasurementItemModified(group, item, "visible") ? "true" : undefined}
                         data-selected={item.visible === false}
 
-                        onClick={() => updateMeasurementItem(group.id, item.id, (current: any) => ({ ...current, visible: current.visible === false ? true : false }))}
+                        onClick={() => updateMeasurementItem(group.id, item.id, (current: MeasurementItemBinding) => ({ ...current, visible: current.visible === false ? true : false }))}
                         title={item.visible === false ? "显示量测" : "隐藏量测"}
                       >
                         {item.visible === false
@@ -2643,14 +2660,14 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: GraphMeasur
                         modified={isMeasurementItemModified(group, item, "sourcePoint")}
 
                         onCommit={(nextValue) => {
-                          if (nextValue !== sourcePointValue) updateMeasurementItem(group.id, item.id, (current: any) => ({ ...current, sourcePoint: nextValue }));
+                          if (nextValue !== sourcePointValue) updateMeasurementItem(group.id, item.id, (current: MeasurementItemBinding) => ({ ...current, sourcePoint: nextValue }));
                         }}
                       />
                       <Button
                         size="small"
 
                         title="恢复为默认测点（与创建量测时一致）"
-                        onClick={() => updateMeasurementItem(group.id, item.id, (current: any) => ({
+                        onClick={() => updateMeasurementItem(group.id, item.id, (current: MeasurementItemBinding) => ({
                           ...current,
                           sourcePoint: measurementDefaultSourcePointForGroupItem(__appScope, group, current)
                         }))}
@@ -2666,91 +2683,79 @@ export function createRenderSelectedNodeMeasurementTable(__appScope: GraphMeasur
                     <div className="measurement-display-inline-controls">
                       <div className="measurement-display-inline-row">
                         <div className="measurement-display-inline-control">
-                          <Tooltip title="名称" mouseEnterDelay={0} mouseLeaveDelay={0}>
-                            <InlineEditableValue
-                              value={labelValue}
-                              modified={isMeasurementItemModified(group, item, "label")}
-
-                              aria-label="量测标签"
-                              onCommit={(nextValue) => {
-                                if (nextValue !== labelValue) updateMeasurementItem(group.id, item.id, (current: any) => ({ ...current, labelOverride: nextValue }));
-                              }}
-                            />
-                          </Tooltip>
+                          <InlineEditableValue
+                            value={labelValue}
+                            modified={isMeasurementItemModified(group, item, "label")}
+                            title="名称"
+                            aria-label="量测标签"
+                            onCommit={(nextValue) => {
+                              if (nextValue !== labelValue) updateMeasurementItem(group.id, item.id, (current: MeasurementItemBinding) => ({ ...current, labelOverride: nextValue }));
+                            }}
+                          />
                         </div>
                         <div className="measurement-display-inline-control">
-                          <Tooltip title="显示格式" mouseEnterDelay={0} mouseLeaveDelay={0}>
-                            <InlineEditableValue
-                              value={formatValue}
-                              modified={isMeasurementItemModified(group, item, "format")}
-
-                              aria-label="量测显示格式"
-                              onCommit={(nextValue) => {
-                                if (nextValue.trim() !== formatValue.trim()) updateMeasurementItem(group.id, item.id, (current: any) => ({ ...current, formatOverride: nextValue.trim() || undefined }));
-                              }}
-                            />
-                          </Tooltip>
+                          <InlineEditableValue
+                            value={formatValue}
+                            modified={isMeasurementItemModified(group, item, "format")}
+                            title="显示格式"
+                            aria-label="量测显示格式"
+                            onCommit={(nextValue) => {
+                              if (nextValue.trim() !== formatValue.trim()) updateMeasurementItem(group.id, item.id, (current: MeasurementItemBinding) => ({ ...current, formatOverride: nextValue.trim() || undefined }));
+                            }}
+                          />
                         </div>
                         <div className="measurement-display-inline-control">
-                          <Tooltip title="单位" mouseEnterDelay={0} mouseLeaveDelay={0}>
-                            <InlineEditableValue
-                              value={unitValue}
-                              modified={isMeasurementItemModified(group, item, "unit")}
-
-                              aria-label="量测单位"
-                              onCommit={(nextValue) => {
-                                if (nextValue !== unitValue) updateMeasurementItem(group.id, item.id, (current: any) => ({ ...current, unitOverride: nextValue }));
-                              }}
-                            />
-                          </Tooltip>
+                          <InlineEditableValue
+                            value={unitValue}
+                            modified={isMeasurementItemModified(group, item, "unit")}
+                            title="单位"
+                            aria-label="量测单位"
+                            onCommit={(nextValue) => {
+                              if (nextValue !== unitValue) updateMeasurementItem(group.id, item.id, (current: MeasurementItemBinding) => ({ ...current, unitOverride: nextValue }));
+                            }}
+                          />
                         </div>
                       </div>
                       <div className="measurement-display-inline-row">
                         <div className="measurement-display-inline-control">
-                          <Tooltip title="字号" mouseEnterDelay={0} mouseLeaveDelay={0}>
-                            <InlineEditableValue
-                              value={itemFontSize}
-                              displayValue={String(itemFontSize)}
-                              modified={isMeasurementItemModified(group, item, "fontSize")}
-
-                              aria-label="量测字号"
-                              options={Array.from({ length: 17 }, (_, i) => i + 8).map((size) => ({ value: String(size), label: String(size) }))}
-                              onCommit={(value) => updateMeasurementItem(group.id, item.id, (current: any) => ({
-                                ...current,
-                                styleOverride: { ...(current.styleOverride ?? {}), fontSize: Number(value) }
-                              }))}
-                            />
-                          </Tooltip>
+                          <InlineEditableValue
+                            value={itemFontSize}
+                            displayValue={String(itemFontSize)}
+                            modified={isMeasurementItemModified(group, item, "fontSize")}
+                            title="字号"
+                            aria-label="量测字号"
+                            options={MEASUREMENT_FONT_SIZE_OPTIONS}
+                            onCommit={(value) => updateMeasurementItem(group.id, item.id, (current: MeasurementItemBinding) => ({
+                              ...current,
+                              styleOverride: { ...(current.styleOverride ?? {}), fontSize: Number(value) }
+                            }))}
+                          />
                         </div>
                         <div className="measurement-display-inline-control">
-                          <Tooltip title="字重" mouseEnterDelay={0} mouseLeaveDelay={0}>
-                            <InlineEditableValue
-                              value={item.styleOverride?.fontWeight ?? "500"}
-                              displayValue={({ "400": "细", "500": "中", "700": "粗" } as Record<string, string>)[item.styleOverride?.fontWeight ?? "500"] ?? item.styleOverride?.fontWeight ?? "500"}
-                              modified={isMeasurementItemModified(group, item, "fontWeight")}
-
-                              aria-label="量测字重"
-                              options={[{ value: "400", label: "细" }, { value: "500", label: "中" }, { value: "700", label: "粗" }]}
-                              onCommit={(value) => updateMeasurementItem(group.id, item.id, (current: any) => ({
-                                ...current,
-                                styleOverride: { ...(current.styleOverride ?? {}), fontWeight: value as MeasurementFontWeight }
-                              }))}
-                            />
-                          </Tooltip>
+                          <InlineEditableValue
+                            value={item.styleOverride?.fontWeight ?? "500"}
+                            displayValue={MEASUREMENT_FONT_WEIGHT_LABELS[item.styleOverride?.fontWeight ?? "500"] ?? item.styleOverride?.fontWeight ?? "500"}
+                            modified={isMeasurementItemModified(group, item, "fontWeight")}
+                            title="字重"
+                            aria-label="量测字重"
+                            options={MEASUREMENT_FONT_WEIGHT_OPTIONS}
+                            onCommit={(value) => updateMeasurementItem(group.id, item.id, (current: MeasurementItemBinding) => ({
+                              ...current,
+                              styleOverride: { ...(current.styleOverride ?? {}), fontWeight: value as MeasurementFontWeight }
+                            }))}
+                          />
                         </div>
                         <div className="measurement-display-inline-color">
-                          <Tooltip title="颜色" mouseEnterDelay={0} mouseLeaveDelay={0}>
-                            <DeferredColorInput
-                              value={itemColor}
-                              modified={isMeasurementItemModified(group, item, "color")}
-
-                              aria-label="量测颜色"
-                              onCommit={(value: any) => updateMeasurementItem(group.id, item.id, (current: any) => ({
-                                ...current,
-                                styleOverride: { ...(current.styleOverride ?? {}), color: value }
-                              }))}
-                            />
-                          </Tooltip>
+                          <DeferredColorInput
+                            value={itemColor}
+                            modified={isMeasurementItemModified(group, item, "color")}
+                            title="颜色"
+                            aria-label="量测颜色"
+                            onCommit={(value: string) => updateMeasurementItem(group.id, item.id, (current: MeasurementItemBinding) => ({
+                              ...current,
+                              styleOverride: { ...(current.styleOverride ?? {}), color: value }
+                            }))}
+                          />
                         </div>
                       </div>
                     </div>

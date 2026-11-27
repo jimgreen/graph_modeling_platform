@@ -250,4 +250,28 @@ describe("深层运行时缺陷静态与行为守卫 (Runtime Bug Guards)", () =
       (globalThis as any).Node = previousNode;
     }
   });
+
+  test("画布交互期必须具备暂停 CSS 电流流水线动画的降载样式规则", () => {
+    const css = readFileSync(resolve(SRC_ROOT, "styles.css"), "utf8");
+    expect(css).toContain(".diagram-canvas.panning .electric-flow-arrow");
+    expect(css).toContain(".diagram-canvas.multi-node-dragging .electric-flow-arrow");
+    expect(css).toContain("animation-play-state: paused !important");
+  });
+
+  test("首屏核心入口不得顶层静态 import 低频重型导入器 (svgModelImport / dotImport)", () => {
+    const entryFiles = [
+      "App.tsx",
+      "sharedIconLibrary.ts",
+      "appExtracted/appStaticScope.ts",
+      "appExtracted/appCanvasViewportBatch.tsx",
+      "appExtracted/appStateBatch.tsx"
+    ];
+    for (const rel of entryFiles) {
+      const content = readFileSync(resolve(SRC_ROOT, rel), "utf8");
+      const staticImportHit = /^\s*import\s+(?!type\b).*from\s+["'][^"']*(?:svgModelImport|dotImport)["']/m.test(
+        content
+      );
+      expect(staticImportHit, `${rel} 仍存在对 svgModelImport/dotImport 的顶层静态导入`).toBe(false);
+    }
+  });
 });

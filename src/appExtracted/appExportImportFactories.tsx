@@ -102,7 +102,7 @@ export function createExportSvg(__appScope: ExportImportScope) {
     ensureSavedBeforeExport,
     isPickerAbort,
     safeFilePart,
-    showGlobalMessage = () => undefined,
+    showGlobalMessage = globalThis.showGlobalMessage ?? (() => undefined),
     writeTextFileToDirectory,
     writeOperationLog
   } = __appScope;
@@ -430,7 +430,7 @@ export function createExportSvgFile(__appScope: ExportImportScope) {
       safeFilePart,
       saveLazyTextFile,
       saveTextFile,
-      showGlobalMessage = () => undefined,
+      showGlobalMessage = globalThis.showGlobalMessage ?? (() => undefined),
       writeOperationLog
     } = __appScope;
     const latestScope = () => (__appScope.__appScopeRef?.current as ExportImportScope | undefined) ?? __appScope;
@@ -441,9 +441,9 @@ export function createExportSvgFile(__appScope: ExportImportScope) {
     if (!ensureSavedBeforeExport()) {
       return;
     }
-    if (isFrontendExportMode(latestScope() as any)) {
+    if (isFrontendExportMode(latestScope())) {
       try {
-        await sendFrontendExportArtifact(latestScope() as any, "svg");
+        await sendFrontendExportArtifact(latestScope(), "svg");
         showGlobalMessage("前端模式已发送 SVG。");
       } catch (error) {
         showGlobalMessage(error instanceof Error ? error.message : "前端模式 SVG 发送失败。");
@@ -510,7 +510,7 @@ export function createExportJsonFile(__appScope: ExportImportScope) {
       safeFilePart,
       saveLazyTextFile,
       saveTextFile,
-      showGlobalMessage = () => undefined,
+      showGlobalMessage = globalThis.showGlobalMessage ?? (() => undefined),
       writeOperationLog
     } = __appScope;
     let exportStartedAt = performance.now();
@@ -578,7 +578,7 @@ export function createExportEFile(__appScope: ExportImportScope) {
       safeFilePart,
       saveLazyTextFile,
       saveTextFile,
-      showGlobalMessage = () => undefined,
+      showGlobalMessage = globalThis.showGlobalMessage ?? (() => undefined),
       writeOperationLog
     } = __appScope;
     const latestScope = () => (__appScope.__appScopeRef?.current as ExportImportScope | undefined) ?? __appScope;
@@ -590,9 +590,9 @@ export function createExportEFile(__appScope: ExportImportScope) {
       return;
     }
 
-    if (isFrontendExportMode(latestScope() as any)) {
+    if (isFrontendExportMode(latestScope())) {
       try {
-        await sendFrontendExportArtifact(latestScope() as any, "e");
+        await sendFrontendExportArtifact(latestScope(), "e");
         showGlobalMessage("前端模式已发送 E 文件。");
       } catch (error) {
         showGlobalMessage(error instanceof Error ? error.message : "前端模式 E 文件发送失败。");
@@ -1350,7 +1350,7 @@ export function createImportDotModelFile(__appScope: ExportImportScope) {
       writeOperationLog(`正在从 dot 生成模型：${file.name}`);
       const text = await file.text();
       const importedName = file.name.replace(/\.dot$/iu, "").trim() || "dot 导入模型";
-      const result = importDotFile(text);
+      const result = await importDotFile(text);
       const latest = latestScope();
       const targetScheme =
         findSavedSchemeById(latest.schemes, modelImportTargetSchemeIdRef.current) ??

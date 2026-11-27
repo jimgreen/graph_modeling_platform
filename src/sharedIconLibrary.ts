@@ -1,5 +1,5 @@
 import type { ImageAsset } from "./appExtracted/appCoreCanvasUtilities";
-import { svgDataUrl } from "./svgModelImport";
+import { svgDataUrl } from "./svgDataUrl";
 
 export const BUILTIN_SHARED_ICON_FOLDER_ID = "builtin-shared-icons";
 

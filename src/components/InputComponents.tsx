@@ -16,6 +16,25 @@ const isTransparentColorValue = (value: string | undefined) =>
 export const colorInputValue = (value: string, fallback = "#ffffff") =>
   HEX_COLOR_INPUT_PATTERN.test(value) ? value : fallback;
 
+const hexColorToCssRgb = (hex: string): string => {
+  if (!HEX_COLOR_INPUT_PATTERN.test(hex)) {
+    return hex;
+  }
+  const packed = Number.parseInt(hex.slice(1), 16);
+  return `rgb(${(packed >> 16) & 255},${(packed >> 8) & 255},${packed & 255})`;
+};
+
+const joinInlineOptionValues = (options: readonly InlineEditableValueOption[] | undefined): string | undefined => {
+  if (!options || options.length === 0) {
+    return undefined;
+  }
+  let out = String(options[0].value);
+  for (let i = 1; i < options.length; i += 1) {
+    out += `|${String(options[i].value)}`;
+  }
+  return out;
+};
+
 export type DeferredColorInputProps = {
   value: string;
   fallback?: string;
@@ -146,37 +165,60 @@ export function DeferredColorInput({
       data-modified={modified ? "true" : undefined}
       style={{ "--deferred-committed-color": draft } as CSSProperties}
     >
-      <ColorPicker
-        value={pickerOpen ? pickerColor : draft}
-        open={pickerOpen}
-        disabled={disabled}
-        disabledAlpha
-        className={className}
-        aria-label={ariaLabel}
-        onOpenChange={handlePickerOpenChange}
-        onChange={handlePickerDraftChange}
-        panelRender={(panel) => (
-          <div className="deferred-color-picker-panel">
-            {panel}
-            <div className="deferred-color-picker-footer">
-              <button
-                type="button"
-                className="deferred-color-picker-cancel"
-                onClick={handlePickerCancel}
-              >
-                取消
-              </button>
-              <button
-                type="button"
-                className="deferred-color-picker-confirm"
-                onClick={handlePickerConfirm}
-              >
-                确认
-              </button>
+      {pickerOpen ? (
+        <ColorPicker
+          value={pickerColor}
+          open={pickerOpen}
+          disabled={disabled}
+          disabledAlpha
+          className={className}
+          aria-label={ariaLabel}
+          onOpenChange={handlePickerOpenChange}
+          onChange={handlePickerDraftChange}
+          panelRender={(panel) => (
+            <div className="deferred-color-picker-panel">
+              {panel}
+              <div className="deferred-color-picker-footer">
+                <button
+                  type="button"
+                  className="deferred-color-picker-cancel"
+                  onClick={handlePickerCancel}
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  className="deferred-color-picker-confirm"
+                  onClick={handlePickerConfirm}
+                >
+                  确认
+                </button>
+              </div>
             </div>
-          </div>
-        )}
-      />
+          )}
+        />
+      ) : (
+        <button
+          type="button"
+          disabled={disabled}
+          title={title}
+          aria-label={ariaLabel}
+          className={[
+            "ant-color-picker-trigger",
+            "deferred-color-swatch-trigger",
+            disabled ? "ant-color-picker-trigger-disabled" : "",
+            className
+          ].filter(Boolean).join(" ")}
+          onClick={() => handlePickerOpenChange(true)}
+        >
+          <span className="ant-color-picker-color-block">
+            <span
+              className="ant-color-picker-color-block-inner"
+              style={{ background: hexColorToCssRgb(draft) }}
+            />
+          </span>
+        </button>
+      )}
       <button
         type="button"
         className="deferred-color-transparent-button"
@@ -407,13 +449,11 @@ export function InlineEditableValue({
     setEditing(false);
   };
 
-  const optionList = options?.map((option) => ({
-    value: String(option.value),
-    label: option.label ?? String(option.value),
-    disabled: option.disabled
-  }));
-  const currentOption = optionList?.find((option) => option.value === normalizedValue);
-  const shownValue = displayValue ?? currentOption?.label ?? normalizedValue;
+  const currentOption = options?.find((option) => String(option.value) === normalizedValue);
+  const shownValue =
+    displayValue ??
+    (currentOption ? currentOption.label ?? String(currentOption.value) : undefined) ??
+    normalizedValue;
   const sharedClassName = [
     "inline-property-value",
     modified ? "modified" : "",
@@ -433,7 +473,7 @@ export function InlineEditableValue({
         title={title}
         aria-label={ariaLabel}
         {...modifiedAttributes}
-        data-inline-option-values={optionList?.map((option) => option.value).join("|")}
+        data-inline-option-values={joinInlineOptionValues(options)}
         onClick={activate}
         onKeyDown={(event) => {
           if (event.key === "Enter" || event.key === " ") {
@@ -446,6 +486,12 @@ export function InlineEditableValue({
       </button>
     );
   }
+
+  const optionList = options?.map((option) => ({
+    value: String(option.value),
+    label: option.label ?? String(option.value),
+    disabled: option.disabled
+  }));
 
   if (optionList && optionList.length > 0) {
     return (

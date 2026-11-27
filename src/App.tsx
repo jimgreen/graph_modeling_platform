@@ -529,8 +529,12 @@ import {
 } from "./staticRenderUtils";
 import { DeviceGlyph, MemoDeviceGlyph, SvgMarkupChunk } from "./DeviceGlyph";
 import { buildSvgNodeLabelMarkup, svgDisplayAttribute, exportSvgSafeId, exportSvgLayerId, exportSvgUniqueId, exportSvgLayerScriptMarkup, exportDeviceMetadataAttributes, exportMeasurementGroupMetadataAttributes, exportMeasurementItemMetadataAttributes, exportMeasurementGroupBackgroundColor, exportMeasurementGroupBorderColor, exportMeasurementGroupBorderWidth, exportMeasurementGroupBorderDashArray, exportMeasurementGroupAnchorPoint, exportMeasurementGroupLocalOffset, exportMeasurementGroupMetrics, buildExportMeasurementGroupMarkup } from "./svgExportUtils";
-import { parseSvgModel } from "./svgModelImport";
-import { importDotFile } from "./dotImport";
+const parseSvgModel = async (
+  ...args: Parameters<typeof import("./svgModelImport").parseSvgModel>
+) => (await import("./svgModelImport")).parseSvgModel(...args);
+const importDotFile = async (
+  ...args: Parameters<typeof import("./dotImport").importDotFile>
+) => (await import("./dotImport")).importDotFile(...args);
 import {
   createCompleteImportedModelFeedback,
   createImportSvgModelFile,

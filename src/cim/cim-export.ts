@@ -6,7 +6,7 @@ import type { MeasurementGroup } from "../measurements";
 import type { SavedExportFile } from "../fileIO";
 import { buildCimPackage, collectMissingCriticalParams } from "./cim-builder.ts";
 import { serializeCimPackage } from "./cim-serializer.ts";
-import { isFrontendExportMode, sendFrontendExportArtifact } from "../frontendExport.ts";
+import { isFrontendExportMode, sendFrontendExportArtifact, type FrontendExportScope } from "../frontendExport.ts";
 
 export type CimExportScope = {
   nodes?: readonly ModelNode[];
@@ -112,9 +112,9 @@ export function createCimExport(scope: CimExportScope): () => Promise<boolean> {
     const currentProjectName = latest.projectName ?? "";
     const currentModelId = latest.activeModelId || latest.activeProjectKey;
 
-    if (isFrontendExportMode(latest as any)) {
+    if (isFrontendExportMode(latest as FrontendExportScope)) {
       try {
-        await sendFrontendExportArtifact(latest as any, "cim");
+        await sendFrontendExportArtifact(latest as FrontendExportScope, "cim");
         const filename = cimFilename(currentProjectName, safeFilePart);
         writeOperationLog?.(`前端模式发送 CIM/XML：${filename}`);
         scope.showGlobalMessage?.(`前端模式已发送 CIM/XML：${filename}`);

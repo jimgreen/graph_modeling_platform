@@ -18775,3 +18775,59 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   content-visibility: auto;
   contain-intrinsic-size: auto 28px;
 }
+
+/* ============================================================================
+   阶段三：大图画布交互期动画降载 + 静默态轻量色块触发器样式
+   1. 画布平移/节点拖拽/端子连线期间暂停百~千条 CSS motion-path 电流箭头重绘，松手无缝恢复
+   2. DeferredColorInput 未展开取色面板时使用零 rc-trigger 开销的原生色块按钮
+   ============================================================================ */
+.diagram-canvas.panning {
+  will-change: transform;
+}
+
+.diagram-canvas.panning .electric-flow-arrow,
+.diagram-canvas.single-node-dragging .electric-flow-arrow,
+.diagram-canvas.multi-node-dragging .electric-flow-arrow,
+.diagram-canvas.terminal-dragging .electric-flow-arrow {
+  animation-play-state: paused !important;
+}
+
+.deferred-color-swatch-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 3px;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  background: #ffffff;
+  cursor: pointer;
+  box-sizing: border-box;
+  transition: border-color 0.15s ease;
+}
+
+.deferred-color-swatch-trigger:hover:not(:disabled) {
+  border-color: #3b82f6;
+}
+
+.deferred-color-swatch-trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.deferred-color-swatch-trigger .ant-color-picker-color-block,
+.deferred-color-swatch-trigger .ant-color-picker-color-block-inner {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 2px;
+}
+
+[data-theme="dark"] .deferred-color-swatch-trigger,
+.dark-theme .deferred-color-swatch-trigger {
+  background: #141a24;
+  border-color: rgba(148, 163, 184, 0.32);
+}

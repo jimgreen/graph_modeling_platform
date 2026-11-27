@@ -19,6 +19,7 @@ import type {
   ModelLayer,
   ModelNode,
   Point,
+  ProjectFile,
   SavedProjectRecord,
   SavedSchemeRecord,
   TopologyValidationError,
@@ -1029,13 +1030,13 @@ export function createSaveCurrentProject(__appScope: ProjectCanvasScope) {
   return async (targetId?: string) => {
   const { clearRefreshRecoveryProject, createSavedProject, currentGraphDirtyBaseline, currentModelSelectionRef, currentProject, deferredMoveOptimizationCancelRef, deferredRoutableLineRouteRepairCancelRef, finalizeSavedGlobalLineProjectNodes, findProjectRecordByNameInScheme, findSavedSchemeById, findSchemeForProject, graphDirtyBaselineRef, projectById, rememberPersistedSchemesPayload, saveActiveProjectPointer, saveBackendProjectRecord, savedSchemePathForId, savedUndoStackLengthRef, selectedSchemeId, serializeSchemesForStorage, setActiveProjectKey, setActiveSchemeKey, setHasUnsavedChanges, setProjectName, setSchemes, suppressNextGraphDirtyRef, undoStack, upsertSavedProjectInScheme, writeOperationLog } = __appScope;
     const latestScope = () => (__appScope.__appScopeRef?.current as ProjectCanvasScope | undefined) ?? __appScope;
-    const sendFrontendExportsAfterSave = async (savedProject: Record<string, any>) => {
+    const sendFrontendExportsAfterSave = async (savedProject: ProjectFile) => {
       const scopeSnapshot = latestScope();
-      if (!isFrontendExportMode(scopeSnapshot as any)) {
+      if (!isFrontendExportMode(scopeSnapshot)) {
         return;
       }
       try {
-        await sendFrontendExportArtifacts(scopeSnapshot as any, savedProject);
+        await sendFrontendExportArtifacts(scopeSnapshot, savedProject);
         writeOperationLog("前端模式导出已发送：CIM/XML、E 文件、SVG");
       } catch (error) {
         const message = error instanceof Error ? error.message : "前端模式导出发送失败。";
