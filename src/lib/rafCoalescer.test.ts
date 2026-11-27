@@ -2,7 +2,8 @@ import { describe, expect, test, vi } from "vitest";
 import {
   createElementRectCache,
   createIdleTaskScheduler,
-  createRafLatestScheduler
+  createRafLatestScheduler,
+  fastClonePojo
 } from "./rafCoalescer";
 
 describe("createRafLatestScheduler", () => {
@@ -61,6 +62,83 @@ describe("createRafLatestScheduler", () => {
     expect(cancelFrame).toHaveBeenCalledWith(7);
     expect(applied).toEqual([]);
     expect(scheduler.hasPending()).toBe(false);
+  });
+
+  test("leading 模式首帧 0ms 同步响应，连续多帧每渲染帧严格至多执行 1 次，空闲后恢复同步响应", () => {
+    const queue = new Map<number, FrameRequestCallback>();
+    let nextId = 1;
+    const applied: number[] = [];
+    const scheduler = createRafLatestScheduler<number>((v) => applied.push(v), {
+      leading: true,
+      requestFrame: (cb) => {
+        const id = nextId++;
+        queue.set(id, cb);
+        return id;
+      },
+      cancelFrame: (id) => {
+        queue.delete(id);
+      }
+    });
+
+    const stepFrame = (ts: number) => {
+      const callbacks = [...queue.values()];
+      queue.clear();
+      for (const cb of callbacks) cb(ts);
+    };
+
+    // 第 1 帧：首个事件立即同步生效，后续事件进入帧缓冲
+    scheduler.schedule(10);
+    expect(applied).toEqual([10]);
+    scheduler.schedule(20);
+    scheduler.schedule(30);
+    expect(applied).toEqual([10]);
+
+    stepFrame(16.7);
+    expect(applied).toEqual([10, 30]);
+
+    // 第 2 帧：处于连续拖拽冷却窗口内，不抢跑同步触发，帧末合并执行 1 次
+    scheduler.schedule(40);
+    scheduler.schedule(50);
+    expect(applied).toEqual([10, 30]);
+
+    stepFrame(33.3);
+    expect(applied).toEqual([10, 30, 50]);
+
+    // 第 3 帧无新事件：冷却锁自动释放回空闲态
+    stepFrame(50.0);
+    expect(queue.size).toBe(0);
+
+    // 下一轮新拖拽再次立即 0ms 同步响应
+    scheduler.schedule(99);
+    expect(applied).toEqual([10, 30, 50, 99]);
+  });
+});
+
+describe("fastClonePojo", () => {
+  test("深拷贝嵌套 POJO 与数组并保持引用完全隔离，遇到特殊内建对象安全克隆", () => {
+    const source = {
+      name: "换流站草稿",
+      size: { width: 120, height: 80 },
+      terminals: [
+        { x: 0, y: 0.5, tags: ["ac", "hv"] },
+        { x: 1, y: 0.5, tags: ["dc"] }
+      ],
+      optionalHint: undefined as string | undefined,
+      createdAt: new Date("2026-01-01T00:00:00Z")
+    };
+    const cloned = fastClonePojo(source);
+    expect(cloned).toEqual(source);
+    expect(cloned).not.toBe(source);
+    expect(cloned.size).not.toBe(source.size);
+    expect(cloned.terminals[0]).not.toBe(source.terminals[0]);
+    expect(cloned.terminals[0].tags).not.toBe(source.terminals[0].tags);
+    expect(cloned.createdAt).not.toBe(source.createdAt);
+    expect(cloned.createdAt.getTime()).toBe(source.createdAt.getTime());
+
+    cloned.terminals[0].x = 999;
+    cloned.terminals[0].tags.push("mutated");
+    expect(source.terminals[0].x).toBe(0);
+    expect(source.terminals[0].tags).toEqual(["ac", "hv"]);
   });
 });
 

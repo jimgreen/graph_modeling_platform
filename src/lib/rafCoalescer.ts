@@ -25,6 +25,8 @@ export function createRafLatestScheduler<T>(
   options?: {
     requestFrame?: (cb: FrameRequestCallback) => number;
     cancelFrame?: (id: number) => void;
+    /** 为 true 时单帧首次调用同步立即触发（0ms 首帧延迟），同一渲染帧内的后续调用合并至帧末。 */
+    leading?: boolean;
   }
 ): RafLatestScheduler<T> {
   const raf =
@@ -37,6 +39,7 @@ export function createRafLatestScheduler<T>(
     (typeof globalThis.cancelAnimationFrame === "function"
       ? globalThis.cancelAnimationFrame.bind(globalThis)
       : null);
+  const leading = options?.leading === true;
 
   let rafId: number | null = null;
   let hasValue = false;
@@ -63,22 +66,36 @@ export function createRafLatestScheduler<T>(
     latestValue = undefined;
   };
 
+  const onFrame: FrameRequestCallback = () => {
+    rafId = null;
+    if (!hasValue) return;
+    const next = latestValue as T;
+    hasValue = false;
+    latestValue = undefined;
+    apply(next);
+    if (leading && raf) {
+      // leading 模式下本帧末刚消费完积压事件，续挂下一帧冷却窗口，
+      // 防止下一帧首个高频指针事件再次走同步分支造成单帧双次更新；空闲帧自动释放。
+      rafId = raf(onFrame);
+    }
+  };
+
   const schedule = (value: T) => {
-    latestValue = value;
-    hasValue = true;
     if (!raf) {
+      latestValue = value;
+      hasValue = true;
       flush();
       return;
     }
+    if (rafId === null && leading) {
+      apply(value);
+      rafId = raf(onFrame);
+      return;
+    }
+    latestValue = value;
+    hasValue = true;
     if (rafId !== null) return;
-    rafId = raf(() => {
-      rafId = null;
-      if (!hasValue) return;
-      const next = latestValue as T;
-      hasValue = false;
-      latestValue = undefined;
-      apply(next);
-    });
+    rafId = raf(onFrame);
   };
 
   return {
@@ -87,6 +104,39 @@ export function createRafLatestScheduler<T>(
     cancel,
     hasPending: () => hasValue
   };
+}
+
+/**
+ * 针对纯数据树（POJO / Array / 基础类型）的高速深拷贝：
+ * 绕过 `JSON.stringify` 字符串编解码与 `structuredClone` 通用结构化克隆表开销；
+ * 若遇到 Date / RegExp / Map / Set / TypedArray 等非普通对象则自动回退 `structuredClone`。
+ */
+export function fastClonePojo<T>(value: T): T {
+  if (value === null || typeof value !== "object") {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    const len = value.length;
+    const copy = new Array(len);
+    for (let i = 0; i < len; i += 1) {
+      copy[i] = fastClonePojo(value[i]);
+    }
+    return copy as unknown as T;
+  }
+  const proto = Object.getPrototypeOf(value);
+  if (proto !== Object.prototype && proto !== null) {
+    return typeof structuredClone === "function"
+      ? structuredClone(value)
+      : (JSON.parse(JSON.stringify(value)) as T);
+  }
+  const src = value as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  const keys = Object.keys(src);
+  for (let i = 0; i < keys.length; i += 1) {
+    const key = keys[i];
+    out[key] = fastClonePojo(src[key]);
+  }
+  return out as T;
 }
 
 export interface ElementRectCache {

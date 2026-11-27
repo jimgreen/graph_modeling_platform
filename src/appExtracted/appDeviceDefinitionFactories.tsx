@@ -20,6 +20,7 @@ import {
   type Point,
 } from "../model";
 import { clampNumber } from "../canvasViewport";
+import { fastClonePojo } from "../lib/rafCoalescer";
 import { normalizeImageFitMode } from "../imageFit";
 import { apiPath } from "../config";
 import { promptText } from "../globalDialogs";
@@ -439,6 +440,10 @@ export function customDeviceDraftSectionDirtyToken(
   });
 }
 
+function cloneDraftValue<T>(value: T): T {
+  return fastClonePojo(value);
+}
+
 export function createSetCustomDeviceDraftCleanBaseline(__appScope: DeviceDefinitionScope) {
   return (draft: CustomDeviceDraft, anchors?: readonly Point[]) => {
   const { createDefaultCustomDeviceTerminalAnchors, customDeviceDraftBaselineRef, customDeviceDraftCleanTokenRef } = __appScope;
@@ -455,7 +460,7 @@ export function createSetCustomDeviceDraftCleanBaseline(__appScope: DeviceDefini
       nextAnchors
     );
     if (customDeviceDraftBaselineRef) {
-      customDeviceDraftBaselineRef.current = JSON.parse(JSON.stringify(baselineDraft));
+      customDeviceDraftBaselineRef.current = cloneDraftValue(baselineDraft);
     }
   };
 }
@@ -497,7 +502,7 @@ export function createRevertCustomDeviceDraftCurrentTab(__appScope: DeviceDefini
       if (typeof setStateIconDrawingDialog === "function") setStateIconDrawingDialog(null);
       setCustomDeviceDraft((current: CustomDeviceDraft) => ({
         ...current,
-        stateDefinitions: JSON.parse(JSON.stringify(baseline.stateDefinitions)),
+        stateDefinitions: cloneDraftValue(baseline.stateDefinitions),
         backgroundImage: baseline.backgroundImage,
         backgroundImageAssetId: baseline.backgroundImageAssetId,
         backgroundImageFit: baseline.backgroundImageFit,
@@ -513,7 +518,7 @@ export function createRevertCustomDeviceDraftCurrentTab(__appScope: DeviceDefini
     } else if (customDeviceDialogView === "parameters") {
       setCustomDeviceDraft((current: CustomDeviceDraft) => ({
         ...current,
-        params: JSON.parse(JSON.stringify(baseline.params)),
+        params: cloneDraftValue(baseline.params),
         error: ""
       }));
     } else if (customDeviceDialogView === "measurements") {
@@ -543,7 +548,7 @@ export function createRevertCustomDeviceDraftAll(__appScope: DeviceDefinitionSco
     // 自定义元件：从 baseline 还原
     const baseline: CustomDeviceDraft | null = customDeviceDraftBaselineRef?.current ?? null;
     if (!baseline) return;
-    setCustomDeviceDraft(JSON.parse(JSON.stringify(baseline)));
+    setCustomDeviceDraft(cloneDraftValue(baseline));
   };
 }
 
@@ -1041,6 +1046,11 @@ export function createStartDeviceLibraryDialogResize(__appScope: DeviceDefinitio
 export function createStopDeviceLibraryDialogEvent(__appScope: DeviceDefinitionScope) {
   return (event: PointerEvent<HTMLElement> | MouseEvent<HTMLElement>) => {
   const { finishDeviceLibraryDialogPointerOperation } = __appScope;
+    // 放行挂载在 document.body 上的 React Portal 子弹层（如取色器、Select 下拉菜单）事件
+    const target = event.target;
+    if (target instanceof Node && typeof event.currentTarget?.contains === "function" && !event.currentTarget.contains(target)) {
+      return;
+    }
     event.stopPropagation();
     if (
       event.type === "pointerup" ||
@@ -2935,7 +2945,7 @@ export function createConfirmCustomLibraryCreateDialog(__appScope: DeviceDefinit
                 copiedSourceDraft.terminalAnchors
               )
             : copiedSourceDraft.terminalAnchors.slice(0, libraryDraftPatch.terminalCount).map((anchor: any) => ({ ...anchor })),
-          stateDefinitions: JSON.parse(JSON.stringify(copiedSourceDraft.stateDefinitions ?? []))
+          stateDefinitions: cloneDraftValue(copiedSourceDraft.stateDefinitions ?? [])
         }
       : {};
     const nextDraft = {

@@ -101,12 +101,12 @@ export function createExportSvg(__appScope: ExportImportScope) {
   const {
     ensureSavedBeforeExport,
     isPickerAbort,
-    projectName,
     safeFilePart,
     showGlobalMessage = () => undefined,
     writeTextFileToDirectory,
     writeOperationLog
   } = __appScope;
+  const latestScope = () => (__appScope.__appScopeRef?.current as ExportImportScope | undefined) ?? __appScope;
     let exportStartedAt = performance.now();
     const exportElapsedText = () => `${((performance.now() - exportStartedAt) / 1000).toFixed(2)} 秒`;
     if (!ensureSavedBeforeExport()) {
@@ -161,7 +161,7 @@ export function createExportSvg(__appScope: ExportImportScope) {
           (value: string) => ({ ok: true as const, value }),
           (error: unknown) => ({ ok: false as const, error })
         );
-      const baseFilename = safeFilePart(projectName);
+      const baseFilename = safeFilePart(latestScope().projectName);
       type PendingExportFile = {
         label: string;
         filename: string;
@@ -427,13 +427,13 @@ export function createExportSvgFile(__appScope: ExportImportScope) {
   return async (textEncoding: TextFileEncoding = "utf-8") => {
     const {
       ensureSavedBeforeExport,
-      projectName,
       safeFilePart,
       saveLazyTextFile,
       saveTextFile,
       showGlobalMessage = () => undefined,
       writeOperationLog
     } = __appScope;
+    const latestScope = () => (__appScope.__appScopeRef?.current as ExportImportScope | undefined) ?? __appScope;
     let exportStartedAt = performance.now();
     const markSaveTargetReady = () => {
       exportStartedAt = performance.now();
@@ -441,16 +441,16 @@ export function createExportSvgFile(__appScope: ExportImportScope) {
     if (!ensureSavedBeforeExport()) {
       return;
     }
-    if (isFrontendExportMode(__appScope)) {
+    if (isFrontendExportMode(latestScope() as any)) {
       try {
-        await sendFrontendExportArtifact(__appScope, "svg");
+        await sendFrontendExportArtifact(latestScope() as any, "svg");
         showGlobalMessage("前端模式已发送 SVG。");
       } catch (error) {
         showGlobalMessage(error instanceof Error ? error.message : "前端模式 SVG 发送失败。");
       }
       return;
     }
-    const baseFilename = safeFilePart(projectName);
+    const baseFilename = safeFilePart(latestScope().projectName);
     let svgTextPromise: Promise<string> | undefined;
     const loadSvgText = () => {
       // SVG 生成已移至后端 /v1/schemes/model/export?format=svg（见 fetchBackendModelSvgText）
@@ -575,13 +575,13 @@ export function createExportEFile(__appScope: ExportImportScope) {
   return async (textEncoding: TextFileEncoding = "gbk") => {
     const {
       ensureSavedBeforeExport,
-      projectName,
       safeFilePart,
       saveLazyTextFile,
       saveTextFile,
       showGlobalMessage = () => undefined,
       writeOperationLog
     } = __appScope;
+    const latestScope = () => (__appScope.__appScopeRef?.current as ExportImportScope | undefined) ?? __appScope;
     let exportStartedAt = performance.now();
     const markSaveTargetReady = () => {
       exportStartedAt = performance.now();
@@ -590,9 +590,9 @@ export function createExportEFile(__appScope: ExportImportScope) {
       return;
     }
 
-    if (isFrontendExportMode(__appScope)) {
+    if (isFrontendExportMode(latestScope() as any)) {
       try {
-        await sendFrontendExportArtifact(__appScope, "e");
+        await sendFrontendExportArtifact(latestScope() as any, "e");
         showGlobalMessage("前端模式已发送 E 文件。");
       } catch (error) {
         showGlobalMessage(error instanceof Error ? error.message : "前端模式 E 文件发送失败。");
@@ -600,9 +600,10 @@ export function createExportEFile(__appScope: ExportImportScope) {
       return;
     }
 
+    const latestProjectName = String(latestScope().projectName ?? "");
     const filenameBase = typeof safeFilePart === "function"
-      ? safeFilePart(String(projectName ?? ""))
-      : sharedSafeFilePart(String(projectName ?? ""));
+      ? safeFilePart(latestProjectName)
+      : sharedSafeFilePart(latestProjectName);
     // 后端经响应头带回落盘用告警（生成器单源）；保存完成后展示
     let warningDetails: string[] = [];
     // E 文件生成已移至后端 /v1/schemes/model/export?format=e-file（预定义模板只读态随请求带模板名）。
@@ -948,11 +949,13 @@ export function createExportProjectRecordFile(__appScope: ExportImportScope) {
 
 export function createExportCurrentModelFile(__appScope: ExportImportScope) {
   return async () => {
-  const { currentProject, projectName, safeFilePart, saveTextFile, serializeProject, writeOperationLog } = __appScope;
+  const { currentProject, safeFilePart, saveTextFile, serializeProject, writeOperationLog } = __appScope;
+    const latestScope = () => (__appScope.__appScopeRef?.current as ExportImportScope | undefined) ?? __appScope;
+    const exportProjectName = latestScope().projectName;
     // 本机另存为才拿得到磁盘路径 → 弹框里才有【查看】
     let savedFile: SavedExportFile | null = null;
     const saved = await saveTextFile({
-      filename: `${safeFilePart(projectName)}.json`,
+      filename: `${safeFilePart(exportProjectName)}.json`,
       text: serializeProject(currentProject()),
       mime: "application/json",
       description: "平台模型文件",
@@ -965,8 +968,8 @@ export function createExportCurrentModelFile(__appScope: ExportImportScope) {
     if (!saved) {
       return;
     }
-    writeOperationLog(`导出当前模型文件：${projectName}.json`);
-    showStandaloneExportCompletion(__appScope, "当前模型文件导出完成", `当前模型文件导出成功：${safeFilePart(projectName)}.json`, [], savedFile);
+    writeOperationLog(`导出当前模型文件：${exportProjectName}.json`);
+    showStandaloneExportCompletion(__appScope, "当前模型文件导出完成", `当前模型文件导出成功：${safeFilePart(exportProjectName)}.json`, [], savedFile);
   };
 }
 
@@ -1099,7 +1102,8 @@ export function createApplyBackendSchemeArchiveImport(__appScope: ExportImportSc
 
 export function createImportSchemeFile(__appScope: ExportImportScope) {
   return async (event: ChangeEvent<HTMLInputElement>) => {
-  const { applyBackendSchemeArchiveImport, commitImportedSchemeRecord, createImportedSchemeRecord, findSavedSchemeById, hasSameName, schemeImportParentSchemeIdRef, schemePathForScheme, schemes, setPendingSchemeImportConflict, uploadBackendSchemeArchive } = __appScope;
+  const { applyBackendSchemeArchiveImport, commitImportedSchemeRecord, createImportedSchemeRecord, findSavedSchemeById, hasSameName, schemeImportParentSchemeIdRef, schemePathForScheme, setPendingSchemeImportConflict, uploadBackendSchemeArchive } = __appScope;
+    const latestScope = () => (__appScope.__appScopeRef?.current as ExportImportScope | undefined) ?? __appScope;
     const input = event.currentTarget;
     const file = input.files?.[0];
     if (!file) {
@@ -1128,7 +1132,8 @@ export function createImportSchemeFile(__appScope: ExportImportScope) {
       const text = await file.text();
       const importedScheme = createImportedSchemeRecord(text, file.name);
       const parentSchemeId = schemeImportParentSchemeIdRef.current;
-      const targetSchemes = parentSchemeId ? findSavedSchemeById(schemes, parentSchemeId)?.children ?? [] : schemes;
+      const latestSchemes = latestScope().schemes;
+      const targetSchemes = parentSchemeId ? findSavedSchemeById(latestSchemes, parentSchemeId)?.children ?? [] : latestSchemes;
       const duplicateScheme = targetSchemes.find((scheme: any) => hasSameName(importedScheme.name, [scheme.name]));
       if (duplicateScheme) {
         setPendingSchemeImportConflict({
@@ -1171,7 +1176,8 @@ export function createCommitImportedModelRecord(__appScope: ExportImportScope) {
 
 export function createImportModelFile(__appScope: ExportImportScope) {
   return async (event: ChangeEvent<HTMLInputElement>) => {
-  const { activeSchemeRecord, commitImportedModelRecord, createSavedProject, createSavedScheme, deserializeProject, findSavedSchemeById, modelImportTargetSchemeIdRef, schemes, selectedSchemeRecord, setPendingModelImportConflict } = __appScope;
+  const { commitImportedModelRecord, createSavedProject, createSavedScheme, deserializeProject, findSavedSchemeById, modelImportTargetSchemeIdRef, setPendingModelImportConflict } = __appScope;
+    const latestScope = () => (__appScope.__appScopeRef?.current as ExportImportScope | undefined) ?? __appScope;
     const input = event.currentTarget;
     const file = input.files?.[0];
     if (!file) {
@@ -1181,11 +1187,12 @@ export function createImportModelFile(__appScope: ExportImportScope) {
       const text = await file.text();
       const importedProject = deserializeProject(text);
       const importTargetSchemeId = modelImportTargetSchemeIdRef.current;
+      const latest = latestScope();
       const targetScheme =
-        findSavedSchemeById(schemes, importTargetSchemeId) ??
-        activeSchemeRecord ??
-        selectedSchemeRecord ??
-        schemes[0] ??
+        findSavedSchemeById(latest.schemes, importTargetSchemeId) ??
+        latest.activeSchemeRecord ??
+        latest.selectedSchemeRecord ??
+        latest.schemes[0] ??
         createSavedScheme("默认方案");
       const fileBaseName = file.name.replace(/\.json$/i, "");
       const importedName = (importedProject.name || fileBaseName || "导入模型").trim() || "导入模型";
@@ -1213,21 +1220,18 @@ export function createImportModelFile(__appScope: ExportImportScope) {
 export function createImportSvgModelFile(__appScope: ExportImportScope) {
   return async (event: ChangeEvent<HTMLInputElement>) => {
   const {
-    activeSchemeRecord,
     commitImportedModelRecord,
     completeImportedModelFeedback,
     createSavedProject,
     createSavedScheme,
     findSavedSchemeById,
-    libraryTemplates,
     modelImportTargetSchemeIdRef,
     parseSvgModel,
-    schemes,
-    selectedSchemeRecord,
     setPendingModelImportConflict,
     writeOperationLog,
     yieldToBrowser
   } = __appScope;
+    const latestScope = () => (__appScope.__appScopeRef?.current as ExportImportScope | undefined) ?? __appScope;
     const input = event.currentTarget;
     const file = input.files?.[0];
     if (!file) {
@@ -1249,13 +1253,14 @@ export function createImportSvgModelFile(__appScope: ExportImportScope) {
       const importedName = file.name.replace(/\.svg$/iu, "").trim() || "SVG 导入模型";
       const result = await parseSvgModel(text, {
         name: importedName,
-        templates: libraryTemplates
+        templates: latestScope().libraryTemplates
       });
+      const latest = latestScope();
       const targetScheme =
-        findSavedSchemeById(schemes, modelImportTargetSchemeIdRef.current) ??
-        activeSchemeRecord ??
-        selectedSchemeRecord ??
-        schemes[0] ??
+        findSavedSchemeById(latest.schemes, modelImportTargetSchemeIdRef.current) ??
+        latest.activeSchemeRecord ??
+        latest.selectedSchemeRecord ??
+        latest.schemes[0] ??
         createSavedScheme("默认方案");
       const completionFeedback = svgModelImportCompletionFeedback(importedName, result);
       const duplicateProject = targetScheme.projects.find((project: any) => project.name.trim() === importedName);
@@ -1321,19 +1326,16 @@ export function createOpenDotModelImportFilePicker(__appScope: ExportImportScope
 export function createImportDotModelFile(__appScope: ExportImportScope) {
   return async (event: ChangeEvent<HTMLInputElement>) => {
   const {
-    activeSchemeRecord,
     commitImportedModelRecord,
     createSavedProject,
     createSavedScheme,
     findSavedSchemeById,
     importDotFile,
     modelImportTargetSchemeIdRef,
-    requireEditMode,
-    schemes,
-    selectedSchemeRecord,
     setPendingModelImportConflict,
     writeOperationLog
   } = __appScope;
+    const latestScope = () => (__appScope.__appScopeRef?.current as ExportImportScope | undefined) ?? __appScope;
     const input = event.currentTarget;
     const file = input.files?.[0];
     if (!file) {
@@ -1349,11 +1351,12 @@ export function createImportDotModelFile(__appScope: ExportImportScope) {
       const text = await file.text();
       const importedName = file.name.replace(/\.dot$/iu, "").trim() || "dot 导入模型";
       const result = importDotFile(text);
+      const latest = latestScope();
       const targetScheme =
-        findSavedSchemeById(schemes, modelImportTargetSchemeIdRef.current) ??
-        activeSchemeRecord ??
-        selectedSchemeRecord ??
-        schemes[0] ??
+        findSavedSchemeById(latest.schemes, modelImportTargetSchemeIdRef.current) ??
+        latest.activeSchemeRecord ??
+        latest.selectedSchemeRecord ??
+        latest.schemes[0] ??
         createSavedScheme("默认方案");
       const completionFeedback = dotModelImportCompletionFeedback(importedName, result);
       const duplicateProject = targetScheme.projects.find((project: any) => project.name.trim() === importedName);

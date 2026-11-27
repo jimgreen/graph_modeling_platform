@@ -2736,7 +2736,14 @@ export function renderAppView(__appScope: Record<string, any>) {
         />
         {isInterfaceCustomizationVisible(__appScope.interfaceCustomization, "module.recentGlyphs") && <MemoizedViewSection
           section="recent-glyphs"
-          inputs={[__appScope.recentGlyphKinds, __appScope.hasActiveModel]}
+          inputs={[
+            __appScope.recentGlyphKinds,
+            __appScope.hasActiveModel,
+            __appScope.libraryTemplates,
+            __appScope.colorDisplayMode,
+            __appScope.colorPalette,
+            __appScope.themeMode
+          ]}
           render={() => <RecentGlyphsToolbar scope={__appScope} />}
         />}
 
@@ -2761,12 +2768,15 @@ export function renderAppView(__appScope: Record<string, any>) {
             topologyWarningPanelStyle,
             inspectorTopologyErrors,
             visibleTopologyErrors,
+            topologyFilteredErrors,
+            topologyWarningCategory,
+            topologyWarningStatus,
             normalizedTopologyWarningPage,
             topologyWarningPageCount,
             hiddenTopologyErrorCount,
             __appScope.interfaceCustomization
           ]}
-          render={() => topologyWarningPanelVisible ? (<section ref={topologyWarningPanelRef} className="topology-warning-floating-panel" style={topologyWarningPanelStyle} aria-label="拓扑警告信息" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
+          render={() => topologyWarningPanelVisible ? (<section ref={topologyWarningPanelRef} className="topology-warning-floating-panel" style={topologyWarningPanelStyle} aria-label="拓扑警告信息" onPointerDown={(event) => { if (!(event.target instanceof Node) || event.currentTarget.contains(event.target)) event.stopPropagation(); }} onClick={(event) => { if (!(event.target instanceof Node) || event.currentTarget.contains(event.target)) event.stopPropagation(); }}>
             <header className="topology-warning-floating-title" onPointerDown={startTopologyWarningPanelDrag}>
               <div>
                 <h2>拓扑警告信息</h2>

@@ -548,6 +548,11 @@ export function createFinishNodeDoubleClickDialogPointerOperation(__appScope: Ca
 export function createStopNodeDoubleClickDialogEvent(__appScope: CanvasInteractionScope) {
   return (event: ReactPointerEvent<HTMLElement> | ReactMouseEvent<HTMLElement>) => {
   const { finishNodeDoubleClickDialogPointerOperation } = __appScope;
+    // 放行挂载在 document.body 上的 React Portal 子弹层（如取色器、Select 下拉菜单）事件
+    const target = event.target;
+    if (target instanceof Node && typeof event.currentTarget?.contains === "function" && !event.currentTarget.contains(target)) {
+      return;
+    }
     event.stopPropagation();
     if (
       event.type === "pointerup" ||

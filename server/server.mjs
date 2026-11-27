@@ -2857,18 +2857,10 @@ export async function createImageServer({
       await handleDeleteSchemeProject(request, response, paths, spaceId, modelUpdateService);
     }],
     [routeKey("PUT", "/schemes/scheme"), async ({ request, response, paths, spaceId }) => {
-      const before = await trySnapshotSavedModels(paths);
-      await handleSaveSchemeRecord(request, response, paths);
-      if (response.statusCode < 400) {
-        await publishModelChangesSince(modelUpdateService, spaceId, paths, before);
-      }
+      await handleSaveSchemeRecord(request, response, paths, spaceId, modelUpdateService);
     }],
     [routeKey("DELETE", "/schemes/scheme"), async ({ request, response, paths, spaceId }) => {
-      const before = await trySnapshotSavedModels(paths);
-      await handleDeleteSchemeRecord(request, response, paths);
-      if (response.statusCode < 400) {
-        await publishModelChangesSince(modelUpdateService, spaceId, paths, before);
-      }
+      await handleDeleteSchemeRecord(request, response, paths, spaceId, modelUpdateService);
     }],
     [routeKey("GET", "/global-lines"), async ({ response, paths }) => {
       await handleListGlobalLines(response, paths);

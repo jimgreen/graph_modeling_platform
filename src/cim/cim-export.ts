@@ -70,11 +70,10 @@ export function cimFilename(projectName: string, safeFilePart?: (name: string) =
 /** 工厂：装配导出动作。菜单项与导出处理均走此函数。 */
 export function createCimExport(scope: CimExportScope): () => Promise<boolean> {
   return async () => {
+    const latestScope = (): CimExportScope =>
+      ((scope as CimExportScope & { __appScopeRef?: { current?: CimExportScope } }).__appScopeRef?.current) ?? scope;
     const {
       nodes = [],
-      projectName = "",
-      activeModelId,
-      activeProjectKey,
       safeFilePart,
       saveLazyTextFile,
       writeOperationLog
@@ -109,11 +108,14 @@ export function createCimExport(scope: CimExportScope): () => Promise<boolean> {
       }
       if (!confirmed) return false;
     }
+    const latest = latestScope();
+    const currentProjectName = latest.projectName ?? "";
+    const currentModelId = latest.activeModelId || latest.activeProjectKey;
 
-    if (isFrontendExportMode(scope as any)) {
+    if (isFrontendExportMode(latest as any)) {
       try {
-        await sendFrontendExportArtifact(scope as any, "cim");
-        const filename = cimFilename(projectName, safeFilePart);
+        await sendFrontendExportArtifact(latest as any, "cim");
+        const filename = cimFilename(currentProjectName, safeFilePart);
         writeOperationLog?.(`前端模式发送 CIM/XML：${filename}`);
         scope.showGlobalMessage?.(`前端模式已发送 CIM/XML：${filename}`);
         return true;
@@ -122,12 +124,11 @@ export function createCimExport(scope: CimExportScope): () => Promise<boolean> {
         return false;
       }
     }
-
     // CIM/XML 生成已移至后端 /v1/schemes/model/export?format=cim-xml（与 E 文件同一适配层模式）
-    const schemePath = Array.isArray(scope.schemePath) && scope.schemePath.length > 0 ? scope.schemePath : ["默认方案"];
+    const schemePath = Array.isArray(latest.schemePath) && latest.schemePath.length > 0 ? latest.schemePath : ["默认方案"];
     const query = `schemePath=${encodeURIComponent(JSON.stringify(schemePath))}`
-      + `&name=${encodeURIComponent(projectName)}`
-      + (activeModelId || activeProjectKey ? `&modelId=${encodeURIComponent(String(activeModelId || activeProjectKey).replace(/[^A-Za-z0-9_.-]/g, "_"))}` : "");
+      + `&name=${encodeURIComponent(currentProjectName)}`
+      + (currentModelId ? `&modelId=${encodeURIComponent(String(currentModelId).replace(/[^A-Za-z0-9_.-]/g, "_"))}` : "");
     const path = `/v1/schemes/model/export?format=cim-xml&${query}`;
     const url = typeof scope.apiPath === "function" ? scope.apiPath(path) : path;
     let xml: string;
@@ -147,7 +148,7 @@ export function createCimExport(scope: CimExportScope): () => Promise<boolean> {
       scope.showGlobalMessage?.("CIM/XML 导出失败（无法连接后端服务）。");
       return false;
     }
-    const filename = cimFilename(projectName, safeFilePart);
+    const filename = cimFilename(latestScope().projectName ?? currentProjectName, safeFilePart);
     // 本机另存为才拿得到磁盘路径 → 弹框里才有【查看】
     let savedFile: SavedExportFile | null = null;
     let saved = false;

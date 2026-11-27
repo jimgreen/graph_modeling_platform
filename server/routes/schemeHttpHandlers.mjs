@@ -191,32 +191,40 @@ export function createSchemeHttpHandlers({
     sendJson(response, 200, { ok: true, savedAt: new Date().toISOString() });
   }
 
-  async function handleSaveSchemeRecord(request, response, paths) {
+  async function handleSaveSchemeRecord(request, response, paths, spaceId, modelUpdateService) {
     const payload = await readJsonBody(request, maxSchemeBodyBytes, "方案数据过大，最大支持 64MB。");
     if (!Array.isArray(payload.schemePath) || payload.schemePath.length === 0) {
       sendError(response, 400, "缺少方案路径。");
       return;
     }
+    const before = modelUpdateService ? await trySnapshotSavedModels(paths) : null;
     const schemeId = await saveSchemeRecordDirectory({
       schemePath: payload.schemePath,
       previousSchemePath: payload.previousSchemePath,
       schemeId: payload.schemeId,
       paths
     });
+    if (modelUpdateService) {
+      await publishModelChangesSince(modelUpdateService, spaceId, paths, before);
+    }
     sendJson(response, 200, { ok: true, schemeId, savedAt: new Date().toISOString() });
   }
 
-  async function handleDeleteSchemeRecord(request, response, paths) {
+  async function handleDeleteSchemeRecord(request, response, paths, spaceId, modelUpdateService) {
     const payload = await readJsonBody(request, maxSchemeBodyBytes, "方案数据过大，最大支持 64MB。");
     if ((payload.schemeId === undefined || payload.schemeId === null) && (!Array.isArray(payload.schemePath) || payload.schemePath.length === 0)) {
       sendError(response, 400, "缺少方案路径。");
       return;
     }
+    const before = modelUpdateService ? await trySnapshotSavedModels(paths) : null;
     await deleteSchemeRecordDirectory({
       schemePath: payload.schemePath,
       schemeId: payload.schemeId,
       paths
     });
+    if (modelUpdateService) {
+      await publishModelChangesSince(modelUpdateService, spaceId, paths, before);
+    }
     sendJson(response, 200, { ok: true, savedAt: new Date().toISOString() });
   }
 

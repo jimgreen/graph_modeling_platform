@@ -53,35 +53,44 @@ export function createMoveModelLayer(__appScope: ProjectCanvasScope) {
 
 export function createDeleteModelLayer(__appScope: ProjectCanvasScope) {
   return async (layerId: string) => {
-  const { DEFAULT_MODEL_LAYER_ID, activeLayerId, deleteNodesWithConnectedEdges, edges, groups, layers, nodes, normalizeModelGroups, normalizeProjectMeasurements, pushUndoSnapshot, removeGraphicsFromGroups, resetConnectPreviewState, setActiveLayerId, setConnectSource, setContextMenu, setGraphArrays, setGroups, setLayers, setProjectMeasurements, setRewiring, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, writeOperationLog } = __appScope;
-    if (layers.length <= 1) {
+  const { DEFAULT_MODEL_LAYER_ID, deleteNodesWithConnectedEdges, normalizeModelGroups, normalizeProjectMeasurements, pushUndoSnapshot, removeGraphicsFromGroups, resetConnectPreviewState, setActiveLayerId, setConnectSource, setContextMenu, setGraphArrays, setGroups, setLayers, setProjectMeasurements, setRewiring, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, writeOperationLog } = __appScope;
+    const initialLayers = __appScope.layers;
+    if (initialLayers.length <= 1) {
       showGlobalMessage("至少需要保留一个图层。");
       return;
     }
-    const layer = layers.find((item: ModelLayer) => item.id === layerId);
+    const layer = initialLayers.find((item: ModelLayer) => item.id === layerId);
     if (!layer) {
       return;
     }
-    const nodeIdsInLayer = nodes
+    const initialNodeIdsInLayer = __appScope.nodes
       .filter((node: ModelNode) => (node.layerId ?? DEFAULT_MODEL_LAYER_ID) === layerId)
       .map((node: ModelNode) => node.id);
-    if (nodeIdsInLayer.length > 0 && !await showGlobalConfirm(`删除图层“${layer.name}”？该图层内共有 ${nodeIdsInLayer.length} 个图元，继续删除将同时删除这些图元及相关联络线。是否继续？`)) {
+    if (initialNodeIdsInLayer.length > 0 && !await showGlobalConfirm(`删除图层“${layer.name}”？该图层内共有 ${initialNodeIdsInLayer.length} 个图元，继续删除将同时删除这些图元及相关联络线。是否继续？`)) {
       return;
     }
+    // await 恢复后经 __appScopeRef 读取最新图状态快照，避免确认弹窗停留期间的状态变更被旧闭包覆盖
+    const latest = (__appScope.__appScopeRef?.current as ProjectCanvasScope | undefined) ?? __appScope;
+    if (latest.layers.length <= 1 || !latest.layers.some((item: ModelLayer) => item.id === layerId)) {
+      return;
+    }
+    const nodeIdsInLayer = latest.nodes
+      .filter((node: ModelNode) => (node.layerId ?? DEFAULT_MODEL_LAYER_ID) === layerId)
+      .map((node: ModelNode) => node.id);
     pushUndoSnapshot();
-    const result = deleteNodesWithConnectedEdges(nodes, edges, nodeIdsInLayer);
-    const remainingLayers = layers.filter((item: ModelLayer) => item.id !== layerId);
-    const nextActiveLayerId = activeLayerId === layerId
+    const result = deleteNodesWithConnectedEdges(latest.nodes, latest.edges, nodeIdsInLayer);
+    const remainingLayers = latest.layers.filter((item: ModelLayer) => item.id !== layerId);
+    const nextActiveLayerId = latest.activeLayerId === layerId
       ? remainingLayers.find((item: ModelLayer) => item.visible)?.id ?? remainingLayers[0]?.id ?? DEFAULT_MODEL_LAYER_ID
-      : activeLayerId;
+      : latest.activeLayerId;
     const nextLayers = remainingLayers.map((item: ModelLayer) => item.id === nextActiveLayerId ? { ...item, visible: true } : item);
     const remainingEdgeIds = new Set(result.edges.map((edge: Edge) => edge.id));
-    const removedEdgeIds = edges.filter((edge: Edge) => !remainingEdgeIds.has(edge.id)).map((edge: Edge) => edge.id);
+    const removedEdgeIds = latest.edges.filter((edge: Edge) => !remainingEdgeIds.has(edge.id)).map((edge: Edge) => edge.id);
     // 删除收尾:容器在本图层而成员在别图层时归属会悬空 / 绑定设备被删要解绑 → 与删除/剪切同源(见 helper)
-    const nextNodes = finalizeContainerAfterNodeDeletion(nodes, result.nodes, nodeIdsInLayer);
-    const unbindNotice = containerGatewayUnbindNotice(nodes, nodeIdsInLayer);
+    const nextNodes = finalizeContainerAfterNodeDeletion(latest.nodes, result.nodes, nodeIdsInLayer);
+    const unbindNotice = containerGatewayUnbindNotice(latest.nodes, nodeIdsInLayer);
     setGraphArrays(nextNodes, result.edges);
-    setGroups(normalizeModelGroups(removeGraphicsFromGroups(groups, nodeIdsInLayer, removedEdgeIds), nextNodes, result.edges));
+    setGroups(normalizeModelGroups(removeGraphicsFromGroups(latest.groups, nodeIdsInLayer, removedEdgeIds), nextNodes, result.edges));
     setProjectMeasurements((current: ProjectMeasurementConfig) => normalizeProjectMeasurements(current, nextNodes));
     setLayers(nextLayers);
     setActiveLayerId(nextActiveLayerId);
@@ -1018,13 +1027,15 @@ export function createRenderMeasurementEditorDialog(__appScope: ProjectCanvasSco
 
 export function createSaveCurrentProject(__appScope: ProjectCanvasScope) {
   return async (targetId?: string) => {
-  const { activeProjectKey, activeSchemeKey, clearRefreshRecoveryProject, createSavedProject, currentGraphDirtyBaseline, currentModelSelectionRef, currentProject, deferredMoveOptimizationCancelRef, deferredRoutableLineRouteRepairCancelRef, finalizeSavedGlobalLineProjectNodes, findProjectRecordByNameInScheme, findSavedSchemeById, findSchemeForProject, graphDirtyBaselineRef, projectById, projectName, rememberPersistedSchemesPayload, saveActiveProjectPointer, saveBackendProjectRecord, savedSchemePathForId, savedUndoStackLengthRef, schemes, selectedSchemeId, serializeSchemesForStorage, setActiveProjectKey, setActiveSchemeKey, setHasUnsavedChanges, setProjectName, setSchemes, suppressNextGraphDirtyRef, undoStack, upsertSavedProjectInScheme, writeOperationLog } = __appScope;
+  const { clearRefreshRecoveryProject, createSavedProject, currentGraphDirtyBaseline, currentModelSelectionRef, currentProject, deferredMoveOptimizationCancelRef, deferredRoutableLineRouteRepairCancelRef, finalizeSavedGlobalLineProjectNodes, findProjectRecordByNameInScheme, findSavedSchemeById, findSchemeForProject, graphDirtyBaselineRef, projectById, rememberPersistedSchemesPayload, saveActiveProjectPointer, saveBackendProjectRecord, savedSchemePathForId, savedUndoStackLengthRef, selectedSchemeId, serializeSchemesForStorage, setActiveProjectKey, setActiveSchemeKey, setHasUnsavedChanges, setProjectName, setSchemes, suppressNextGraphDirtyRef, undoStack, upsertSavedProjectInScheme, writeOperationLog } = __appScope;
+    const latestScope = () => (__appScope.__appScopeRef?.current as ProjectCanvasScope | undefined) ?? __appScope;
     const sendFrontendExportsAfterSave = async (savedProject: Record<string, any>) => {
-      if (!isFrontendExportMode(__appScope)) {
+      const scopeSnapshot = latestScope();
+      if (!isFrontendExportMode(scopeSnapshot as any)) {
         return;
       }
       try {
-        await sendFrontendExportArtifacts(__appScope, savedProject);
+        await sendFrontendExportArtifacts(scopeSnapshot as any, savedProject);
         writeOperationLog("前端模式导出已发送：CIM/XML、E 文件、SVG");
       } catch (error) {
         const message = error instanceof Error ? error.message : "前端模式导出发送失败。";
@@ -1032,16 +1043,21 @@ export function createSaveCurrentProject(__appScope: ProjectCanvasScope) {
         writeOperationLog(`前端模式导出发送失败：${message}`);
       }
     };
+    const initial = latestScope();
+    const initialActiveProjectKey = initial.activeProjectKey;
+    const initialActiveSchemeKey = initial.activeSchemeKey;
+    const initialProjectName = initial.projectName;
+    const initialSchemes = initial.schemes;
     const currentSelection = currentModelSelectionRef?.current;
-    const currentProjectKey = currentSelection?.projectKey || activeProjectKey;
-    const currentSchemeKey = currentSelection?.schemeKey || activeSchemeKey;
+    const currentProjectKey = currentSelection?.projectKey || initialActiveProjectKey;
+    const currentSchemeKey = currentSelection?.schemeKey || initialActiveSchemeKey;
     modelTrace("save-start", {
       requestedTargetId: targetId ?? "",
       currentProjectKey,
       currentSchemeKey,
-      activeProjectKey,
-      activeSchemeKey,
-      projectName,
+      activeProjectKey: initialActiveProjectKey,
+      activeSchemeKey: initialActiveSchemeKey,
+      projectName: initialProjectName,
       loading: currentSelection?.loading ?? false,
       nodeCount: __appScope.nodes?.length ?? 0,
       initialPointer: __appScope.latestActiveProjectPointerRef?.current
@@ -1054,7 +1070,7 @@ export function createSaveCurrentProject(__appScope: ProjectCanvasScope) {
       targetId = currentProjectKey;
     }
     const existingTargetProject = targetId ? projectById.get(targetId) : undefined;
-    if ((!targetId || !existingTargetProject) && schemes.length === 0) {
+    if ((!targetId || !existingTargetProject) && initialSchemes.length === 0) {
       showGlobalMessage("没有可保存的方案和模型，请先新建方案或导入方案。");
       writeOperationLog("方案为空、模型为空，无法保存");
       return false;
@@ -1078,12 +1094,12 @@ export function createSaveCurrentProject(__appScope: ProjectCanvasScope) {
       const existing = existingTargetProject;
       const record: SavedProjectRecord = {
         ...existing,
-        name: projectName,
+        name: initialProjectName,
         project: currentProject(),
         updatedAt: new Date().toISOString()
       };
       const ownerScheme = findSchemeForProject(targetId);
-      const ownerSchemePath = ownerScheme ? savedSchemePathForId(schemes, ownerScheme.id) ?? [ownerScheme.name] : [];
+      const ownerSchemePath = ownerScheme ? savedSchemePathForId(initialSchemes, ownerScheme.id) ?? [ownerScheme.name] : [];
       if (!ownerScheme || ownerSchemePath.length === 0) {
         showGlobalMessage("当前模型没有所属方案路径，无法保存到后台目录。");
         writeOperationLog(`保存模型到后台失败：${record.name}`);
@@ -1099,14 +1115,15 @@ export function createSaveCurrentProject(__appScope: ProjectCanvasScope) {
         return false;
       }
       const savedGraphNodes = await finalizeSavedGlobalLines(savedRecord);
-      const nextSchemes = upsertSavedProjectInScheme(schemes, ownerScheme.id, savedRecord);
+      const latestAfterSave = latestScope();
+      const nextSchemes = upsertSavedProjectInScheme(latestAfterSave.schemes, ownerScheme.id, savedRecord);
       setSchemes(nextSchemes);
       rememberPersistedSchemesPayload(serializeSchemesForStorage(nextSchemes));
       if (currentModelSelectionRef) {
         currentModelSelectionRef.current = { projectKey: targetId, schemeKey: currentSchemeKey || ownerScheme.id || selectedSchemeId, loading: false };
       }
       setActiveProjectKey(targetId);
-      if (savedRecord.name !== projectName) {
+      if (savedRecord.name !== latestAfterSave.projectName) {
         suppressNextGraphDirtyRef.current += 1;
         setProjectName(savedRecord.name);
       }
@@ -1123,8 +1140,8 @@ export function createSaveCurrentProject(__appScope: ProjectCanvasScope) {
       modelTrace("save-complete", { branch: "existing", targetId, savedName: savedRecord.name, activeProjectKey: targetId, nodeCount: record.project?.nodes?.length ?? 0 });
       return true;
     }
-    const targetSchemeId = activeSchemeKey || selectedSchemeId || schemes[0]?.id || "";
-    const fallbackSchemes = schemes;
+    const targetSchemeId = initialActiveSchemeKey || selectedSchemeId || initialSchemes[0]?.id || "";
+    const fallbackSchemes = initialSchemes;
     const resolvedSchemeId = findSavedSchemeById(fallbackSchemes, targetSchemeId) ? targetSchemeId : fallbackSchemes[0]?.id ?? "";
     if (!resolvedSchemeId) {
       showGlobalMessage("没有可保存的方案和模型，请先新建方案或导入方案。");
@@ -1132,13 +1149,13 @@ export function createSaveCurrentProject(__appScope: ProjectCanvasScope) {
       return false;
     }
     const targetScheme = findSavedSchemeById(fallbackSchemes, resolvedSchemeId);
-    const recoveredRecord = findProjectRecordByNameInScheme(targetScheme, projectName);
+    const recoveredRecord = findProjectRecordByNameInScheme(targetScheme, initialProjectName);
     const projectSnapshot = currentProject();
-    const createdRecord = createSavedProject(projectName, projectSnapshot);
+    const createdRecord = createSavedProject(initialProjectName, projectSnapshot);
     const record: SavedProjectRecord = recoveredRecord
       ? {
           ...recoveredRecord,
-          name: projectName,
+          name: initialProjectName,
           project: projectSnapshot,
           updatedAt: new Date().toISOString()
         }
@@ -1154,7 +1171,8 @@ export function createSaveCurrentProject(__appScope: ProjectCanvasScope) {
       return false;
     }
     const savedGraphNodes = await finalizeSavedGlobalLines(savedRecord);
-    const nextSchemes = upsertSavedProjectInScheme(fallbackSchemes, resolvedSchemeId, savedRecord);
+    const latestAfterFallbackSave = latestScope();
+    const nextSchemes = upsertSavedProjectInScheme(latestAfterFallbackSave.schemes, resolvedSchemeId, savedRecord);
     setSchemes(nextSchemes);
     rememberPersistedSchemesPayload(serializeSchemesForStorage(nextSchemes));
     if (currentModelSelectionRef) {
@@ -1179,7 +1197,8 @@ export function createSaveCurrentProject(__appScope: ProjectCanvasScope) {
 
 export function createRenameProjectRecord(__appScope: ProjectCanvasScope) {
   return async (project: SavedProjectRecord) => {
-  const { activeProjectKey, findSchemeForProject, handleBackendSchemeMutationFailure, hasSameName, renameSavedProject, saveBackendProjectRecord, schemePathForScheme, setProjectName, setSchemes, upsertSavedProjectInScheme } = __appScope;
+  const { findSchemeForProject, handleBackendSchemeMutationFailure, hasSameName, renameSavedProject, saveBackendProjectRecord, schemePathForScheme, setProjectName, setSchemes, upsertSavedProjectInScheme } = __appScope;
+    const latestScope = () => (__appScope.__appScopeRef?.current as ProjectCanvasScope | undefined) ?? __appScope;
     const nextName = await promptText("请输入新的模型名称", project.name);
     if (!nextName) {
       return;
@@ -1206,7 +1225,7 @@ export function createRenameProjectRecord(__appScope: ProjectCanvasScope) {
         }
       }
     }
-    if (activeProjectKey === project.id) {
+    if (latestScope().activeProjectKey === project.id) {
       setProjectName(nextName.trim() || "未命名模型");
     }
   };
@@ -1310,16 +1329,19 @@ export function createDuplicateSelectedSchemeRecords(__appScope: ProjectCanvasSc
 
 export function createDeleteProjectRecord(__appScope: ProjectCanvasScope) {
   return async (project: SavedProjectRecord) => {
-  const { activeProjectKey, clearActiveProjectDisplay, clearRecordSelection, deleteBackendProjectRecord, deleteSavedProjectsFromSchemes, handleBackendSchemeMutationFailure, loadSavedProjectRecord, nextSavedProjectAfterProjectDeletion, schemePathForProject, schemes, selectedProjectId, setSchemes } = __appScope;
-    const deletingActiveProject = project.id === activeProjectKey;
-    const confirmationMessage = deletingActiveProject
+  const { clearActiveProjectDisplay, clearRecordSelection, deleteBackendProjectRecord, deleteSavedProjectsFromSchemes, handleBackendSchemeMutationFailure, loadSavedProjectRecord, nextSavedProjectAfterProjectDeletion, schemePathForProject, setSchemes } = __appScope;
+    const latestScope = () => (__appScope.__appScopeRef?.current as ProjectCanvasScope | undefined) ?? __appScope;
+    const initialDeletingActive = project.id === latestScope().activeProjectKey;
+    const confirmationMessage = initialDeletingActive
       ? `当前加载模型“${project.name}”将被删除。删除后会自动切换到同方案的相邻模型；若没有相邻模型，将清空画布。是否继续？`
       : `删除模型“${project.name}”？`;
     if (!await showGlobalConfirm(confirmationMessage)) {
       return;
     }
+    const latest = latestScope();
+    const deletingActiveProject = project.id === latest.activeProjectKey;
     const fallbackSelection = deletingActiveProject
-      ? nextSavedProjectAfterProjectDeletion(schemes, project.id)
+      ? nextSavedProjectAfterProjectDeletion(latest.schemes, project.id)
       : null;
     const ownerPath = schemePathForProject(project.id);
     setSchemes((current: SavedSchemeRecord[]) => deleteSavedProjectsFromSchemes(current, new Set([project.id])));
@@ -1336,7 +1358,7 @@ export function createDeleteProjectRecord(__appScope: ProjectCanvasScope) {
       }
       return;
     }
-    if (selectedProjectId === project.id) {
+    if (latest.selectedProjectId === project.id) {
       clearRecordSelection();
     }
   };

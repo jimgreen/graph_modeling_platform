@@ -1023,7 +1023,8 @@ export function createResolveUnsavedChangeAction(__appScope: ProjectCanvasScope)
 
 export function createCreateSchemeRecord(__appScope: ProjectCanvasScope) {
   return async (parentSchemeId = "") => {
-  const { createSavedScheme, findSavedSchemeById, handleBackendSchemeMutationFailure, hasSameName, insertChildSavedScheme, replaceSavedSchemeById, saveBackendSchemeRecord, savedChildSchemeNames, schemePathForScheme, schemes, selectSingleScheme, setExpandedSchemeIds, setSchemes, writeOperationLog } = __appScope;
+  const { createSavedScheme, handleBackendSchemeMutationFailure, hasSameName, insertChildSavedScheme, saveBackendSchemeRecord, savedChildSchemeNames, schemePathForScheme, selectSingleScheme, setExpandedSchemeIds, setSchemes, writeOperationLog } = __appScope;
+    const latestScope = () => (__appScope.__appScopeRef?.current as ProjectCanvasScope | undefined) ?? __appScope;
     const inputName = await promptText("请输入方案名称", "新建方案");
     if (inputName === null) {
       return;
@@ -1033,7 +1034,7 @@ export function createCreateSchemeRecord(__appScope: ProjectCanvasScope) {
       showGlobalMessage("方案名称不能为空。");
       return;
     }
-    if (hasSameName(name, savedChildSchemeNames(schemes, parentSchemeId))) {
+    if (hasSameName(name, savedChildSchemeNames(latestScope().schemes, parentSchemeId))) {
       showGlobalMessage("方案名称重复，无法新建方案。");
       return;
     }
@@ -1063,7 +1064,8 @@ export function createCreateSchemeRecord(__appScope: ProjectCanvasScope) {
 
 export function createRenameSchemeRecord(__appScope: ProjectCanvasScope) {
   return async (scheme: SavedSchemeRecord) => {
-  const { handleBackendSchemeMutationFailure, hasSameName, renameSavedScheme, saveBackendSchemeRecord, savedSchemeSiblingNames, schemePathForScheme, schemes, setSchemes } = __appScope;
+  const { handleBackendSchemeMutationFailure, hasSameName, renameSavedScheme, saveBackendSchemeRecord, savedSchemeSiblingNames, schemePathForScheme, setSchemes } = __appScope;
+    const latestScope = () => (__appScope.__appScopeRef?.current as ProjectCanvasScope | undefined) ?? __appScope;
     const nextName = await promptText("请输入新的方案名称", scheme.name);
     if (!nextName) {
       return;
@@ -1073,7 +1075,7 @@ export function createRenameSchemeRecord(__appScope: ProjectCanvasScope) {
       showGlobalMessage("方案名称不能为空。");
       return;
     }
-    if (hasSameName(name, savedSchemeSiblingNames(schemes, scheme.id, scheme.id))) {
+    if (hasSameName(name, savedSchemeSiblingNames(latestScope().schemes, scheme.id, scheme.id))) {
       showGlobalMessage("方案名称重复，无法修改。");
       return;
     }
@@ -1116,23 +1118,27 @@ export function createDuplicateSchemeRecord(__appScope: ProjectCanvasScope) {
 
 export function createDeleteSchemeRecord(__appScope: ProjectCanvasScope) {
   return async (scheme: SavedSchemeRecord) => {
-  const { activeSchemeKey, clearActiveProjectDisplay, clearRecordSelection, deleteBackendSchemeRecord, deleteSavedScheme, flattenSavedSchemes, handleBackendSchemeMutationFailure, loadSavedProjectRecord, nextSavedProjectAfterSchemeDeletion, schemePathForScheme, schemes, selectedSchemeId, setSchemes } = __appScope;
+  const { clearActiveProjectDisplay, clearRecordSelection, deleteBackendSchemeRecord, deleteSavedScheme, flattenSavedSchemes, handleBackendSchemeMutationFailure, loadSavedProjectRecord, nextSavedProjectAfterSchemeDeletion, schemePathForScheme, setSchemes } = __appScope;
+    const latestScope = () => (__appScope.__appScopeRef?.current as ProjectCanvasScope | undefined) ?? __appScope;
     const deletingSchemeIds = new Set(flattenSavedSchemes([scheme]).map((item: SavedSchemeRecord) => item.id));
-    const emptyDisplayMessage = flattenSavedSchemes(schemes).some((item: SavedSchemeRecord) => !deletingSchemeIds.has(item.id))
-      ? "剩余方案没有可显示模型，画布已清空。"
-      : "所有方案已删除，画布已清空。";
-    const deletingActiveScheme = Boolean(activeSchemeKey && deletingSchemeIds.has(activeSchemeKey));
-    const confirmationMessage = deletingActiveScheme
+    const initialScope = latestScope();
+    const initialDeletingActive = Boolean(initialScope.activeSchemeKey && deletingSchemeIds.has(initialScope.activeSchemeKey));
+    const confirmationMessage = initialDeletingActive
       ? `当前加载模型所在方案“${scheme.name}”将被删除。删除后会自动切换到相邻方案的模型；若没有可用模型，将清空画布。是否继续？`
       : `删除方案“${scheme.name}”及其全部模型？`;
     if (!await showGlobalConfirm(confirmationMessage)) {
       return;
     }
+    const latest = latestScope();
+    const emptyDisplayMessage = flattenSavedSchemes(latest.schemes).some((item: SavedSchemeRecord) => !deletingSchemeIds.has(item.id))
+      ? "剩余方案没有可显示模型，画布已清空。"
+      : "所有方案已删除，画布已清空。";
+    const deletingActiveScheme = Boolean(latest.activeSchemeKey && deletingSchemeIds.has(latest.activeSchemeKey));
     const fallbackSelection = deletingActiveScheme
-      ? nextSavedProjectAfterSchemeDeletion(schemes, activeSchemeKey, deletingSchemeIds)
+      ? nextSavedProjectAfterSchemeDeletion(latest.schemes, latest.activeSchemeKey, deletingSchemeIds)
       : null;
     const schemePath = schemePathForScheme(scheme.id);
-    const nextSchemes = deleteSavedScheme(schemes, scheme.id);
+    const nextSchemes = deleteSavedScheme(latest.schemes, scheme.id);
     const noSchemesAfterDeletion = nextSchemes.length === 0;
     setSchemes(nextSchemes);
     if (schemePath.length > 0) {
@@ -1153,7 +1159,7 @@ export function createDeleteSchemeRecord(__appScope: ProjectCanvasScope) {
       }
       return;
     }
-    if (selectedSchemeId && deletingSchemeIds.has(selectedSchemeId)) {
+    if (latest.selectedSchemeId && deletingSchemeIds.has(latest.selectedSchemeId)) {
       clearRecordSelection();
     }
   };
@@ -1182,21 +1188,25 @@ export function createCopySelectedRecord(__appScope: ProjectCanvasScope) {
 
 export function createDeleteSelectedRecords(__appScope: ProjectCanvasScope) {
   return async () => {
-  const { activeProjectKey, activeSchemeKey, clearActiveProjectDisplay, clearRecordSelection, deleteBackendProjectRecord, deleteBackendSchemeRecord, deleteSavedProjectsFromSchemes, deleteSavedScheme, findSavedSchemeById, flattenSavedSchemes, handleBackendSchemeMutationFailure, loadSavedProjectRecord, nextSavedProjectAfterProjectBatchDeletion, nextSavedProjectAfterSchemeDeletion, projects, schemePathForProject, schemePathForScheme, schemes, selectedProjectIds, selectedSchemeIds, setSchemes } = __appScope;
-    if (selectedProjectIds.length > 0) {
-      const names = projects.filter((project: SavedProjectRecord) => selectedProjectIds.includes(project.id)).map((project: SavedProjectRecord) => project.name);
-      const selected = new Set(selectedProjectIds);
-      const deletingActiveProject = Boolean(activeProjectKey && selected.has(activeProjectKey));
-      const confirmationMessage = deletingActiveProject
+  const { clearActiveProjectDisplay, clearRecordSelection, deleteBackendProjectRecord, deleteBackendSchemeRecord, deleteSavedProjectsFromSchemes, deleteSavedScheme, findSavedSchemeById, flattenSavedSchemes, handleBackendSchemeMutationFailure, loadSavedProjectRecord, nextSavedProjectAfterProjectBatchDeletion, nextSavedProjectAfterSchemeDeletion, schemePathForProject, schemePathForScheme, setSchemes } = __appScope;
+    const latestScope = () => (__appScope.__appScopeRef?.current as ProjectCanvasScope | undefined) ?? __appScope;
+    const initial = latestScope();
+    if (initial.selectedProjectIds.length > 0) {
+      const names = initial.projects.filter((project: SavedProjectRecord) => initial.selectedProjectIds.includes(project.id)).map((project: SavedProjectRecord) => project.name);
+      const selected = new Set(initial.selectedProjectIds);
+      const initialDeletingActive = Boolean(initial.activeProjectKey && selected.has(initial.activeProjectKey));
+      const confirmationMessage = initialDeletingActive
         ? `选中的 ${names.length} 个模型包含当前加载模型。删除后会自动切换到同方案的相邻模型；若没有相邻模型，将清空画布。是否继续？`
         : `删除选中的 ${names.length} 个模型？`;
       if (!await showGlobalConfirm(confirmationMessage)) {
         return;
       }
+      const latest = latestScope();
+      const deletingActiveProject = Boolean(latest.activeProjectKey && selected.has(latest.activeProjectKey));
       const fallbackSelection = deletingActiveProject
-        ? nextSavedProjectAfterProjectBatchDeletion(schemes, activeProjectKey, selected)
+        ? nextSavedProjectAfterProjectBatchDeletion(latest.schemes, latest.activeProjectKey, selected)
         : null;
-      const backendDeletes = projects
+      const backendDeletes = latest.projects
         .filter((project: SavedProjectRecord) => selected.has(project.id))
         .map((project: SavedProjectRecord) => ({ project, schemePath: schemePathForProject(project.id) }))
         .filter((item: { project: SavedProjectRecord; schemePath: string[] }) => item.schemePath.length > 0);
@@ -1217,30 +1227,33 @@ export function createDeleteSelectedRecords(__appScope: ProjectCanvasScope) {
       clearRecordSelection();
       return;
     }
-    if (selectedSchemeIds.length > 0) {
+    if (initial.selectedSchemeIds.length > 0) {
+      const targetSchemeIds = [...initial.selectedSchemeIds];
       const deletingSchemeIds = new Set(
-        selectedSchemeIds.flatMap((schemeId: string) => {
-          const scheme = findSavedSchemeById(schemes, schemeId);
+        targetSchemeIds.flatMap((schemeId: string) => {
+          const scheme = findSavedSchemeById(initial.schemes, schemeId);
           return scheme ? flattenSavedSchemes([scheme]).map((item: SavedSchemeRecord) => item.id) : [schemeId];
         })
       );
-      const emptyDisplayMessage = flattenSavedSchemes(schemes).some((item: SavedSchemeRecord) => !deletingSchemeIds.has(item.id))
-        ? "剩余方案没有可显示模型，画布已清空。"
-        : "所有方案已删除，画布已清空。";
-      const deletingActiveScheme = Boolean(activeSchemeKey && deletingSchemeIds.has(activeSchemeKey));
-      const confirmationMessage = deletingActiveScheme
-        ? `选中的 ${selectedSchemeIds.length} 个方案包含当前加载模型所在方案。删除后会自动切换到相邻方案的模型；若没有可用模型，将清空画布。是否继续？`
-        : `删除选中的 ${selectedSchemeIds.length} 个方案及其全部模型？`;
+      const initialDeletingActiveScheme = Boolean(initial.activeSchemeKey && deletingSchemeIds.has(initial.activeSchemeKey));
+      const confirmationMessage = initialDeletingActiveScheme
+        ? `选中的 ${targetSchemeIds.length} 个方案包含当前加载模型所在方案。删除后会自动切换到相邻方案的模型；若没有可用模型，将清空画布。是否继续？`
+        : `删除选中的 ${targetSchemeIds.length} 个方案及其全部模型？`;
       if (!await showGlobalConfirm(confirmationMessage)) {
         return;
       }
+      const latest = latestScope();
+      const emptyDisplayMessage = flattenSavedSchemes(latest.schemes).some((item: SavedSchemeRecord) => !deletingSchemeIds.has(item.id))
+        ? "剩余方案没有可显示模型，画布已清空。"
+        : "所有方案已删除，画布已清空。";
+      const deletingActiveScheme = Boolean(latest.activeSchemeKey && deletingSchemeIds.has(latest.activeSchemeKey));
       const fallbackSelection = deletingActiveScheme
-        ? nextSavedProjectAfterSchemeDeletion(schemes, activeSchemeKey, deletingSchemeIds)
+        ? nextSavedProjectAfterSchemeDeletion(latest.schemes, latest.activeSchemeKey, deletingSchemeIds)
         : null;
-      const backendSchemeDeletes = selectedSchemeIds
-        .map((schemeId: string) => ({ schemeId, schemePath: schemePathForScheme(schemeId), scheme: findSavedSchemeById(schemes, schemeId) }))
+      const backendSchemeDeletes = targetSchemeIds
+        .map((schemeId: string) => ({ schemeId, schemePath: schemePathForScheme(schemeId), scheme: findSavedSchemeById(latest.schemes, schemeId) }))
         .filter((item: { schemeId: string; schemePath: string[]; scheme?: SavedSchemeRecord }) => item.schemePath.length > 0 && item.scheme);
-      const nextSchemes = selectedSchemeIds.reduce((updatedSchemes: SavedSchemeRecord[], schemeId: string) => deleteSavedScheme(updatedSchemes, schemeId), schemes);
+      const nextSchemes = targetSchemeIds.reduce((updatedSchemes: SavedSchemeRecord[], schemeId: string) => deleteSavedScheme(updatedSchemes, schemeId), latest.schemes);
       const noSchemesAfterDeletion = nextSchemes.length === 0;
       setSchemes(nextSchemes);
       for (const item of backendSchemeDeletes) {

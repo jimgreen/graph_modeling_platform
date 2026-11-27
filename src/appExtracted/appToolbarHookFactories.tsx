@@ -12,6 +12,7 @@ import { containerFirstComparator, isContainerNode } from "../acContainer";
 import { computeMeasurementColumnPositions } from "./appGraphMeasurementFactories";
 import { isCommandPaletteShortcut, isShortcutHelpShortcut } from "../keyboardShortcuts";
 import { toggleCommandPalette } from "../commandPaletteStore";
+import { createRafLatestScheduler } from "../lib/rafCoalescer";
 // LOD 分块里的一条路由元素：route 存几何，edge 存身份，另带渲染态标记。
 type LodRouteChunkItem = {
   route: DragGhostRoute;
@@ -3394,9 +3395,9 @@ export function createAppHookCallback100(__appScope: ToolbarHookScope) {
     if (!sidePanelResize) {
       return;
     }
-    const handlePointerMove = (event: globalThis.PointerEvent) => {
+    const resizeScheduler = createRafLatestScheduler<number>((clientX) => {
       const viewportMax = clampNumber(window.innerWidth - 96, SIDE_PANEL_MIN_WIDTH, SIDE_PANEL_MAX_WIDTH);
-      const deltaX = event.clientX - sidePanelResize.startX;
+      const deltaX = clientX - sidePanelResize.startX;
       const nextWidth =
         sidePanelResize.side === "left"
           ? sidePanelResize.startWidth + deltaX
@@ -3407,14 +3408,19 @@ export function createAppHookCallback100(__appScope: ToolbarHookScope) {
       } else {
         setRightPanelWidth(clampedWidth);
       }
+    }, { leading: true });
+    const handlePointerMove = (event: globalThis.PointerEvent) => {
+      resizeScheduler.schedule(event.clientX);
     };
     const handlePointerUp = () => {
+      resizeScheduler.flush();
       setSidePanelResize(null);
     };
     window.addEventListener("pointermove", handlePointerMove, true);
     window.addEventListener("pointerup", handlePointerUp, true);
     window.addEventListener("pointercancel", handlePointerUp, true);
     return () => {
+      resizeScheduler.cancel();
       window.removeEventListener("pointermove", handlePointerMove, true);
       window.removeEventListener("pointerup", handlePointerUp, true);
       window.removeEventListener("pointercancel", handlePointerUp, true);
@@ -3566,21 +3572,26 @@ export function createAppHookCallback103(__appScope: ToolbarHookScope) {
     if (!topologyWarningPanelDrag) {
       return;
     }
-    const handlePointerMove = (event: globalThis.PointerEvent) => {
-      const nextLeft = topologyWarningPanelDrag.startLeft + event.clientX - topologyWarningPanelDrag.startClientX;
-      const nextTop = topologyWarningPanelDrag.startTop + event.clientY - topologyWarningPanelDrag.startClientY;
+    const dragScheduler = createRafLatestScheduler<{ clientX: number; clientY: number }>(({ clientX, clientY }) => {
+      const nextLeft = topologyWarningPanelDrag.startLeft + clientX - topologyWarningPanelDrag.startClientX;
+      const nextTop = topologyWarningPanelDrag.startTop + clientY - topologyWarningPanelDrag.startClientY;
       setTopologyWarningPanelPosition({
         left: clampNumber(nextLeft, TOPOLOGY_WARNING_PANEL_MARGIN, Math.max(TOPOLOGY_WARNING_PANEL_MARGIN, window.innerWidth - topologyWarningPanelWidth - TOPOLOGY_WARNING_PANEL_MARGIN)),
         top: clampNumber(nextTop, TOPOLOGY_WARNING_PANEL_MARGIN, Math.max(TOPOLOGY_WARNING_PANEL_MARGIN, window.innerHeight - topologyWarningPanelHeight - TOPOLOGY_WARNING_PANEL_MARGIN))
       });
+    }, { leading: true });
+    const handlePointerMove = (event: globalThis.PointerEvent) => {
+      dragScheduler.schedule({ clientX: event.clientX, clientY: event.clientY });
     };
     const handlePointerUp = () => {
+      dragScheduler.flush();
       setTopologyWarningPanelDrag(null);
     };
     window.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", handlePointerUp);
     window.addEventListener("pointercancel", handlePointerUp);
     return () => {
+      dragScheduler.cancel();
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerUp);
@@ -3594,31 +3605,37 @@ export function createAppHookCallback104(__appScope: ToolbarHookScope) {
     if (!topologyWarningPanelResize) {
       return;
     }
-    const handlePointerMove = (event: globalThis.PointerEvent) => {
+    // 起始锚点在单次缩放会话内恒定，无需在每次 pointermove 重复生成新对象触发重渲染
+    setTopologyWarningPanelPosition({
+      left: topologyWarningPanelResize.startLeft,
+      top: topologyWarningPanelResize.startTop
+    });
+    const resizeScheduler = createRafLatestScheduler<{ clientX: number; clientY: number }>(({ clientX, clientY }) => {
       const maxWidth = clampNumber(window.innerWidth - topologyWarningPanelResize.startLeft - TOPOLOGY_WARNING_PANEL_MARGIN, TOPOLOGY_WARNING_PANEL_MIN_WIDTH, TOPOLOGY_WARNING_PANEL_MAX_WIDTH);
       const maxHeight = clampNumber(window.innerHeight - topologyWarningPanelResize.startTop - TOPOLOGY_WARNING_PANEL_MARGIN, VALIDATION_PANEL_MIN_HEIGHT, VALIDATION_PANEL_MAX_HEIGHT);
       setTopologyWarningPanelWidth(clampPanelDimension(
-        topologyWarningPanelResize.startWidth + event.clientX - topologyWarningPanelResize.startClientX,
+        topologyWarningPanelResize.startWidth + clientX - topologyWarningPanelResize.startClientX,
         TOPOLOGY_WARNING_PANEL_MIN_WIDTH,
         maxWidth
       ));
       setTopologyWarningPanelHeight(clampPanelDimension(
-        topologyWarningPanelResize.startHeight + event.clientY - topologyWarningPanelResize.startClientY,
+        topologyWarningPanelResize.startHeight + clientY - topologyWarningPanelResize.startClientY,
         VALIDATION_PANEL_MIN_HEIGHT,
         maxHeight
       ));
-      setTopologyWarningPanelPosition({
-        left: topologyWarningPanelResize.startLeft,
-        top: topologyWarningPanelResize.startTop
-      });
+    }, { leading: true });
+    const handlePointerMove = (event: globalThis.PointerEvent) => {
+      resizeScheduler.schedule({ clientX: event.clientX, clientY: event.clientY });
     };
     const handlePointerUp = () => {
+      resizeScheduler.flush();
       setTopologyWarningPanelResize(null);
     };
     window.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", handlePointerUp);
     window.addEventListener("pointercancel", handlePointerUp);
     return () => {
+      resizeScheduler.cancel();
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerUp);
@@ -3632,26 +3649,32 @@ export function createAppHookCallback105(__appScope: ToolbarHookScope) {
     if (!nodeDoubleClickDialogDrag) {
       return;
     }
+    const dragScheduler = createRafLatestScheduler<{ clientX: number; clientY: number }>(({ clientX, clientY }) => {
+      setNodeDoubleClickDialogLayout(clampNodeDoubleClickDialogLayout({
+        left: nodeDoubleClickDialogDrag.startLeft + clientX - nodeDoubleClickDialogDrag.startClientX,
+        top: nodeDoubleClickDialogDrag.startTop + clientY - nodeDoubleClickDialogDrag.startClientY,
+        width: nodeDoubleClickDialogDrag.startWidth,
+        height: nodeDoubleClickDialogDrag.startHeight
+      }));
+    }, { leading: true });
     const handlePointerMove = (event: globalThis.PointerEvent) => {
       if (event.buttons === 0) {
+        dragScheduler.cancel();
         setNodeDoubleClickDialogDrag(null);
         return;
       }
       event.preventDefault();
-      setNodeDoubleClickDialogLayout(clampNodeDoubleClickDialogLayout({
-        left: nodeDoubleClickDialogDrag.startLeft + event.clientX - nodeDoubleClickDialogDrag.startClientX,
-        top: nodeDoubleClickDialogDrag.startTop + event.clientY - nodeDoubleClickDialogDrag.startClientY,
-        width: nodeDoubleClickDialogDrag.startWidth,
-        height: nodeDoubleClickDialogDrag.startHeight
-      }));
+      dragScheduler.schedule({ clientX: event.clientX, clientY: event.clientY });
     };
     const handlePointerUp = () => {
+      dragScheduler.flush();
       setNodeDoubleClickDialogDrag(null);
     };
     window.addEventListener("pointermove", handlePointerMove, true);
     window.addEventListener("pointerup", handlePointerUp, true);
     window.addEventListener("pointercancel", handlePointerUp, true);
     return () => {
+      dragScheduler.cancel();
       window.removeEventListener("pointermove", handlePointerMove, true);
       window.removeEventListener("pointerup", handlePointerUp, true);
       window.removeEventListener("pointercancel", handlePointerUp, true);
@@ -3665,12 +3688,7 @@ export function createAppHookCallback106(__appScope: ToolbarHookScope) {
     if (!nodeDoubleClickDialogResize) {
       return;
     }
-    const handlePointerMove = (event: globalThis.PointerEvent) => {
-      if (event.buttons === 0) {
-        setNodeDoubleClickDialogResize(null);
-        return;
-      }
-      event.preventDefault();
+    const resizeScheduler = createRafLatestScheduler<{ clientX: number; clientY: number }>(({ clientX, clientY }) => {
       const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
       const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
       const maxWidth = Math.max(
@@ -3685,24 +3703,35 @@ export function createAppHookCallback106(__appScope: ToolbarHookScope) {
         left: nodeDoubleClickDialogResize.startLeft,
         top: nodeDoubleClickDialogResize.startTop,
         width: clampPanelDimension(
-          nodeDoubleClickDialogResize.startWidth + event.clientX - nodeDoubleClickDialogResize.startClientX,
+          nodeDoubleClickDialogResize.startWidth + clientX - nodeDoubleClickDialogResize.startClientX,
           NODE_DOUBLE_CLICK_DIALOG_MIN_WIDTH,
           maxWidth
         ),
         height: clampPanelDimension(
-          nodeDoubleClickDialogResize.startHeight + event.clientY - nodeDoubleClickDialogResize.startClientY,
+          nodeDoubleClickDialogResize.startHeight + clientY - nodeDoubleClickDialogResize.startClientY,
           NODE_DOUBLE_CLICK_DIALOG_MIN_HEIGHT,
           maxHeight
         )
       }));
+    }, { leading: true });
+    const handlePointerMove = (event: globalThis.PointerEvent) => {
+      if (event.buttons === 0) {
+        resizeScheduler.cancel();
+        setNodeDoubleClickDialogResize(null);
+        return;
+      }
+      event.preventDefault();
+      resizeScheduler.schedule({ clientX: event.clientX, clientY: event.clientY });
     };
     const handlePointerUp = () => {
+      resizeScheduler.flush();
       setNodeDoubleClickDialogResize(null);
     };
     window.addEventListener("pointermove", handlePointerMove, true);
     window.addEventListener("pointerup", handlePointerUp, true);
     window.addEventListener("pointercancel", handlePointerUp, true);
     return () => {
+      resizeScheduler.cancel();
       window.removeEventListener("pointermove", handlePointerMove, true);
       window.removeEventListener("pointerup", handlePointerUp, true);
       window.removeEventListener("pointercancel", handlePointerUp, true);
@@ -3716,15 +3745,10 @@ export function createAppHookCallback107(__appScope: ToolbarHookScope) {
     if (!deviceLibraryDialogDrag) {
       return;
     }
-    const handlePointerMove = (event: globalThis.PointerEvent) => {
-      if (event.buttons === 0) {
-        setDeviceLibraryDialogDrag(null);
-        return;
-      }
-      event.preventDefault();
+    const dragScheduler = createRafLatestScheduler<{ clientX: number; clientY: number }>(({ clientX, clientY }) => {
       const nextLayout = clampDeviceLibraryDialogLayout(deviceLibraryDialogDrag.kind, {
-        left: deviceLibraryDialogDrag.startLeft + event.clientX - deviceLibraryDialogDrag.startClientX,
-        top: deviceLibraryDialogDrag.startTop + event.clientY - deviceLibraryDialogDrag.startClientY,
+        left: deviceLibraryDialogDrag.startLeft + clientX - deviceLibraryDialogDrag.startClientX,
+        top: deviceLibraryDialogDrag.startTop + clientY - deviceLibraryDialogDrag.startClientY,
         width: deviceLibraryDialogDrag.startWidth,
         height: deviceLibraryDialogDrag.startHeight
       });
@@ -3732,14 +3756,25 @@ export function createAppHookCallback107(__appScope: ToolbarHookScope) {
         ...current,
         [deviceLibraryDialogDrag.kind]: nextLayout
       }));
+    }, { leading: true });
+    const handlePointerMove = (event: globalThis.PointerEvent) => {
+      if (event.buttons === 0) {
+        dragScheduler.cancel();
+        setDeviceLibraryDialogDrag(null);
+        return;
+      }
+      event.preventDefault();
+      dragScheduler.schedule({ clientX: event.clientX, clientY: event.clientY });
     };
     const handlePointerUp = () => {
+      dragScheduler.flush();
       setDeviceLibraryDialogDrag(null);
     };
     window.addEventListener("pointermove", handlePointerMove, true);
     window.addEventListener("pointerup", handlePointerUp, true);
     window.addEventListener("pointercancel", handlePointerUp, true);
     return () => {
+      dragScheduler.cancel();
       window.removeEventListener("pointermove", handlePointerMove, true);
       window.removeEventListener("pointerup", handlePointerUp, true);
       window.removeEventListener("pointercancel", handlePointerUp, true);
@@ -3753,12 +3788,7 @@ export function createAppHookCallback108(__appScope: ToolbarHookScope) {
     if (!deviceLibraryDialogResize) {
       return;
     }
-    const handlePointerMove = (event: globalThis.PointerEvent) => {
-      if (event.buttons === 0) {
-        setDeviceLibraryDialogResize(null);
-        return;
-      }
-      event.preventDefault();
+    const resizeScheduler = createRafLatestScheduler<{ clientX: number; clientY: number }>(({ clientX, clientY }) => {
       const config = DEVICE_LIBRARY_DIALOG_CONFIG[deviceLibraryDialogResize.kind];
       const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
       const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
@@ -3774,12 +3804,12 @@ export function createAppHookCallback108(__appScope: ToolbarHookScope) {
         left: deviceLibraryDialogResize.startLeft,
         top: deviceLibraryDialogResize.startTop,
         width: clampPanelDimension(
-          deviceLibraryDialogResize.startWidth + event.clientX - deviceLibraryDialogResize.startClientX,
+          deviceLibraryDialogResize.startWidth + clientX - deviceLibraryDialogResize.startClientX,
           config.minWidth,
           maxWidth
         ),
         height: clampPanelDimension(
-          deviceLibraryDialogResize.startHeight + event.clientY - deviceLibraryDialogResize.startClientY,
+          deviceLibraryDialogResize.startHeight + clientY - deviceLibraryDialogResize.startClientY,
           config.minHeight,
           maxHeight
         )
@@ -3788,14 +3818,25 @@ export function createAppHookCallback108(__appScope: ToolbarHookScope) {
         ...current,
         [deviceLibraryDialogResize.kind]: nextLayout
       }));
+    }, { leading: true });
+    const handlePointerMove = (event: globalThis.PointerEvent) => {
+      if (event.buttons === 0) {
+        resizeScheduler.cancel();
+        setDeviceLibraryDialogResize(null);
+        return;
+      }
+      event.preventDefault();
+      resizeScheduler.schedule({ clientX: event.clientX, clientY: event.clientY });
     };
     const handlePointerUp = () => {
+      resizeScheduler.flush();
       setDeviceLibraryDialogResize(null);
     };
     window.addEventListener("pointermove", handlePointerMove, true);
     window.addEventListener("pointerup", handlePointerUp, true);
     window.addEventListener("pointercancel", handlePointerUp, true);
     return () => {
+      resizeScheduler.cancel();
       window.removeEventListener("pointermove", handlePointerMove, true);
       window.removeEventListener("pointerup", handlePointerUp, true);
       window.removeEventListener("pointercancel", handlePointerUp, true);
