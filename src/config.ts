@@ -7,8 +7,18 @@ export const API_PREFIX: string =
 // 前端 base 部署路径：由 vite define 注入 __FRONTEND_BASE__（默认 /）。非 API 请求拼接此前缀。
 declare const __FRONTEND_BASE__: string | undefined;
 
+declare const __FRONTEND_MODE__: string | undefined;
+
+declare const __BACKEND_ORIGIN__: string | undefined;
+
 export const FRONTEND_BASE: string =
   (typeof __FRONTEND_BASE__ !== "undefined" ? __FRONTEND_BASE__ : undefined) ?? "/";
+
+export const FRONTEND_EXPORT_MODE: string =
+  (typeof __FRONTEND_MODE__ !== "undefined" ? __FRONTEND_MODE__ : undefined) ?? "backend";
+
+export const BACKEND_ORIGIN: string =
+  (typeof __BACKEND_ORIGIN__ !== "undefined" ? __BACKEND_ORIGIN__ : undefined) ?? "http://127.0.0.1:5174";
 
 // 拼接前端 base + 子路径：frontendPath("/icon-library/x") -> "/app/icon-library/x"（base=/app/）；默认 / 时原样
 export const frontendPath = (subPath: string): string =>

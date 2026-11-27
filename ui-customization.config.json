@@ -12,6 +12,8 @@
     "topbar.spaceRename": true,
     "topbar.spaceDelete": true,
     "topbar.layerManagement": true,
+    "topbar.undo": true,
+    "topbar.redo": true,
     "topbar.smartAlignment": true,
     "topbar.topology": true,
     "topbar.globalLines": true,
@@ -65,5 +67,22 @@
     "module.selectionActions": true,
     "module.statusbar": true,
     "module.topologyWarning": true
-  }
+  },
+  "deviceLibrary": {
+    "categories": {
+      "直流设备": false,
+      "氢能设备": false,
+      "热能设备": false,
+      "静态图元": false
+    },
+    "componentLibraries": {},
+    "devices": {
+      "交流设备::ACContainer::ac-switch-box": false,
+      "交流设备::ACContainer::ac-distribution-box": false
+    },
+    "categoryOrder": [],
+    "componentOrder": {},
+    "deviceOrder": {}
+  },
+  "savedAt": "2026-11-26T18:18:20.714Z"
 }

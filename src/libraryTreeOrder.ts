@@ -13,6 +13,8 @@ export type LibraryTreeOrderState = {
   categoryLibraries: string[];
   /** 二级（类）显示顺序：键为归一化类别库名，值为该库下类的 section 名清单。 */
   componentLibraries: Record<string, string[]>;
+  /** 三级（具体图元）显示顺序：键为 category::componentLibrary。 */
+  deviceTemplates?: Record<string, string[]>;
   /**
    * 模型库方案树：方案同级显示顺序。
    * 键 = 父方案 id（顶层用空串），值为该层级下方案 id 清单。
@@ -53,10 +55,12 @@ export function parseLibraryTreeOrder(raw: unknown): LibraryTreeOrderState {
   const source = raw as {
     categoryLibraries?: unknown;
     componentLibraries?: unknown;
+    deviceTemplates?: unknown;
     projectSchemes?: unknown;
     projectModels?: unknown;
   };
   const componentLibraries: Record<string, string[]> = {};
+  const deviceTemplates: Record<string, string[]> = {};
   if (source.componentLibraries && typeof source.componentLibraries === "object" && !Array.isArray(source.componentLibraries)) {
     for (const [group, value] of Object.entries(source.componentLibraries)) {
       if (!group) {
@@ -68,12 +72,21 @@ export function parseLibraryTreeOrder(raw: unknown): LibraryTreeOrderState {
       }
     }
   }
-  return {
+  if (source.deviceTemplates && typeof source.deviceTemplates === "object" && !Array.isArray(source.deviceTemplates)) {
+    for (const [group, value] of Object.entries(source.deviceTemplates)) {
+      if (!group) continue;
+      const list = normalizeKeyList(value);
+      if (list.length > 0) deviceTemplates[group] = list;
+    }
+  }
+  const result: LibraryTreeOrderState = {
     categoryLibraries: normalizeKeyList(source.categoryLibraries),
     componentLibraries,
     projectSchemes: normalizeOrderBuckets(source.projectSchemes),
     projectModels: normalizeOrderBuckets(source.projectModels)
   };
+  if (Object.keys(deviceTemplates).length > 0) result.deviceTemplates = deviceTemplates;
+  return result;
 }
 
 /**

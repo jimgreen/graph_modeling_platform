@@ -1171,6 +1171,65 @@ describe("保存模型不再上传 SVG/E 产物", () => {
     // 保存请求不得再携带第 4 个产物参数（svg/eFile）
     expect(saveBackendProjectRecord.mock.calls[0]).toHaveLength(3);
   });
+
+  test("前端模式保存成功后发送 CIM/XML、E 文件和 SVG", async () => {
+    const noop = vi.fn();
+    const project = { version: 1, name: "模型一", idx: 7, canvasWidth: 800, canvasHeight: 600, nodes: [], edges: [], measurements: { groups: [] } };
+    const projectRecord = { id: "project-1", name: "模型一", project };
+    const scheme = { id: "scheme-1", name: "方案一", projects: [projectRecord], children: [] };
+    const saveBackendProjectRecord = vi.fn(async () => projectRecord);
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const saveCurrentProject = createSaveCurrentProject({
+        activeProjectKey: "project-1",
+        activeSchemeKey: "scheme-1",
+        clearRefreshRecoveryProject: noop,
+        currentGraphDirtyBaseline: () => ({ nodes: [], edges: [] }),
+        currentProject: () => project,
+        deferredMoveOptimizationCancelRef: { current: null },
+        deferredRoutableLineRouteRepairCancelRef: { current: null },
+        findSchemeForProject: () => scheme,
+        frontendExportMode: "frontend",
+        frontendBackendOrigin: "https://receiver.example",
+        graphDirtyBaselineRef: { current: null },
+        imageAssetList: [],
+        imageAssets: {},
+        libraryTemplates: [],
+        measurementConfig: { measurementTypes: [] },
+        projectById: new Map([["project-1", projectRecord]]),
+        projectName: "模型一",
+        rememberPersistedSchemesPayload: noop,
+        saveActiveProjectPointer: noop,
+        saveBackendProjectRecord,
+        safeFilePart: (name: string) => name,
+        savedSchemePathForId: () => ["方案一"],
+        savedUndoStackLengthRef: { current: 0 },
+        schemePathForScheme: () => ["方案一"],
+        schemes: [scheme],
+        selectedSchemeId: "scheme-1",
+        serializeSchemesForStorage: () => "{}",
+        setActiveProjectKey: noop,
+        setHasUnsavedChanges: noop,
+        setProjectName: noop,
+        setSchemes: noop,
+        suppressNextGraphDirtyRef: { current: 0 },
+        undoStack: [],
+        upsertSavedProjectInScheme: () => [scheme],
+        writeOperationLog: noop
+      });
+
+      await expect(saveCurrentProject()).resolves.toBe(true);
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+      expect(new Set((fetchMock.mock.calls as unknown as Array<[string, RequestInit]>).map(([url]) => String(url)))).toEqual(new Set([
+        "https://receiver.example/export/cim",
+        "https://receiver.example/export/e",
+        "https://receiver.example/export/svg"
+      ]));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });
 
 describe("saved project definition migration", () => {

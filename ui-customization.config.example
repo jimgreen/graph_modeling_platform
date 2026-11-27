@@ -65,5 +65,13 @@
     "module.selectionActions": true,
     "module.statusbar": true,
     "module.topologyWarning": true
+  },
+  "deviceLibrary": {
+    "categories": {},
+    "componentLibraries": {},
+    "devices": {},
+    "categoryOrder": [],
+    "componentOrder": {},
+    "deviceOrder": {}
   }
 }

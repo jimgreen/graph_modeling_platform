@@ -403,7 +403,7 @@ import {
   type SidePanelMode,
   type SidePanelSide
 } from "./sidePanelVisibility";
-import { readLibraryTreeOrder, type LibraryTreeOrderState } from "./libraryTreeOrder";
+import { readLibraryTreeOrder, writeLibraryTreeOrder, type LibraryTreeOrderState } from "./libraryTreeOrder";
 import {
   DEFAULT_MEASUREMENT_CONFIG,
   DEFAULT_MEASUREMENT_GROUP_BACKGROUND_COLOR,
@@ -634,6 +634,8 @@ import { mergeBuiltinSharedIconAssets } from "./sharedIconLibrary";
 const LazyInterfaceCustomizationDialog = lazy(() =>
   import("./InterfaceCustomizationDialog").then((module) => ({ default: module.InterfaceCustomizationDialog }))
 );
+import { DeviceLibraryDisplayDialog } from "./DeviceLibraryDisplayDialog";
+import { buildDeviceLibraryHierarchy } from "./deviceLibraryCustomization";
 import {
   defaultInterfaceCustomizationConfig,
   normalizeInterfaceCustomizationConfig,
@@ -781,6 +783,7 @@ const [pendingUserCustomizationImport, setPendingUserCustomizationImport] = useS
 const [interfaceCustomization, setInterfaceCustomization] = useState<InterfaceCustomizationConfig>(() => defaultInterfaceCustomizationConfig());
 const interfaceCustomizationSavedSnapshotRef = useRef<InterfaceCustomizationConfig>(interfaceCustomization);
 const [interfaceCustomizationDialogOpen, setInterfaceCustomizationDialogOpen] = useState(false);
+const [deviceLibraryDisplayDialogOpen, setDeviceLibraryDisplayDialogOpen] = useState(false);
 const [interfaceCustomizationBusy, setInterfaceCustomizationBusy] = useState(false);
 const [interfaceCustomizationStatus, setInterfaceCustomizationStatus] = useState("");
 Object.assign(__appScope, {
@@ -806,6 +809,8 @@ Object.assign(__appScope, {
   setInterfaceCustomization,
   interfaceCustomizationDialogOpen,
   setInterfaceCustomizationDialogOpen,
+  deviceLibraryDisplayDialogOpen,
+  setDeviceLibraryDisplayDialogOpen,
   interfaceCustomizationBusy,
   setInterfaceCustomizationBusy,
   interfaceCustomizationStatus,
@@ -820,6 +825,16 @@ useEffect(() => {
       const normalized = normalizeInterfaceCustomizationConfig(payload);
       interfaceCustomizationSavedSnapshotRef.current = normalized;
       setInterfaceCustomization(normalized);
+      const libraryConfig = normalized.deviceLibrary;
+      const currentOrder = __appScopeRef.current.libraryTreeOrder ?? readLibraryTreeOrder();
+      const nextOrder: LibraryTreeOrderState = {
+        ...currentOrder,
+        categoryLibraries: libraryConfig.categoryOrder,
+        componentLibraries: libraryConfig.componentOrder,
+        deviceTemplates: libraryConfig.deviceOrder
+      };
+      writeLibraryTreeOrder(nextOrder);
+      __appScopeRef.current.setLibraryTreeOrder?.(nextOrder);
       setInterfaceCustomizationStatus("");
     })
     .catch((error) => {
@@ -839,6 +854,7 @@ const saveInterfaceCustomization = useCallback(async () => {
     await saveBackendInterfaceCustomization(normalized);
     interfaceCustomizationSavedSnapshotRef.current = normalized;
     setInterfaceCustomizationStatus("界面定制配置已保存。");
+    globalThis.showGlobalMessage?.("界面定制配置已保存。");
   } catch (error) {
     setInterfaceCustomizationStatus(`保存界面定制配置失败：${error instanceof Error ? error.message : String(error)}`);
   } finally {
@@ -1282,6 +1298,23 @@ Object.assign(__appScope, { componentLibraryDisplayMode, setComponentLibraryDisp
 // 图元库面板树（一级类别库 / 二级类）的拖动排序覆盖；本机 UI 偏好，读盘失败归空走原始顺序。
 const [libraryTreeOrder, setLibraryTreeOrder] = useState<LibraryTreeOrderState>(() => readLibraryTreeOrder());
 Object.assign(__appScope, { libraryTreeOrder, setLibraryTreeOrder });
+const updateDeviceLibraryCustomization = useCallback((deviceLibrary: InterfaceCustomizationConfig["deviceLibrary"]) => {
+  setInterfaceCustomization((current) => ({ ...current, deviceLibrary }));
+}, []);
+const updateDeviceLibraryOrder = useCallback((nextOrder: LibraryTreeOrderState) => {
+  writeLibraryTreeOrder(nextOrder);
+  setLibraryTreeOrder(nextOrder);
+  setInterfaceCustomization((current) => ({
+    ...current,
+    deviceLibrary: {
+      ...current.deviceLibrary,
+      categoryOrder: nextOrder.categoryLibraries,
+      componentOrder: nextOrder.componentLibraries,
+      deviceOrder: nextOrder.deviceTemplates ?? {}
+    }
+  }));
+}, []);
+Object.assign(__appScope, { updateDeviceLibraryCustomization, updateDeviceLibraryOrder });
 // 拖动排序的瞬时状态（拖动项 / 落点项），不持久化。dropKey 形如 `<行键>|before/after`，
 // 同时服务图元库（group:/class: 前缀）与模板库（template-type:/template: 前缀）两棵树。
 const [libraryTreeDragKey, setLibraryTreeDragKey] = useState("");
@@ -2104,6 +2137,7 @@ return (
           busy={interfaceCustomizationBusy}
           status={interfaceCustomizationStatus}
           onChange={(next) => setInterfaceCustomization(normalizeInterfaceCustomizationConfig(next))}
+          onOpenDeviceLibrary={() => setDeviceLibraryDisplayDialogOpen(true)}
           onSave={() => void saveInterfaceCustomization()}
           onClose={() => {
             setInterfaceCustomization(interfaceCustomizationSavedSnapshotRef.current);
@@ -2113,6 +2147,19 @@ return (
         />
       </Suspense>
     )}
+    <DeviceLibraryDisplayDialog
+      open={deviceLibraryDisplayDialogOpen}
+      hierarchy={deviceLibraryDisplayDialogOpen ? buildDeviceLibraryHierarchy(__appScope) : { categories: [] }}
+      config={interfaceCustomization.deviceLibrary}
+      order={libraryTreeOrder}
+      busy={interfaceCustomizationBusy}
+      colorDisplayMode={__appScope.colorDisplayMode ?? "energy"}
+      colorPalette={__appScope.colorPalette ?? {}}
+      themeMode={__appScope.themeMode ?? "light"}
+      onConfigChange={updateDeviceLibraryCustomization}
+      onOrderChange={updateDeviceLibraryOrder}
+      onClose={() => setDeviceLibraryDisplayDialogOpen(false)}
+    />
   </>
 );
 }

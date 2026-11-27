@@ -12,6 +12,7 @@ import { modelAssociationProjectIndexesForSchemes } from "../model";
 import { containerGatewayUnbindNotice, finalizeContainerAfterNodeDeletion } from "../acContainer";
 import { modelTrace } from "../modelTrace";
 import { runTopologyOperation } from "../topology-operation";
+import { isFrontendExportMode, sendFrontendExportArtifacts } from "../frontendExport";
 import type {
   Edge,
   ElementTreeItem,
@@ -1018,6 +1019,19 @@ export function createRenderMeasurementEditorDialog(__appScope: ProjectCanvasSco
 export function createSaveCurrentProject(__appScope: ProjectCanvasScope) {
   return async (targetId?: string) => {
   const { activeProjectKey, activeSchemeKey, clearRefreshRecoveryProject, createSavedProject, currentGraphDirtyBaseline, currentModelSelectionRef, currentProject, deferredMoveOptimizationCancelRef, deferredRoutableLineRouteRepairCancelRef, finalizeSavedGlobalLineProjectNodes, findProjectRecordByNameInScheme, findSavedSchemeById, findSchemeForProject, graphDirtyBaselineRef, projectById, projectName, rememberPersistedSchemesPayload, saveActiveProjectPointer, saveBackendProjectRecord, savedSchemePathForId, savedUndoStackLengthRef, schemes, selectedSchemeId, serializeSchemesForStorage, setActiveProjectKey, setActiveSchemeKey, setHasUnsavedChanges, setProjectName, setSchemes, suppressNextGraphDirtyRef, undoStack, upsertSavedProjectInScheme, writeOperationLog } = __appScope;
+    const sendFrontendExportsAfterSave = async (savedProject: Record<string, any>) => {
+      if (!isFrontendExportMode(__appScope)) {
+        return;
+      }
+      try {
+        await sendFrontendExportArtifacts(__appScope, savedProject);
+        writeOperationLog("前端模式导出已发送：CIM/XML、E 文件、SVG");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "前端模式导出发送失败。";
+        showGlobalMessage(`模型已保存，但${message}`);
+        writeOperationLog(`前端模式导出发送失败：${message}`);
+      }
+    };
     const currentSelection = currentModelSelectionRef?.current;
     const currentProjectKey = currentSelection?.projectKey || activeProjectKey;
     const currentSchemeKey = currentSelection?.schemeKey || activeSchemeKey;
@@ -1105,6 +1119,7 @@ export function createSaveCurrentProject(__appScope: ProjectCanvasScope) {
       saveActiveProjectPointer(targetId, currentSchemeKey || ownerScheme.id || selectedSchemeId, nextSchemes);
       clearRefreshRecoveryProject();
       writeOperationLog(`保存模型：${savedRecord.name}`);
+      await sendFrontendExportsAfterSave(savedRecord.project);
       modelTrace("save-complete", { branch: "existing", targetId, savedName: savedRecord.name, activeProjectKey: targetId, nodeCount: record.project?.nodes?.length ?? 0 });
       return true;
     }
@@ -1156,6 +1171,7 @@ export function createSaveCurrentProject(__appScope: ProjectCanvasScope) {
     saveActiveProjectPointer(savedRecord.id, resolvedSchemeId, nextSchemes);
     clearRefreshRecoveryProject();
     writeOperationLog(`保存模型：${savedRecord.name}`);
+    await sendFrontendExportsAfterSave(savedRecord.project);
     modelTrace("save-complete", { branch: "fallback", targetId: savedRecord.id, savedName: savedRecord.name, activeProjectKey: savedRecord.id, nodeCount: record.project?.nodes?.length ?? 0 });
     return true;
   };

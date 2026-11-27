@@ -14,7 +14,17 @@ export type InterfaceCustomizationConfig = {
   schemaVersion: typeof INTERFACE_CUSTOMIZATION_SCHEMA_VERSION;
   buttons: Record<string, boolean>;
   modules: Record<string, boolean>;
+  deviceLibrary: DeviceLibraryCustomizationConfig;
   savedAt?: string;
+};
+
+export type DeviceLibraryCustomizationConfig = {
+  categories: Record<string, boolean>;
+  componentLibraries: Record<string, boolean>;
+  devices: Record<string, boolean>;
+  categoryOrder: string[];
+  componentOrder: Record<string, string[]>;
+  deviceOrder: Record<string, string[]>;
 };
 
 const buttonDefinitions: InterfaceCustomizationDefinition[] = [
@@ -118,7 +128,15 @@ export function buildHideAllInterfaceCustomizationConfig(): InterfaceCustomizati
     ),
     modules: Object.fromEntries(
       MODULE_DEFINITIONS.map((item) => [item.id, isProtectedInterfaceCustomizationId(item.id)])
-    )
+    ),
+    deviceLibrary: {
+      categories: {},
+      componentLibraries: {},
+      devices: {},
+      categoryOrder: [],
+      componentOrder: {},
+      deviceOrder: {}
+    }
   };
 }
 
@@ -131,7 +149,15 @@ export function defaultInterfaceCustomizationConfig(): InterfaceCustomizationCon
   return {
     schemaVersion: INTERFACE_CUSTOMIZATION_SCHEMA_VERSION,
     buttons: visibilityMap("button"),
-    modules: visibilityMap("module")
+    modules: visibilityMap("module"),
+    deviceLibrary: {
+      categories: {},
+      componentLibraries: {},
+      devices: {},
+      categoryOrder: [],
+      componentOrder: {},
+      deviceOrder: {}
+    }
   };
 }
 
@@ -155,12 +181,48 @@ function normalizedVisibilityMap(value: unknown, kind: InterfaceCustomizationIte
   return defaults;
 }
 
+function normalizedBooleanRecord(value: unknown): Record<string, boolean> {
+  if (!isRecord(value)) return {};
+  const result: Record<string, boolean> = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (typeof item === "boolean") result[key] = item;
+  }
+  return result;
+}
+
+function normalizedOrderRecord(value: unknown): Record<string, string[]> {
+  if (!isRecord(value)) return {};
+  const result: Record<string, string[]> = {};
+  for (const [key, items] of Object.entries(value)) {
+    if (!Array.isArray(items)) continue;
+    const normalized = [...new Set(items.filter((item): item is string => typeof item === "string" && item.length > 0))];
+    if (normalized.length > 0) result[key] = normalized;
+  }
+  return result;
+}
+
+export function normalizeDeviceLibraryCustomization(value: unknown): DeviceLibraryCustomizationConfig {
+  const source = isRecord(value) ? value : {};
+  const categoryOrder = Array.isArray(source.categoryOrder)
+    ? [...new Set(source.categoryOrder.filter((item): item is string => typeof item === "string" && item.length > 0))]
+    : [];
+  return {
+    categories: normalizedBooleanRecord(source.categories),
+    componentLibraries: normalizedBooleanRecord(source.componentLibraries),
+    devices: normalizedBooleanRecord(source.devices),
+    categoryOrder,
+    componentOrder: normalizedOrderRecord(source.componentOrder),
+    deviceOrder: normalizedOrderRecord(source.deviceOrder)
+  };
+}
+
 export function normalizeInterfaceCustomizationConfig(value: unknown): InterfaceCustomizationConfig {
   const source = isRecord(value) ? value : {};
   return {
     schemaVersion: INTERFACE_CUSTOMIZATION_SCHEMA_VERSION,
     buttons: normalizedVisibilityMap(source.buttons, "button"),
     modules: normalizedVisibilityMap(source.modules, "module"),
+    deviceLibrary: normalizeDeviceLibraryCustomization(source.deviceLibrary),
     ...(typeof source.savedAt === "string" && source.savedAt.trim() ? { savedAt: source.savedAt } : {})
   };
 }

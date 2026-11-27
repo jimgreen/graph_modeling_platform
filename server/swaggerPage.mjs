@@ -115,10 +115,10 @@ const ENDPOINTS = [
   { scope: "space", group: "配置", method: "PUT", path: "/webgrp/device-library", desc: "保存图元库配置", body: { customComponentLibraries: [], customCategoryLibraries: [] }, response: "{ok:true,...deviceLibrary}", examples: [
     { label: "清空自定义图元", params: { __body__: { customComponentLibraries: [], customCategoryLibraries: [], customDeviceTemplates: [], customGraphTemplates: [], customGraphTemplateTypes: [], deviceDefinitionOverrides: {} } } }
   ]},
-  { scope: "global", group: "平台配置", method: "GET", path: "/webgrp/interface-customization", desc: "读取全局界面定制配置（根目录 ui-customization.config.json）", response: "{exists,schemaVersion,buttons,modules}", examples: [
+  { scope: "global", group: "平台配置", method: "GET", path: "/webgrp/interface-customization", desc: "读取界面定制配置（先加载根目录 ui-customization.config.example，再加载当前全局或项目 ui-customization.config.json）", response: "{exists,schemaVersion,buttons,modules,deviceLibrary}", examples: [
     { label: "当前界面定制配置", params: {} }
   ]},
-  { scope: "global", group: "平台配置", method: "PUT", path: "/webgrp/interface-customization", desc: "保存全局界面定制配置", body: { schemaVersion: 1, buttons: {}, modules: {} }, response: "{ok:true,schemaVersion,buttons,modules,savedAt}", examples: [
+  { scope: "global", group: "平台配置", method: "PUT", path: "/webgrp/interface-customization", desc: "保存当前全局或项目界面定制配置", body: { schemaVersion: 1, buttons: {}, modules: {}, deviceLibrary: {} }, response: "{ok:true,schemaVersion,buttons,modules,deviceLibrary,savedAt}", examples: [
     { label: "恢复全显示", params: { __body__: { schemaVersion: 1, buttons: {}, modules: {} } } }
   ]},
   // ---- 全局线路域 ----

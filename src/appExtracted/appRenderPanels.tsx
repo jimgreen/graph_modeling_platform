@@ -529,7 +529,7 @@ export function createRenderProjectPanel(__appScope: Record<string, any>) {
         autoExpandParent={false}
         multiple
         selectable
-        draggable={scope.isEditMode ? { icon: false } : false}
+        draggable={scope.isEditMode}
         allowDrop={allowTreeDrop}
         switcherIcon={({ expanded, isLeaf }: any) => isLeaf ? null : expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         titleRender={(nodeData: any) => renderProjectTreeTitle(nodeData, expandedKeys, isFiltering)}

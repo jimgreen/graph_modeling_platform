@@ -6,6 +6,13 @@ import type { LibraryPackageScope } from "./appPersistenceLibraryExport";
 import { Select, Input, InputNumber } from "antd";
 import { createMeasurementFieldParameterDefinition } from "../measurementDefinitionTypes";
 import { reorderKeys, sortByKeyOrder, writeLibraryTreeOrder } from "../libraryTreeOrder";
+import {
+  deviceLibraryComponentKey,
+  deviceLibraryTemplateKey,
+  isDeviceLibraryCategoryVisible,
+  isDeviceLibraryComponentVisible,
+  isDeviceLibraryTemplateVisible
+} from "../deviceLibraryCustomization";
 import type { GraphTemplate } from "./appCoreCanvasUtilities";
 const LIBRARY_PACKAGE_DIALOG_SCOPES: LibraryPackageScope[] = [
   "all",
@@ -371,6 +378,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
     imageFolders,
     imagePickerSourceFilter,
     imageTarget,
+    interfaceCustomization,
     includeMeasurementGroupBounds,
     initialCanvasDetailHydrationLimit,
     initialCanvasLodActive,
@@ -3296,6 +3304,14 @@ export function useRenderBatch(__appScope: Record<string, any>) {
     }
   };
   Object.assign(__appScope, { startLibraryTreeDrag, endLibraryTreeDrag, handleLibraryTreeDragOver, handleLibraryTreeDragLeave, handleLibraryTreeDrop });
+  const deviceLibraryConfig = interfaceCustomization?.deviceLibrary ?? {
+    categories: {},
+    componentLibraries: {},
+    devices: {},
+    categoryOrder: [],
+    componentOrder: {},
+    deviceOrder: {}
+  };
   const renderLibraryPanel = () => (
       <div className="library-panel-stack">
         <div className="library-search">
@@ -3386,22 +3402,37 @@ export function useRenderBatch(__appScope: Record<string, any>) {
             }
           }}
         >
-          {displayedCategoryLibraries.length > 0 ? sortByKeyOrder(
-              displayedCategoryLibraries,
+          {displayedCategoryLibraries.filter((group: string) => isDeviceLibraryCategoryVisible(deviceLibraryConfig, group)).length > 0 ? sortByKeyOrder(
+              displayedCategoryLibraries.filter((group: string) => isDeviceLibraryCategoryVisible(deviceLibraryConfig, group)),
               (group: string) => group,
-              libraryTreeOrder?.categoryLibraries ?? []
+              deviceLibraryConfig.categoryOrder.length > 0 ? deviceLibraryConfig.categoryOrder : (libraryTreeOrder?.categoryLibraries ?? [])
             ).map((group: string) => {
             const libraryExpanded = componentLibraryDisplayMode === "expanded";
             const libraryFlyout = componentLibraryDisplayMode === "right";
             const expanded = librarySearchNeedle ? true : libraryExpanded
               ? !collapsedExpandedModeCategoryLibraries.includes(group)
               : expandedCategoryLibraries.includes(group);
-            const typeGroups = rootComponentLibraryGroupsForDisplay(
+            const typeGroups = (rootComponentLibraryGroupsForDisplay(
               group,
               groupedCategoryLibraryByComponentLibrary[group] ?? [],
               customComponentLibraries,
               librarySearchNeedle
-            );
+            ) as any[])
+              .filter((typeGroup: any) => isDeviceLibraryComponentVisible(deviceLibraryConfig, deviceLibraryComponentKey(group, typeGroup.section)))
+              .map((typeGroup: any) => {
+                const componentKey = deviceLibraryComponentKey(group, typeGroup.section);
+                const templates = (Array.isArray(typeGroup.templates) ? typeGroup.templates : [])
+                  .filter((template: any) => isDeviceLibraryTemplateVisible(deviceLibraryConfig, deviceLibraryTemplateKey(group, typeGroup.section, String(template.kind ?? ""))))
+                  .sort((left: any, right: any) => {
+                    const order = deviceLibraryConfig.deviceOrder[componentKey] ?? libraryTreeOrder?.deviceTemplates?.[componentKey] ?? [];
+                    const leftIndex = order.indexOf(String(left.kind ?? ""));
+                    const rightIndex = order.indexOf(String(right.kind ?? ""));
+                    const normalizedLeft = leftIndex < 0 ? Number.MAX_SAFE_INTEGER : leftIndex;
+                    const normalizedRight = rightIndex < 0 ? Number.MAX_SAFE_INTEGER : rightIndex;
+                    return normalizedLeft - normalizedRight;
+                  });
+                return { ...typeGroup, templates };
+              });
             return (
               <section
                 className={`library-group-section ${libraryTreeDropKey === `group:${group}|before` ? "library-tree-drop-line-before" : ""} ${libraryTreeDropKey === `group:${group}|after` ? "library-tree-drop-line-after" : ""}`}
@@ -3449,9 +3480,9 @@ export function useRenderBatch(__appScope: Record<string, any>) {
                   <div className="category-library-component-library-list">
                     {sortByKeyOrder(
                       typeGroups,
-                      (typeGroup: { section: string }) => typeGroup.section,
-                      libraryTreeOrder?.componentLibraries[group] ?? []
-                    ).map((typeGroup) => {
+                      (typeGroup: any) => typeGroup.section,
+                      deviceLibraryConfig.componentOrder[group] ?? libraryTreeOrder?.componentLibraries[group] ?? []
+                    ).map((typeGroup: any) => {
                       const componentLibraryKey = categoryLibraryComponentLibraryKey(group, typeGroup.section);
                       const componentLibraryDisplay = componentLibraryDisplayParts(typeGroup.section, customComponentLibraries);
                       const componentLibraryExpanded = librarySearchNeedle
@@ -3520,7 +3551,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
                           </button>
                           {componentLibraryExpanded && (
                             <div className="library-group inline-library-group" ref={setLibraryComponentListRef(inlineListKey)}>
-                              {typeGroup.templates.map((item) => renderLibraryTemplateButton(item, typeGroup.section))}
+                              {typeGroup.templates.map((item: any) => renderLibraryTemplateButton(item, typeGroup.section))}
                             </div>
                           )}
                           {componentLibraryFlyoutVisible && renderLibraryFlyout(flyoutListKey, componentLibraryKey, group, typeGroup)}
@@ -4015,7 +4046,8 @@ export function useRenderBatch(__appScope: Record<string, any>) {
         libraryTreeDragKey,
         libraryTreeDropKey,
         libraryTreeOrder,
-        measurementConfig
+        measurementConfig,
+        interfaceCustomization
       ]
     );
   Object.assign(__appScope, { libraryPanelContent });

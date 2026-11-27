@@ -49,6 +49,7 @@ const toPort = (value, fallback) => {
 
 export const frontendPort = toPort(process.env.VITE_PORT ?? cfg.frontend?.port, 5173);
 export const backendPort = toPort(process.env.IMAGE_SERVER_PORT ?? cfg.backend?.port, 5174);
+export const backendOrigin = `http://${host}:${backendPort}`;
 export const apiPrefix = trimTrailingSlash(
   process.env.GRAPH_MODEL_API_PREFIX ?? cfg.backend?.prefix ?? "/webgrp"
 );
@@ -57,6 +58,12 @@ export const apiPrefix = trimTrailingSlash(
 export const frontendPrefix = normalizeBase(
   process.env.GRAPH_MODEL_FRONTEND_PREFIX ?? cfg.frontend?.prefix ?? "/"
 );
+
+const frontendModeValue = String(
+  process.env.GRAPH_MODEL_FRONTEND_MODE ?? cfg.frontend?.mode ?? "backend"
+).trim().toLowerCase();
+
+export const frontendMode = frontendModeValue === "frontend" ? "frontend" : "backend";
 
 function readEnvDataDir() {
   return typeof process.env.GRAPH_MODEL_DATA_DIR === "string"

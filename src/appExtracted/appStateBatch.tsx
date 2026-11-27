@@ -534,6 +534,7 @@ import {
   createProgrammaticImportEDeviceDefinition
 } from "./appDeviceDefinitionFactories";
 import { customParamId, deviceDefinitionRowId, stateDraftRowId, DEFAULT_STATE_ICON_DRAWING_FRAME, DEFAULT_STATE_PAGE_ID, isDefaultStatePageId, createStateDraftRow, createStateDraftRowFromDefaultVisual, defaultStateDraftRow, createDefinitionStateDraftRows, normalizeStateDraftRows, validateStateDraftRows, stateVisualFromDraftRow, activeStateDraftRow, normalizeStatePageId, stateDraftImageValue, stateIconDrawingDraftSourceImage, stateIconDrawingInlineNeedsDraftReload, stateIconDrawingInlineCanPersistDraft, stateVisualShapeLabel, generateStateVisualShapeImage, stateIconDrawingElementId, visibleStateIconColor, createStateIconDrawingElement, createImportedStateIconElement, svgSourceFromDataUrl, parseStateIconSvgSource, stateIconSvgElementSource, parseSvgStyleAttribute, stateIconSvgReactAttributes, stateIconSvgNodeChildren, stateIconSvgNodeToReact, stateIconSvgSourceToReactNodes, createEditableStateIconElementsFromSvgSource, createStateIconDrawingInitialElements, stateIconDrawingInitialFrame, svgSourceToDataUrl, stateIconDrawingSvgElementMarkup, stateIconDrawingElementMarkup, stateIconDrawingToImage, stateIconDrawingToPersistedImage, stateIconDrawingFrameRect, stateIconDrawingElementPreviewImage, stateIconDrawingElementPreviewNode, type StateVisualShapeKind, type StateIconDrawingElement, type DeviceDefinitionStateDraftRow } from "../stateIconDrawing";
+import { filterDeviceLibraryGroups } from "../deviceLibraryCustomization";
 import { fallbackComponentLibraryForCategoryLibrary, resolveTemplateComponentLibrary, deviceDefinitionKeyForTemplate, buildBaseLibraryTemplates, buildEffectiveLibraryTemplates, isReservedDeviceDefinitionParamName, isDerivedComponentBaseParamName, createDefinitionDraftRows, normalizeCustomDeviceTerminalAnchorCoordinate, projectCustomDeviceTerminalAnchorToBoundary, customDeviceTerminalAnchorKey, hasOverlappingCustomDeviceTerminalAnchors, createDefaultCustomDeviceTerminalAnchors, createEmptyCustomDeviceDraft, createCustomDeviceDraftFromTemplate, createDefinitionVisualDraft, defaultContainerAssociationForTerminalType, isAssociationAllowedForTerminal, normalizeContainerTerminalAssociations, customDefaultDefinitions, generateCustomDeviceImage, customDeviceImageWithTerminalConnectors, customDeviceGeneratedDefaultImageCandidates, syncInheritedCustomDeviceStateVisuals, parseCustomDefinitions, screenToSvgPoint, primaryOrthogonalAxis, constrainPointToOrthogonalAxis } from "../customDeviceUtils";
 import { useBatchEditors } from "../hooks/useBatchEditors";
 import { APP_STATIC_SCOPE } from "./appStaticScope";
@@ -747,6 +748,7 @@ export function useAppStateBatch(__appScope: Record<string, any>) {
     voltageUnit
   } = __appScope;
   const { latestSchemesRef, schemes } = __appScope;
+  const interfaceCustomization = __appScope.interfaceCustomization;
   latestSchemesRef.current = schemes;
   const setSchemes = createSetSchemes(__appScope); Object.assign(__appScope, { setSchemes });
   const isEditMode = true; Object.assign(__appScope, { isEditMode });
@@ -1258,15 +1260,39 @@ export function useAppStateBatch(__appScope: Record<string, any>) {
   const deferredCustomComponentTreeSearchQuery = useDeferredValue(customComponentTreeSearchQuery);
   const customComponentTreeSearchNeedle = normalizeLibrarySearchText(deferredCustomComponentTreeSearchQuery); Object.assign(__appScope, { customComponentTreeSearchNeedle });
   const filteredCustomComponentTreeByComponentLibrary = useMemo(
-      () => filterCategoryLibraryComponentLibraryGroups(groupedCategoryLibraryByComponentLibrary, customComponentTreeSearchNeedle, customComponentLibraries),
-      [customComponentLibraries, customComponentTreeSearchNeedle, groupedCategoryLibraryByComponentLibrary]
+      () => {
+        const searched = filterCategoryLibraryComponentLibraryGroups(groupedCategoryLibraryByComponentLibrary, customComponentTreeSearchNeedle, customComponentLibraries);
+        const deviceLibraryConfig = interfaceCustomization?.deviceLibrary;
+        if (!deviceLibraryConfig) {
+          return searched;
+        }
+        return Object.fromEntries(
+          Object.entries(searched).map(([category, groups]) => [
+            category,
+            filterDeviceLibraryGroups(category, groups, deviceLibraryConfig)
+          ])
+        );
+      },
+      [customComponentLibraries, customComponentTreeSearchNeedle, groupedCategoryLibraryByComponentLibrary, interfaceCustomization?.deviceLibrary]
     );
   Object.assign(__appScope, { filteredCustomComponentTreeByComponentLibrary });
   const deferredDeviceDefinitionSearchQuery = useDeferredValue(deviceDefinitionSearchQuery);
   const deviceDefinitionSearchNeedle = normalizeLibrarySearchText(deferredDeviceDefinitionSearchQuery); Object.assign(__appScope, { deviceDefinitionSearchNeedle });
   const filteredDeviceDefinitionByComponentLibrary = useMemo(
-      () => filterCategoryLibraryComponentLibraryGroups(groupedCategoryLibraryByComponentLibrary, deviceDefinitionSearchNeedle, customComponentLibraries),
-      [customComponentLibraries, deviceDefinitionSearchNeedle, groupedCategoryLibraryByComponentLibrary]
+      () => {
+        const searched = filterCategoryLibraryComponentLibraryGroups(groupedCategoryLibraryByComponentLibrary, deviceDefinitionSearchNeedle, customComponentLibraries);
+        const deviceLibraryConfig = interfaceCustomization?.deviceLibrary;
+        if (!deviceLibraryConfig) {
+          return searched;
+        }
+        return Object.fromEntries(
+          Object.entries(searched).map(([category, groups]) => [
+            category,
+            filterDeviceLibraryGroups(category, groups, deviceLibraryConfig)
+          ])
+        );
+      },
+      [customComponentLibraries, deviceDefinitionSearchNeedle, groupedCategoryLibraryByComponentLibrary, interfaceCustomization?.deviceLibrary]
     );
   Object.assign(__appScope, { filteredDeviceDefinitionByComponentLibrary });
   const libraryPreviewByKind = useMemo(
@@ -1316,17 +1342,13 @@ export function useAppStateBatch(__appScope: Record<string, any>) {
     );
   Object.assign(__appScope, { displayedCategoryLibraries });
   const displayedCustomComponentTreeLibraries = useMemo(
-      () => customComponentTreeSearchNeedle
-        ? categoryLibraries.filter((group) => (filteredCustomComponentTreeByComponentLibrary[group] ?? []).length > 0)
-        : categoryLibraries,
-      [categoryLibraries, customComponentTreeSearchNeedle, filteredCustomComponentTreeByComponentLibrary]
+      () => categoryLibraries.filter((group) => (filteredCustomComponentTreeByComponentLibrary[group] ?? []).length > 0),
+      [categoryLibraries, filteredCustomComponentTreeByComponentLibrary]
     );
   Object.assign(__appScope, { displayedCustomComponentTreeLibraries });
   const displayedDeviceDefinitionLibraries = useMemo(
-      () => deviceDefinitionSearchNeedle
-        ? categoryLibraries.filter((group) => (filteredDeviceDefinitionByComponentLibrary[group] ?? []).length > 0)
-        : categoryLibraries,
-      [categoryLibraries, deviceDefinitionSearchNeedle, filteredDeviceDefinitionByComponentLibrary]
+      () => categoryLibraries.filter((group) => (filteredDeviceDefinitionByComponentLibrary[group] ?? []).length > 0),
+      [categoryLibraries, filteredDeviceDefinitionByComponentLibrary]
     );
   Object.assign(__appScope, { displayedDeviceDefinitionLibraries });
   useEffect(createAppHookCallback17(__appScope), [libraryFlyoutPositions]);

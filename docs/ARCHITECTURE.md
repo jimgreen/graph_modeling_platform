@@ -79,6 +79,7 @@ React 19 + Vite 7 + TypeScript 的前端图形建模平台，支持电力/氢能
 ### 导出与持久化
 
 - 自包含 SVG 导出（前后端共用 `src/export/svg.ts` 的 buildSvgDocument，内联样式，被引用图片内联为 data URL；已保存模型推荐走 `/webgrp/v1/models/export`，单模型原始 SVG GET 保持兼容，运行时导出走 `/webgrp/v1/runtime/export?format=svg`）
+- 前端导出模式：`frontend.mode=frontend` 时浏览器使用共享导出模块生成 CIM/XML、E 文件和 SVG，并按 `host + backend.port` 向 `/export/cim`、`/export/e`、`/export/svg` 通过 multipart POST 发送；保存成功后自动发送三种产物
 - 画布截图：SVG → PNG base64
 - E 格式导出：电力系统 E 文件
 - CIM/XML (IEC 61970 CIM16) 导出：单文件整合，AC 设备 + 拓扑端子连接 + 量测；`src/cim/` 独立模块（IR 中间表示 → RDF/XML 序列化），顶栏导出菜单入口

@@ -16,6 +16,7 @@ import {
 } from "../model";
 import { apiPath } from "../config";
 import { backendExportSchemePath } from "../backendExportPath";
+import { isFrontendExportMode, sendFrontendExportArtifact, sendFrontendExportArtifacts } from "../frontendExport";
 import { backendErrorMessage, type BackendSchemeArchiveImportResponse, type ImageAsset } from "./appCoreCanvasUtilities";
 import { safeFilePart as sharedSafeFilePart } from "./appInlineUtilityFunctions";
 import { decodeGbk } from "../encoding/gbk";
@@ -102,12 +103,23 @@ export function createExportSvg(__appScope: ExportImportScope) {
     isPickerAbort,
     projectName,
     safeFilePart,
+    showGlobalMessage = () => undefined,
     writeTextFileToDirectory,
     writeOperationLog
   } = __appScope;
     let exportStartedAt = performance.now();
     const exportElapsedText = () => `${((performance.now() - exportStartedAt) / 1000).toFixed(2)} 秒`;
     if (!ensureSavedBeforeExport()) {
+      return;
+    }
+
+    if (isFrontendExportMode(__appScope)) {
+      try {
+        await sendFrontendExportArtifacts(__appScope, undefined, ["e", "svg"]);
+        showGlobalMessage("前端模式已发送 E 文件和 SVG。");
+      } catch (error) {
+        showGlobalMessage(error instanceof Error ? error.message : "前端模式导出发送失败。");
+      }
       return;
     }
 
@@ -429,6 +441,15 @@ export function createExportSvgFile(__appScope: ExportImportScope) {
     if (!ensureSavedBeforeExport()) {
       return;
     }
+    if (isFrontendExportMode(__appScope)) {
+      try {
+        await sendFrontendExportArtifact(__appScope, "svg");
+        showGlobalMessage("前端模式已发送 SVG。");
+      } catch (error) {
+        showGlobalMessage(error instanceof Error ? error.message : "前端模式 SVG 发送失败。");
+      }
+      return;
+    }
     const baseFilename = safeFilePart(projectName);
     let svgTextPromise: Promise<string> | undefined;
     const loadSvgText = () => {
@@ -566,6 +587,16 @@ export function createExportEFile(__appScope: ExportImportScope) {
       exportStartedAt = performance.now();
     };
     if (!ensureSavedBeforeExport()) {
+      return;
+    }
+
+    if (isFrontendExportMode(__appScope)) {
+      try {
+        await sendFrontendExportArtifact(__appScope, "e");
+        showGlobalMessage("前端模式已发送 E 文件。");
+      } catch (error) {
+        showGlobalMessage(error instanceof Error ? error.message : "前端模式 E 文件发送失败。");
+      }
       return;
     }
 

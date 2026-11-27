@@ -1,7 +1,15 @@
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import qiankun from "vite-plugin-qiankun-lite";
-import { host, backendPort, frontendPort, apiPrefix, frontendPrefix } from "./server/config.mjs";
+import {
+  host,
+  backendPort,
+  backendOrigin,
+  frontendPort,
+  apiPrefix,
+  frontendPrefix,
+  frontendMode
+} from "./server/config.mjs";
 import { name } from "./package.json";
 
 declare const process: { env: Record<string, string | undefined> };
@@ -113,7 +121,9 @@ export default defineConfig({
   base: effectiveBase,
   define: {
     __API_PREFIX__: JSON.stringify(apiPrefix),
-    __FRONTEND_BASE__: JSON.stringify(frontendPrefix)
+    __FRONTEND_BASE__: JSON.stringify(frontendPrefix),
+    __FRONTEND_MODE__: JSON.stringify(frontendMode),
+    __BACKEND_ORIGIN__: JSON.stringify(backendOrigin)
   },
   build: {
     modulePreload: false, // qiankun 环境禁用 modulepreload，避免资源路径问题

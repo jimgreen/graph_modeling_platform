@@ -20,6 +20,7 @@ import {
   configuredDataDir,
   host,
   platformConfigPath,
+  projectDirectory,
   repositoryRoot,
   stripFrontendBase
 } from "./config.mjs";
@@ -2486,6 +2487,8 @@ export async function createImageServer({
   host = "127.0.0.1",
   staticRoot,
   interfaceCustomizationPath,
+  interfaceCustomizationExamplePath,
+  projectDirectory: interfaceCustomizationProjectDirectory = projectDirectory,
   spaceStore: injectedSpaceStore,
   trackInstance = false,
   instanceRegistry: injectedInstanceRegistry
@@ -2493,7 +2496,12 @@ export async function createImageServer({
   const routeKey = (method, sub) => `${method} ${apiPath(sub)}`;
   const effectiveInterfaceCustomizationPath = interfaceCustomizationPath
     ? resolve(interfaceCustomizationPath)
-    : resolve(repositoryRoot, "ui-customization.config.json");
+    : interfaceCustomizationProjectDirectory
+      ? resolve(interfaceCustomizationProjectDirectory, "ui-customization.config.json")
+      : resolve(repositoryRoot, "ui-customization.config.json");
+  const effectiveInterfaceCustomizationExamplePath = interfaceCustomizationExamplePath
+    ? resolve(interfaceCustomizationExamplePath)
+    : resolve(repositoryRoot, "ui-customization.config.example");
   const nativeExportSaveService = createNativeExportSaveService();
   // spaceStore 可注入：测试要复用自己建的那个实例，否则同进程两个写者各持注册表快照，
   // 后写者会用陈旧快照回滚对方的条目。动态 import 维持与 spaceStore 的循环依赖不静态化。
@@ -2636,7 +2644,10 @@ export async function createImageServer({
       }
     }],
     [routeKey("GET", "/interface-customization"), async ({ response }) => {
-      const config = await readInterfaceCustomizationConfig({ filePath: effectiveInterfaceCustomizationPath });
+      const config = await readInterfaceCustomizationConfig({
+        exampleFilePath: effectiveInterfaceCustomizationExamplePath,
+        filePath: effectiveInterfaceCustomizationPath
+      });
       sendJson(response, 200, config);
     }],
     [routeKey("PUT", "/interface-customization"), async ({ request, response }) => {

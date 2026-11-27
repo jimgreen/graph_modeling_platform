@@ -2260,6 +2260,8 @@ describe("default device state draft rows", () => {
 
     const persistedMarkup = stateIconDrawingSvgElementMarkup(source, -60, -60, 120, 120);
     expect(persistedMarkup).toContain('viewBox="0 0 24 24"');
+    expect(persistedMarkup).toContain('preserveAspectRatio="xMidYMid meet"');
+    expect(persistedMarkup).not.toContain('preserveAspectRatio="none"');
     expect(persistedMarkup).toContain('overflow="visible"');
 
     const restored = createEditableStateIconElementsFromSvgSource(

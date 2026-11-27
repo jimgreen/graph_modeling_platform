@@ -1069,7 +1069,13 @@ export function createOpenDeviceDefinitionDialog(__appScope: DeviceDefinitionSco
       setCustomDeviceDefinitionMode("edit");
       setCustomDeviceStatePageId(DEFAULT_STATE_PAGE_ID);
       setCustomDeviceSaveMessage("");
-      const nextDraft = createCustomDeviceDraftFromTemplate(template, section);
+      const draftFromTemplate = createCustomDeviceDraftFromTemplate(template, section);
+      const nextDraft = template.custom
+        ? draftFromTemplate
+        : {
+            ...draftFromTemplate,
+            stateDefinitions: createDefinitionStateDraftRowsWithDefaultImages(__appScope, template)
+          };
       openedDraft = template.custom ? nextDraft : { ...nextDraft, error: "" };
       setCustomDeviceDialogView("icon");
       setCustomDeviceDraft(openedDraft);

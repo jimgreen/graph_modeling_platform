@@ -17,6 +17,7 @@ type InterfaceCustomizationDialogProps = {
   busy?: boolean;
   status?: string;
   onChange: (config: InterfaceCustomizationConfig) => void;
+  onOpenDeviceLibrary: () => void;
   onSave: () => void;
   onClose: () => void;
 };
@@ -37,6 +38,7 @@ export function InterfaceCustomizationDialog({
   busy = false,
   status = "",
   onChange,
+  onOpenDeviceLibrary,
   onSave,
   onClose
 }: InterfaceCustomizationDialogProps) {
@@ -62,7 +64,8 @@ export function InterfaceCustomizationDialog({
     onChange({
       schemaVersion: next.schemaVersion,
       buttons: { ...next.buttons },
-      modules: { ...next.modules }
+      modules: { ...next.modules },
+      deviceLibrary: config.deviceLibrary
     });
   };
 
@@ -153,6 +156,9 @@ export function InterfaceCustomizationDialog({
         <p className="interface-customization-intro">
           勾选即时预览；点击“保存设置”写入后台，直接关闭将恢复未保存修改。
         </p>
+        <button type="button" className="interface-customization-library-button" onClick={onOpenDeviceLibrary} disabled={busy}>
+          图元库显示范围
+        </button>
         <div className="interface-customization-actions" role="group" aria-label="界面定制批量操作">
           <button type="button" onClick={() => applyAll(true)} disabled={busy}>恢复默认（全部显示）</button>
           <button type="button" onClick={requestHideAll} disabled={busy}>全部隐藏</button>

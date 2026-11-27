@@ -6,6 +6,7 @@ import type { MeasurementGroup } from "../measurements";
 import type { SavedExportFile } from "../fileIO";
 import { buildCimPackage, collectMissingCriticalParams } from "./cim-builder.ts";
 import { serializeCimPackage } from "./cim-serializer.ts";
+import { isFrontendExportMode, sendFrontendExportArtifact } from "../frontendExport.ts";
 
 export type CimExportScope = {
   nodes?: readonly ModelNode[];
@@ -108,6 +109,20 @@ export function createCimExport(scope: CimExportScope): () => Promise<boolean> {
       }
       if (!confirmed) return false;
     }
+
+    if (isFrontendExportMode(scope as any)) {
+      try {
+        await sendFrontendExportArtifact(scope as any, "cim");
+        const filename = cimFilename(projectName, safeFilePart);
+        writeOperationLog?.(`前端模式发送 CIM/XML：${filename}`);
+        scope.showGlobalMessage?.(`前端模式已发送 CIM/XML：${filename}`);
+        return true;
+      } catch (error) {
+        scope.showGlobalMessage?.(error instanceof Error ? error.message : "前端模式 CIM/XML 发送失败。");
+        return false;
+      }
+    }
+
     // CIM/XML 生成已移至后端 /v1/schemes/model/export?format=cim-xml（与 E 文件同一适配层模式）
     const schemePath = Array.isArray(scope.schemePath) && scope.schemePath.length > 0 ? scope.schemePath : ["默认方案"];
     const query = `schemePath=${encodeURIComponent(JSON.stringify(schemePath))}`

@@ -142,6 +142,18 @@ describe("deviceVisualReplacesGlyph：视觉替换图让内置图元整体不画
     expect(markup).not.toBe("<svg></svg>");
   });
 
+  it("模型关联派生图元忽略旧的平台生成默认图，继续使用当前 glyph", () => {
+    const markup = markupOf({ kind: "ac-station-source" }, {
+      stateVisual: {
+        value: "1",
+        name: "默认",
+        image: 'data:image/svg+xml;utf8,%3Csvg%20data-platform-generated-default="true"%20preserveAspectRatio="none"%2F%3E'
+      } as never
+    });
+    expect(markup).toContain("model-hierarchy-glyph");
+    expect(markup).not.toBe("<svg></svg>");
+  });
+
   it("stateVisual 的替换图与 node 的替换图都参与判定", () => {
     void PLATFORM_MARKER;
     const withStateImage = renderToStaticMarkup(

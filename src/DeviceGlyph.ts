@@ -104,6 +104,17 @@ function deviceVisualReplacesGlyph(node: ModelNode, stateVisual: DeviceStateVisu
   if (String(stateVisual?.imageCleared ?? "").trim() === "1" || String(node.params.backgroundImageCleared ?? "").trim() === "1") {
     return true;
   }
+  const generatedDefaultVisual = [
+    stateVisual?.image,
+    stateVisual?.backgroundImage,
+    node.params.backgroundImage
+  ].some(isPlatformDeviceVisualReplacementImage);
+  // 模型关联派生图元的默认状态图是平台生成的 DeviceGlyph 快照。旧快照可能
+  // 使用过 preserveAspectRatio="none"，继续拿它替换当前 glyph 会让画布与编辑器比例分裂。
+  // 这类图元回退到当前路径绘制；用户自定义图片仍按原逻辑替换 glyph。
+  if (modelAssociationModelTypeForKind(node.kind) && generatedDefaultVisual) {
+    return false;
+  }
   return [
     stateVisual?.image,
     stateVisual?.backgroundImage,

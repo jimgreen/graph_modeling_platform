@@ -67,12 +67,34 @@ pnpm dev       # 开发时同时启动页面和数据服务
 | 配置 | 作用 |
 |---|---|
 | `frontend.prefix` | 建模页面部署在哪个路径，例如 `/modeling/` |
+| `frontend.mode` | 导出模式：`backend`（默认）或 `frontend` |
 | `backend.prefix` | HTTP 和 WebSocket 接口前缀，默认 `/webgrp` |
 | `dataDir` | 模型和配置文件保存位置 |
 | `IMAGE_SERVER_HOST` | 数据服务监听地址 |
 | `IMAGE_SERVER_PORT` | 数据服务端口 |
 | `GRAPH_MODEL_DATA_DIR` | 临时覆盖数据目录，优先级高于配置文件 |
 | `GRAPH_MODEL_PROJECT` | 项目配置目录名称；命令行 `--project` 优先 |
+| `GRAPH_MODEL_FRONTEND_MODE` | 覆盖 `frontend.mode` |
+
+### 前端导出模式
+
+当 `frontend.mode` 设置为 `frontend` 时，模型导出不请求本项目的后端导出 API。浏览器直接使用共享导出模块生成 CIM/XML、E 文件和 SVG，并使用 `platform.config.json` 的 `host` 与 `backend.port` 组装目标地址：
+
+- `http://<host>:<backend.port>/export/cim`
+- `http://<host>:<backend.port>/export/e`
+- `http://<host>:<backend.port>/export/svg`
+
+三个地址均使用 `POST` multipart 请求。
+
+每个请求包含一个文件字段和模型元数据字段：
+
+| 格式 | 文件字段 | 编码 |
+|---|---|---|
+| CIM/XML | `cim_file` | UTF-8 |
+| E 文件 | `e_file` | GBK |
+| SVG | `svg_file` | UTF-8 |
+
+通用字段为 `model_id`、`model_name`、`scheme_path`、`format` 和 `sent_at`。接收 URL 由外部系统负责处理，平台只检查 HTTP 状态是否成功。点击保存时，模型保存成功后会自动发送这三种产物；目标端点失败不会撤销已经完成的模型保存。
 
 ---
 
