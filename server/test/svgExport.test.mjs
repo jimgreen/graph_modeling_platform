@@ -402,6 +402,24 @@ describe(`${svgPath} 正路径`, () => {
     expect(energyText).not.toContain("kv10");
   });
 
+  test("labelsVisible / measurementsVisible 非法 → 400；传 0 时隐藏对应标识元素", async () => {
+    const url = `${baseUrl}${svgPath}?format=svg&schemePath=${schemePath}&name=${encodeURIComponent("开关模型")}`;
+    const badLabels = await fetch(`${url}&labelsVisible=maybe`);
+    expect(badLabels.status).toBe(400);
+    const badMeas = await fetch(`${url}&measurementsVisible=maybe`);
+    expect(badMeas.status).toBe(400);
+
+    const hiddenRes = await fetch(`${url}&labelsVisible=0`);
+    expect(hiddenRes.status).toBe(200);
+    const hiddenLabelsText = await hiddenRes.text();
+    const textStart = hiddenLabelsText.indexOf('<g id="Text_Layer"');
+    const measStart = hiddenLabelsText.indexOf('<g id="Measurement_Layer"');
+    expect(textStart).toBeGreaterThan(-1);
+    expect(measStart).toBeGreaterThan(textStart);
+    const textLayer = hiddenLabelsText.slice(textStart, measStart);
+    expect(textLayer).toContain("display:none;");
+  });
+
   test("模型无 canvasBackgroundColor 时用渲染器默认底色", async () => {
     const res = await fetch(`${baseUrl}${svgPath}?format=svg&schemePath=${schemePath}&name=${encodeURIComponent("无底色模型")}`);
     expect(res.status).toBe(200);

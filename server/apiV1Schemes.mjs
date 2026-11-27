@@ -253,7 +253,19 @@ function sendSvg(response, svg, encoding) {
 }
 
 // 统一入口 format=svg —— 模型 SVG（复用前端 buildSvgDocument，见 svgExport.mjs）
-// query: schemePath=<encoded> 或 schemeId=<number>, name=<模型名>, colorMode=energy（默认）|voltage（可选）, encoding=utf-8（默认）|gbk（可选）
+// query: schemePath=<encoded> 或 schemeId=<number>, name=<模型名>, colorMode=energy（默认）|voltage（可选）,
+//        labelsVisible=1（默认）|0（可选）, measurementsVisible=1（默认）|0（可选）, encoding=utf-8（默认）|gbk（可选）
+function parseOptionalBooleanQuery(raw, fieldName) {
+  const normalized = String(raw ?? "").trim().toLowerCase();
+  if (!normalized || normalized === "1" || normalized === "true") {
+    return { value: true };
+  }
+  if (normalized === "0" || normalized === "false") {
+    return { value: false };
+  }
+  return { error: `${fieldName} 仅支持 1/0 或 true/false。` };
+}
+
 export async function handleV1ModelSvg({ url, response, paths }) {
   const selector = parseSchemeSelectorQuery(url);
   if (selector.error) {
@@ -275,13 +287,30 @@ export async function handleV1ModelSvg({ url, response, paths }) {
     sendV1Error(response, "bad-request", "colorMode 仅支持 energy 或 voltage。");
     return;
   }
+  const labelsVisibleParsed = parseOptionalBooleanQuery(url.searchParams.get("labelsVisible"), "labelsVisible");
+  if (labelsVisibleParsed.error) {
+    sendV1Error(response, "bad-request", labelsVisibleParsed.error);
+    return;
+  }
+  const measurementsVisibleParsed = parseOptionalBooleanQuery(url.searchParams.get("measurementsVisible"), "measurementsVisible");
+  if (measurementsVisibleParsed.error) {
+    sendV1Error(response, "bad-request", measurementsVisibleParsed.error);
+    return;
+  }
   const encoding = (url.searchParams.get("encoding") ?? "").trim().toLowerCase() || "utf-8";
   if (encoding !== "gbk" && encoding !== "utf-8") {
     sendV1Error(response, "bad-request", "encoding 须为 gbk 或 utf-8。");
     return;
   }
   try {
-    const { svg, error } = await renderSavedModelSvg({ parts: resolved.parts, name, colorMode, paths });
+    const { svg, error } = await renderSavedModelSvg({
+      parts: resolved.parts,
+      name,
+      colorMode,
+      ...(labelsVisibleParsed.value === false ? { deviceLabelsVisible: false } : {}),
+      ...(measurementsVisibleParsed.value === false ? { deviceMeasurementsVisible: false } : {}),
+      paths
+    });
     if (error) {
       sendV1Error(response, error.code, error.message);
       return;

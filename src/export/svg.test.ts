@@ -797,4 +797,48 @@ describe("buildSvgDocument 电流流水线开关", () => {
     const escaped = linePathD.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
     expect(svg).toContain(`offset-path: path(&quot;${escaped}&quot;)`);
   });
+
+  test("存量浅灰底色 #f1f5f9 归一为纯白 #ffffff，且尊重全局标识与量测显隐开关", () => {
+    const bus = createDefaultNode("ac-bus", { x: 100, y: 100 });
+    const alwaysNode = createDefaultNode("ac-breaker", { x: 240, y: 100 });
+    alwaysNode.params._labelDisplayMode = "always";
+    const measurementGroup = {
+      id: "mg-1",
+      nodeId: bus.id,
+      visible: true,
+      labelVisible: true,
+      unitVisible: true,
+      backgroundColor: "#ed1111",
+      borderColor: "#1772f2",
+      borderStyle: "solid" as const,
+      borderWidth: 2,
+      anchor: "custom" as const,
+      offset: { x: 0, y: -40 },
+      layout: "vertical" as const,
+      items: [{ id: "m-1", measurementTypeId: "activePower", sourcePoint: `${bus.id}.p`, visible: true, defaultValue: 0 }]
+    };
+
+    const hiddenSvg = buildSvgDocument([bus, alwaysNode], [], {
+      width: 800,
+      height: 600,
+      backgroundColor: "#f1f5f9",
+      deviceLabelsVisible: false,
+      deviceMeasurementsVisible: false,
+      measurements: { version: 1, groups: [measurementGroup] }
+    });
+
+    // 存量 #f1f5f9 归一为纯白
+    expect(hiddenSvg).toContain(`fill="${LIGHT_CANVAS_BACKGROUND}"`);
+    expect(hiddenSvg).not.toContain('fill="#f1f5f9"');
+    // 全局关闭量测时，量测组保留元数据但带 display:none
+    const measSection = hiddenSvg.slice(hiddenSvg.indexOf('<g id="Measurement_Layer"'));
+    expect(measSection).toContain('class="mg"');
+    expect(measSection).toContain('style="display:none"');
+    // 全局关闭标识时：跟随模式的母线标识隐藏，始终显示模式的断路器标识可见
+    const textSection = hiddenSvg.slice(hiddenSvg.indexOf('<g id="Text_Layer"'), hiddenSvg.indexOf('<g id="Measurement_Layer"'));
+    expect(textSection).toContain("display:none;");
+    expect(textSection).toMatch(new RegExp(`id="label_[^"]*"[^>]*>${alwaysNode.name}</text>`));
+    const alwaysLabelTag = textSection.split("\n").find((line) => line.includes(`>${alwaysNode.name}</text>`)) ?? "";
+    expect(alwaysLabelTag).not.toContain("display:none;");
+  });
 });

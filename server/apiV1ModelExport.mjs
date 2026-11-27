@@ -10,7 +10,7 @@ import { handleV1ModelCimXml } from "./cimExport.mjs";
 const FORMATS = new Set(["json", "svg", "e-file", "cim-xml"]);
 const ALLOWED_GET = {
   json: new Set(["format", "schemeId", "schemePath", "name"]),
-  svg: new Set(["format", "schemeId", "schemePath", "name", "colorMode", "encoding"]),
+  svg: new Set(["format", "schemeId", "schemePath", "name", "colorMode", "labelsVisible", "measurementsVisible", "encoding"]),
   "e-file": new Set(["format", "schemeId", "schemePath", "name", "template", "encoding"]),
   "cim-xml": new Set(["format", "schemeId", "schemePath", "name", "modelId", "strict"])
 };

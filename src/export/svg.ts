@@ -66,7 +66,8 @@ import { atLeastOneNumber } from "../canvasViewport.ts";
 import { inferESection } from "../model-eexport.ts";
 // 深浅两套画布底色与「未设置」语义统一在 canvasTheme.ts 里定义。
 // 这里曾经自带一份 `#f1f5f9` 字面量副本，与共享常量分叉，导致改主题后导出仍走浅灰。
-import { LIGHT_CANVAS_BACKGROUND } from "../canvasTheme.ts";
+import { LIGHT_CANVAS_BACKGROUND, migrateLegacyCanvasBackground } from "../canvasTheme.ts";
+import { nodeLabelShouldRender } from "../nodeLabelUtils.ts";
 import { isContainerNode, withNodeUpdates } from "../acContainer.ts";
 import {
   DEFAULT_MEASUREMENT_CONFIG,
@@ -150,6 +151,10 @@ export type CanvasRenderOptions = CanvasBounds & {
   activeLayerId?: string;
   measurements?: ProjectMeasurementConfig;
   measurementConfig?: PlatformMeasurementConfig;
+  /** 全局设备标识显示开关（与画布顶栏「显示/隐藏设备标识」同口径）。缺省 true，不改变既有基线输出。 */
+  deviceLabelsVisible?: boolean;
+  /** 全局设备量测显示开关（与画布顶栏「显示/隐藏设备量测」同口径）。缺省 true，不改变既有基线输出。 */
+  deviceMeasurementsVisible?: boolean;
   /**
    * 电流流水线图层开关。**默认 false**：缺省必须与本选项引入前的输出逐字节一致
    * （既有 golden 基线与前端「导出 SVG」按钮都不传该字段，改默认值会炸基线）。
@@ -378,11 +383,14 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
     const template = resolveSvgNodeTemplate(node);
     return template ? resolveDeviceStateVisual(template, node) : null;
   };
-  const backgroundColor = canvasSize.backgroundColor ?? DEFAULT_CANVAS_BACKGROUND;
+  // 存量项目历史默认浅灰底色（#f1f5f9）与绘图区同口径归一为纯白，自定义显式底色原样保留
+  const backgroundColor = migrateLegacyCanvasBackground(canvasSize.backgroundColor) || DEFAULT_CANVAS_BACKGROUND;
   const backgroundImage = exportSvgImageHref(canvasSize.backgroundImage ?? "", imageExportPathById);
   const escapedBackgroundColor = escapeXml(backgroundColor);
   const colorDisplayMode = canvasSize.colorDisplayMode ?? "energy";
   const colorPalette = normalizeColorPalette(canvasSize.colorPalette ?? DEFAULT_COLOR_PALETTE);
+  const deviceLabelsVisible = canvasSize.deviceLabelsVisible !== false;
+  const deviceMeasurementsVisible = canvasSize.deviceMeasurementsVisible !== false;
   const terminalSlotPaint = canvasSize.terminalSlotPaint === true;
   const terminalGeometryVisible = canvasSize.terminalGeometryVisible !== false;
   // 主画布尺寸兜底：与下方背景页 :378-379 的 atLeastOneNumber 同口径。
@@ -1100,7 +1108,7 @@ ${rules.join("\n")}
         const labelWrapperId = exportSvgUniqueId(`label_${exportDeviceId}`, usedSvgIds, "node_label");
         textLayerMarkup.push(buildSvgNodeLabelTextElementsMarkup(node, labelWrapperId, {
           attributes: `layer-id="${escapeXml(layerId)}"${labelMetadataAttributes ? ` ${labelMetadataAttributes}` : ""}`,
-          visible: layerVisible(layerId)
+          visible: nodeLabelShouldRender(node, deviceLabelsVisible) && layerVisible(layerId)
         }));
       }
       const useX = formatSvgNumber(node.position.x - node.size.width / 2);
@@ -1134,7 +1142,7 @@ ${rules.join("\n")}
         deviceId: associatedDevice?.deviceId ?? ownerDeviceId,
         ownerDeviceId,
         layerId,
-        visible: layerVisible(layerId)
+        visible: deviceMeasurementsVisible && layerVisible(layerId)
       });
       if (!groupMarkup) {
         return "";

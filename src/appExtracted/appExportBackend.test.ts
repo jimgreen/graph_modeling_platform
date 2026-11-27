@@ -223,6 +223,24 @@ describe("createExportSvgFile 走后端", () => {
     expect(saved[0].text).toBe('<svg xmlns="http://www.w3.org/2000/svg"/>');
   });
 
+  test("按绘图区当前 colorDisplayMode 及标识/量测全局开关透传查询参数（所见即所得）", async () => {
+    const fetchMock = vi.fn(async (_url: string) => new Response('<svg xmlns="http://www.w3.org/2000/svg"/>', {
+      status: 200,
+      headers: { "content-type": "image/svg+xml; charset=utf-8" }
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { scope } = makeScope({
+      colorDisplayMode: "energy",
+      deviceLabelsVisible: false,
+      deviceMeasurementsVisible: false
+    });
+    await createExportSvgFile(scope)("utf-8");
+    const url = String(fetchMock.mock.calls[0][0]);
+    expect(url).toContain("colorMode=energy");
+    expect(url).toContain("labelsVisible=0");
+    expect(url).toContain("measurementsVisible=0");
+  });
+
   test("后端报错时提示消息且不落盘", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ ok: false, error: { code: "not-found", message: "模型不存在。" } }), { status: 404 })));
     const messages: string[] = [];

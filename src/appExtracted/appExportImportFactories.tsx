@@ -368,16 +368,21 @@ async function fetchBackendModelEFile(__appScope: ExportImportScope, textEncodin
   };
 }
 
-// SVG 生成已移至后端 /v1/schemes/model/export?format=svg；colorMode=voltage 保持前端导出原有按电压着色。
-// 已知差异（后端渲染器舍去）：不含背景页图层；配色取自部署的 color-config.json（与前端本地导出同源）。
+// SVG 生成已移至后端 /v1/schemes/model/export?format=svg；
+// 透传当前绘图区的配色模式（energy/voltage）及设备标识/量测全局显隐开关，保证导出结果所见即所得。
 // XML 声明由后端产出，前端不再前置，保证响应体与落盘文件逐字节一致。
 async function fetchBackendModelSvgText(__appScope: ExportImportScope, textEncoding: TextFileEncoding, failureMessage: string) {
-  const { projectName } = __appScope;
+  const { projectName, colorDisplayMode, deviceLabelsVisible, deviceMeasurementsVisible } = __appScope;
   const path = backendExportSchemePath(__appScope);
+  const colorMode = colorDisplayMode === "energy" || colorDisplayMode === "voltage"
+    ? colorDisplayMode
+    : "voltage";
   const url = apiPath(
     `/v1/schemes/model/export?format=svg&${schemePathQueryParam("schemePath", path)}`
     + `&name=${encodeURIComponent(String(projectName ?? ""))}`
-    + `&colorMode=voltage`
+    + `&colorMode=${encodeURIComponent(colorMode)}`
+    + (deviceLabelsVisible === false ? "&labelsVisible=0" : "")
+    + (deviceMeasurementsVisible === false ? "&measurementsVisible=0" : "")
     + `&encoding=${encodeURIComponent(textEncoding)}`
   );
   const response = await fetch(url, { method: "GET" });

@@ -87,7 +87,14 @@ async function buildBackgroundPageOption({ project, libraryTemplateByKind, paths
 
 // paths：多空间路径集合（spaceStore.spacePathsFor）。缺省时各被调函数回落 defaultPaths，
 // 保证「方案 ZIP 的 json 与 e/svg 同源」——调用方传了 paths，派生格式就必须读同一个根。
-export async function renderSavedModelSvg({ parts, name, colorMode = "energy", paths }) {
+export async function renderSavedModelSvg({
+  parts,
+  name,
+  colorMode = "energy",
+  deviceLabelsVisible = true,
+  deviceMeasurementsVisible = true,
+  paths
+}) {
   const record = await readSchemeProjectRecord({ schemePath: parts, name, paths });
   if (!record) {
     return { error: { code: "not-found", message: "模型不存在。" } };
@@ -144,6 +151,8 @@ export async function renderSavedModelSvg({ parts, name, colorMode = "energy", p
       activeLayerId: project.activeLayerId,
       measurements: project.measurements,
       measurementConfig,
+      deviceLabelsVisible,
+      deviceMeasurementsVisible,
       // 同一份 id→dataURL 映射两用：imageAssets 供 assetId 解析（节点/状态图元），imageExportPathById 供 href 替换。
       // 只读被引用的图片，不整库内联；代价是响应体随图片体积膨胀。
       imageExportPathById,
