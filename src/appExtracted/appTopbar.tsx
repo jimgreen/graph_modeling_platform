@@ -1,4 +1,4 @@
-import { Suspense, lazy, memo, useCallback, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, memo, useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Input, InputNumber, Modal, Select, Tooltip } from "antd";
 import { ELECTRIC_FLOW_ARROW_STYLES, ELECTRIC_FLOW_DEFAULTS, type ElectricFlowSettings } from "../model";
 import { normalizeElectricFlowSettings } from "../export/electric-flow-markup";
@@ -19,10 +19,15 @@ import {
 } from "../spaceClient";
 import { currentQiankunUser, filterSpacesForCurrentUser } from "../qiankunUserSpace";
 import { startAppTour } from "../appTour";
-import { saveLazyBlobFile, type SavedExportFile } from "../fileIO";
-import { ChevronDown, Download, Menu, Moon, Pencil, Redo2, Send, Sun, Trash2, Undo2, Upload } from "lucide-react";
+import { getExportProgressState, saveLazyBlobFile, subscribeExportProgress, type SavedExportFile } from "../fileIO";
+import { ChevronDown, Download, Loader2, Menu, Moon, Pencil, Redo2, Send, Sun, Trash2, Undo2, Upload } from "lucide-react";
 import { isInterfaceCustomizationVisible } from "../interfaceCustomization";
 import { useRuntimeWsIndicatorSnapshot } from "../runtimeWsIndicatorStore";
+
+function TopbarExportTriggerIcon() {
+  const progress = useSyncExternalStore(subscribeExportProgress, getExportProgressState, getExportProgressState);
+  return progress.active ? <Loader2 className="export-spin-icon" size={16}/> : <Download size={16}/>;
+}
 
 const SendModelDialog = lazy(() =>
   import("../SendModelDialog").then((module) => ({ default: module.SendModelDialog }))
@@ -835,7 +840,7 @@ function AppTopbarContent({ scope }: { scope: Record<string, any> }) {
         {visible("topbar.save") && T(hasActiveModel ? (saveRequired ? "保存当前模型" : "当前模型没有新的修改") : "没有打开模型", <button id="topbar-save" className="topbar-primary-button" onClick={() => void saveCurrentProject()} disabled={modelActionsDisabled || !saveRequired} aria-label="保存"><Save size={16}/></button>)}
         {visible("topbar.eInterface") && T("打开 E 文件接口定义", <button id="topbar-e-interface-definition" className={`topbar-primary-button ${eDeviceDefinitionInterfaceDialogOpen ? "active" : ""}`} disabled={modelActionsDisabled} onClick={() => setEDeviceDefinitionInterfaceDialogOpen(true)} aria-label="打开 E 文件接口定义" aria-pressed={Boolean(eDeviceDefinitionInterfaceDialogOpen)}><FileJson size={16}/></button>)}
         {visible("topbar.export") && <div className={`topbar-dropdown export-dropdown${modelActionsDisabled ? " model-actions-disabled" : ""}`}>
-          {T("导出文件", <button type="button" id="topbar-export" className="topbar-primary-button" disabled={modelActionsDisabled} aria-label="导出文件" aria-haspopup="menu"><Download size={16}/></button>)}
+          {T("导出文件", <button type="button" id="topbar-export" className="topbar-primary-button" disabled={modelActionsDisabled} aria-label="导出文件" aria-haspopup="menu"><TopbarExportTriggerIcon/></button>)}
           <div className="topbar-dropdown-menu" role="menu" aria-label="导出选项">
             {[
               { key: "bundle", label: "导出 E、JSON 和 SVG", icon: <Download size={16}/>, action: exportSvg, validatesEInterface: true },

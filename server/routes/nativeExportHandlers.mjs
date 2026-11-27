@@ -70,7 +70,44 @@ export function createNativeExportHandlers({
     }
   }
 
-  // 「查看」导出文件：令牌由 write-text 刚落盘时签发，服务端只认自己写过的路径
+  async function handleWriteNativeExportBundle(url, request, response, nativeExportSaveService) {
+    if (!isAllowedNativeExportOrigin(request)) {
+      sendError(response, 403, "仅允许本机页面调用快速另存为接口。");
+      return;
+    }
+    const token = String(url.searchParams.get("token") ?? "").trim();
+    if (!token) {
+      sendError(response, 400, "缺少另存为目标令牌。");
+      return;
+    }
+    const payload = await readJsonBody(request, maxSchemeBodyBytes, "组合导出文件过大，最大支持 64MB。");
+    const rawFiles = Array.isArray(payload?.files) ? payload.files : [];
+    if (rawFiles.length === 0) {
+      sendError(response, 400, "缺少组合导出文件列表。");
+      return;
+    }
+    const entries = rawFiles.map((item) => ({
+      ext: String(item?.ext ?? "").trim(),
+      data: Buffer.from(String(item?.base64 ?? ""), "base64")
+    }));
+    try {
+      const result = await nativeExportSaveService.writeBundle(token, entries);
+      sendJson(response, 200, { ok: true, ...result });
+    } catch (error) {
+      if (error instanceof NativeExportSaveError && error.code === "invalid-token") {
+        sendError(response, 404, error.message);
+        return;
+      }
+      if (error instanceof NativeExportSaveError && error.code === "bad-bundle") {
+        sendError(response, 400, error.message);
+        return;
+      }
+      const message = error instanceof Error ? error.message : "写入组合导出文件失败。";
+      sendError(response, 500, message);
+    }
+  }
+
+  // 「查看」导出文件：令牌由 write-text / write-bundle 刚落盘时签发，服务端只认自己写过的路径
   async function handleOpenNativeExportFile(url, request, response, nativeExportSaveService) {
     if (!isAllowedNativeExportOrigin(request)) {
       sendError(response, 403, "仅允许本机页面调用导出文件查看接口。");
@@ -97,6 +134,7 @@ export function createNativeExportHandlers({
   return {
     handleSelectNativeExportFile,
     handleWriteNativeExportText,
+    handleWriteNativeExportBundle,
     handleOpenNativeExportFile
   };
 }

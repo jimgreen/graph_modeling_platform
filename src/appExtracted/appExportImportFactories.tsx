@@ -21,7 +21,15 @@ import { backendErrorMessage, type BackendSchemeArchiveImportResponse, type Imag
 import { safeFilePart as sharedSafeFilePart } from "./appInlineUtilityFunctions";
 import { decodeGbk } from "../encoding/gbk";
 import { E_DEVICE_TEMPLATE_ALLOWED_MODEL_TYPES } from "../eDeviceTemplateTypePolicy";
-import type { SavedExportFile, TextFileEncoding } from "../fileIO";
+import {
+  canUseNativeExportBundleDialog,
+  runGuardedUserExportAction,
+  saveNativeTextBundle,
+  updateExportProgress,
+  type NativeBundleTextEntry,
+  type SavedExportFile,
+  type TextFileEncoding
+} from "../fileIO";
 import { schemePathQueryParam } from "./appPersistenceLibraryExport";
 import { flushActiveBufferedInput } from "../components/InputComponents";
 
@@ -126,6 +134,87 @@ export function createExportSvg(__appScope: ExportImportScope) {
       return;
     }
 
+    // 本机环境下优先走原生「另存为」窗口：支持在同一个窗口内同时选择保存目录与自定义基础文件名，
+    // 且另存为弹窗与后端 E / JSON / SVG 生成并行进行；若服务端不支持（501）则无缝回退目录选择器。
+    if (canUseNativeExportBundleDialog()) {
+      const suggestedBaseName = safeFilePart(latestScope().projectName);
+      let eFileWarningDetails: string[] = [];
+      let bundleOutcome;
+      try {
+        bundleOutcome = await saveNativeTextBundle({
+          suggestedBaseName,
+          onSaveTargetReady: () => {
+            exportStartedAt = performance.now();
+          },
+          loadEntries: async (): Promise<NativeBundleTextEntry[]> => {
+            const scopeSnapshot = latestScope();
+            const [eResult, jsonResult, svgResult] = await Promise.all([
+              fetchBackendModelEFile(scopeSnapshot, textEncoding, "E 文件生成失败。").then(
+                (value) => ({ ok: true as const, value }),
+                (error: unknown) => ({ ok: false as const, error })
+              ),
+              fetchBackendModelJsonText(scopeSnapshot, "JSON 生成失败。").then(
+                (value) => ({ ok: true as const, value }),
+                (error: unknown) => ({ ok: false as const, error })
+              ),
+              fetchBackendModelSvgText(scopeSnapshot, textEncoding, "SVG 生成失败。").then(
+                (value) => ({ ok: true as const, value }),
+                (error: unknown) => ({ ok: false as const, error })
+              )
+            ]);
+            const generationFailures: string[] = [];
+            if (!eResult.ok) {
+              generationFailures.push(`.e：${eResult.error instanceof Error ? eResult.error.message : String(eResult.error ?? "未知错误")}`);
+            }
+            if (!jsonResult.ok) {
+              generationFailures.push(`.json：${jsonResult.error instanceof Error ? jsonResult.error.message : String(jsonResult.error ?? "未知错误")}`);
+            }
+            if (!svgResult.ok) {
+              generationFailures.push(`.svg：${svgResult.error instanceof Error ? svgResult.error.message : String(svgResult.error ?? "未知错误")}`);
+            }
+            if (!eResult.ok || !jsonResult.ok || !svgResult.ok) {
+              throw new Error(generationFailures.join("\n"));
+            }
+            eFileWarningDetails = eResult.value.warningDetails;
+            return [
+              { ext: ".e", text: eResult.value.text, encoding: textEncoding },
+              { ext: ".json", text: jsonResult.value, encoding: textEncoding },
+              { ext: ".svg", text: svgResult.value, encoding: textEncoding }
+            ];
+          }
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error ?? "未知错误");
+        showGlobalMessage(`导出失败：\n${message}\n总耗时：${exportElapsedText()}`);
+        return;
+      }
+
+      if (bundleOutcome.status === "cancelled") {
+        return;
+      }
+      if (bundleOutcome.status === "saved") {
+        const finalBase = bundleOutcome.baseName;
+        writeOperationLog(`导出模型文件：${finalBase}.e`);
+        writeOperationLog(`导出模型文件：${finalBase}.json`);
+        writeOperationLog(`导出图形文件：${finalBase}.svg`);
+        const successMessage = `E、JSON 和 SVG 文件导出成功：${finalBase}.{e,json,svg}；字符编码：${textFileEncodingLabel(textEncoding)}；总耗时：${exportElapsedText()}`;
+        showStandaloneExportCompletion(
+          __appScope,
+          "E、JSON 和 SVG 文件导出完成",
+          successMessage,
+          [
+            `目录：${bundleOutcome.directory}`,
+            `E：${finalBase}.e`,
+            `JSON：${finalBase}.json`,
+            `SVG：${finalBase}.svg`,
+            ...eFileWarningDetails
+          ],
+          bundleOutcome.savedFile
+        );
+        return;
+      }
+    }
+
     const directoryPicker = (window as Window & {
       showDirectoryPicker?: (options?: { id?: string; mode?: "read" | "readwrite" }) => Promise<any>;
     }).showDirectoryPicker;
@@ -135,11 +224,13 @@ export function createExportSvg(__appScope: ExportImportScope) {
     }
     let directoryHandle: any;
     try {
+      updateExportProgress("dialog", "正在选择导出目录…");
       directoryHandle = await directoryPicker.call(window, {
         id: "model-bundle-export",
         mode: "readwrite"
       });
       exportStartedAt = performance.now();
+      updateExportProgress("writing", "正在生成并写入 E、JSON 和 SVG 文件…");
     } catch (error) {
       if (typeof isPickerAbort === "function" && isPickerAbort(error)) {
         return;
@@ -164,7 +255,20 @@ export function createExportSvg(__appScope: ExportImportScope) {
           (value: string) => ({ ok: true as const, value }),
           (error: unknown) => ({ ok: false as const, error })
         );
-      const baseFilename = safeFilePart(latestScope().projectName);
+      const defaultBaseFilename = safeFilePart(latestScope().projectName);
+      let baseFilename = defaultBaseFilename;
+      if (typeof globalThis.showGlobalPrompt === "function") {
+        const promptedName = await globalThis.showGlobalPrompt(
+          "请输入导出的基础文件名（将在所选目录生成同名 .e / .json / .svg）：",
+          defaultBaseFilename
+        );
+        if (promptedName === null) {
+          return;
+        }
+        const strippedPromptName = String(promptedName ?? "").trim().replace(/\.(svg|e|json)$/iu, "").trim();
+        baseFilename = safeFilePart(strippedPromptName || defaultBaseFilename);
+        exportStartedAt = performance.now();
+      }
       type PendingExportFile = {
         label: string;
         filename: string;
@@ -1545,31 +1649,33 @@ export function createResolveDuplicateModelImport(__appScope: ExportImportScope)
 
 export function createExportSchemeRecord(__appScope: ExportImportScope) {
   return async (scheme: SavedSchemeRecord) => {
-  const { downloadBackendSchemeArchive, flattenSavedProjects, isPickerAbort, safeFilePart, schemePathForRecord, writeOperationLog } = __appScope;
-    try {
-      const schemePath = schemePathForRecord(scheme);
-      // 本机另存为才拿得到磁盘路径 → 弹框里才有【查看】（ZIP 用系统默认解压器打开）
-      let savedFile: SavedExportFile | null = null;
-      const saved = await downloadBackendSchemeArchive(schemePath, `${safeFilePart(scheme.name)}.zip`, (file: any) => {
-        savedFile = file;
-      }, scheme.schemeId);
-      if (!saved) {
-        return;
+    await runGuardedUserExportAction(`导出方案「${scheme.name}」`, async () => {
+      const { downloadBackendSchemeArchive, flattenSavedProjects, isPickerAbort, safeFilePart, schemePathForRecord, writeOperationLog } = __appScope;
+      try {
+        const schemePath = schemePathForRecord(scheme);
+        // 本机另存为才拿得到磁盘路径 → 弹框里才有【查看】（ZIP 用系统默认解压器打开）
+        let savedFile: SavedExportFile | null = null;
+        const saved = await downloadBackendSchemeArchive(schemePath, `${safeFilePart(scheme.name)}.zip`, (file: SavedExportFile) => {
+          savedFile = file;
+        }, scheme.schemeId);
+        if (!saved) {
+          return;
+        }
+        writeOperationLog(`导出方案：${scheme.name}`);
+        showStandaloneExportCompletion(
+          __appScope,
+          "方案导出完成",
+          `已导出方案“${scheme.name}”，共 ${flattenSavedProjects([scheme]).length} 个模型。`,
+          [`文件：${safeFilePart(scheme.name)}.zip`],
+          savedFile
+        );
+      } catch (error) {
+        if (isPickerAbort(error)) {
+          return;
+        }
+        showGlobalMessage(error instanceof Error ? `导出方案失败：${error.message}` : "导出方案失败。");
       }
-      writeOperationLog(`导出方案：${scheme.name}`);
-      showStandaloneExportCompletion(
-        __appScope,
-        "方案导出完成",
-        `已导出方案“${scheme.name}”，共 ${flattenSavedProjects([scheme]).length} 个模型。`,
-        [`文件：${safeFilePart(scheme.name)}.zip`],
-        savedFile
-      );
-    } catch (error) {
-      if (isPickerAbort(error)) {
-        return;
-      }
-      showGlobalMessage(error instanceof Error ? `导出方案失败：${error.message}` : "导出方案失败。");
-    }
+    });
   };
 }
 

@@ -99,7 +99,112 @@ const NATIVE_EXPORT_DIRECTORY_STORAGE_KEY = "graph-modeling-platform.native-expo
 const LOCAL_NATIVE_EXPORT_HOSTNAMES = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
 const NATIVE_EXPORT_SELECT_PATH = "/exports/native/select-file";
 const NATIVE_EXPORT_WRITE_PATH = "/exports/native/write-text";
+const NATIVE_EXPORT_WRITE_BUNDLE_PATH = "/exports/native/write-bundle";
 const NATIVE_EXPORT_OPEN_PATH = "/exports/native/open-file";
+
+export type ExportProgressPhase = "idle" | "dialog" | "writing";
+export type ExportProgressState = {
+  active: boolean;
+  phase: ExportProgressPhase;
+  label: string;
+};
+
+const IDLE_EXPORT_PROGRESS_STATE: ExportProgressState = Object.freeze({
+  active: false,
+  phase: "idle",
+  label: ""
+});
+
+let currentExportProgressState: ExportProgressState = IDLE_EXPORT_PROGRESS_STATE;
+const exportProgressListeners = new Set<() => void>();
+let activeSaveOperationDepth = 0;
+let userExportActionInFlight = false;
+
+function emitExportProgress(next: ExportProgressState) {
+  if (
+    currentExportProgressState.active === next.active
+    && currentExportProgressState.phase === next.phase
+    && currentExportProgressState.label === next.label
+  ) {
+    return;
+  }
+  currentExportProgressState = next;
+  for (const listener of exportProgressListeners) {
+    listener();
+  }
+}
+
+export function getExportProgressState(): ExportProgressState {
+  return currentExportProgressState;
+}
+
+export function subscribeExportProgress(listener: () => void): () => void {
+  exportProgressListeners.add(listener);
+  return () => {
+    exportProgressListeners.delete(listener);
+  };
+}
+
+export function updateExportProgress(phase: Exclude<ExportProgressPhase, "idle">, label: string) {
+  emitExportProgress({
+    active: true,
+    phase,
+    label
+  });
+}
+
+export function clearExportProgress() {
+  emitExportProgress(IDLE_EXPORT_PROGRESS_STATE);
+}
+
+export function isUserExportInFlight(): boolean {
+  return userExportActionInFlight || activeSaveOperationDepth > 0;
+}
+
+/**
+ * 用户触发的导出动作单飞互斥保护：
+ * 正在等待另存为弹窗或后台生成写盘期间拦截重复点击，防止弹出多个系统对话框或并发重复请求。
+ */
+export async function runGuardedUserExportAction(
+  actionLabel: string,
+  action: () => unknown | Promise<unknown>
+): Promise<boolean> {
+  if (isUserExportInFlight()) {
+    globalThis.showGlobalMessage?.("正在导出文件中，请稍候，切勿重复点击。");
+    return false;
+  }
+  userExportActionInFlight = true;
+  updateExportProgress("dialog", `正在准备${actionLabel}…`);
+  try {
+    await action();
+    return true;
+  } finally {
+    userExportActionInFlight = false;
+    if (activeSaveOperationDepth === 0) {
+      clearExportProgress();
+    }
+  }
+}
+
+async function withTrackedSaveOperation<T>(initialLabel: string, run: () => Promise<T>): Promise<T> {
+  activeSaveOperationDepth += 1;
+  updateExportProgress("dialog", initialLabel);
+  try {
+    return await run();
+  } finally {
+    activeSaveOperationDepth = Math.max(0, activeSaveOperationDepth - 1);
+    if (activeSaveOperationDepth === 0 && !userExportActionInFlight) {
+      clearExportProgress();
+    }
+  }
+}
+
+/** 仅供单元测试重置导出进度与单飞锁状态。 */
+export function resetExportProgressForTest() {
+  activeSaveOperationDepth = 0;
+  userExportActionInFlight = false;
+  clearExportProgress();
+}
 
 /**
  * 本机另存为成功后拿到的「可再次打开」凭据。
@@ -131,6 +236,157 @@ function canUseNativeExportDialog(options: Pick<TextSaveOptions, "preferNativeDi
   }
   const hostname = String(window.location?.hostname ?? "").trim().toLowerCase();
   return LOCAL_NATIVE_EXPORT_HOSTNAMES.has(hostname);
+}
+
+/** 当前环境是否支持本机系统另存为弹窗（用于组合导出同时选目录与指定基础文件名）。 */
+export function canUseNativeExportBundleDialog(): boolean {
+  return canUseNativeExportDialog({ preferNativeDialog: true });
+}
+
+function uint8ArrayToBase64(bytes: Uint8Array): string {
+  if (typeof btoa === "function") {
+    let binary = "";
+    const chunkSize = 0x8000;
+    for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+      const slice = bytes.subarray(offset, Math.min(offset + chunkSize, bytes.length));
+      binary += String.fromCharCode(...slice);
+    }
+    return btoa(binary);
+  }
+  return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString("base64");
+}
+
+export type NativeBundleTextEntry = {
+  ext: string;
+  text: string;
+  encoding?: EFileTextEncoding;
+};
+
+export type NativeBundleWrittenFile = {
+  ext: string;
+  filename: string;
+  path: string;
+};
+
+export type NativeBundleSaveResult =
+  | {
+      status: "saved";
+      baseName: string;
+      directory: string;
+      files: NativeBundleWrittenFile[];
+      savedFile: SavedExportFile | null;
+    }
+  | { status: "cancelled" }
+  | { status: "unsupported" };
+
+/**
+ * 本机组合文件另存为：弹一次系统「另存为」窗口让用户同时选择保存目录与自定义基础文件名，
+ * 同时后台并行生成各份内容，确认后一次性在目标目录原子写出 `<基础文件名>.e/.json/.svg`。
+ */
+export async function saveNativeTextBundle(options: {
+  suggestedBaseName: string;
+  description?: string;
+  extensions?: string[];
+  startIn?: SaveFilePickerStartIn;
+  loadEntries: () => Promise<NativeBundleTextEntry[]>;
+  onSaveTargetReady?: () => void;
+}): Promise<NativeBundleSaveResult> {
+  if (!canUseNativeExportBundleDialog()) {
+    return { status: "unsupported" };
+  }
+  const safeBase = String(options.suggestedBaseName ?? "").trim() || "model";
+  return withTrackedSaveOperation(`正在打开另存为窗口（${safeBase}）…`, async () => {
+    const rememberedDirectory = readRememberedNativeExportDirectory();
+    const selectPromise = fetch(apiPath(NATIVE_EXPORT_SELECT_PATH), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        filename: `${safeBase}.svg`,
+        description: options.description ?? "模型组合导出文件（同目录生成 .e / .json / .svg）",
+        extensions: options.extensions ?? [".svg", ".e", ".json"],
+        startIn: options.startIn,
+        ...(rememberedDirectory ? { initialDirectory: rememberedDirectory } : {}),
+        title: "导出 E、JSON 和 SVG（指定保存目录与文件名）"
+      })
+    });
+    const entriesPromise = Promise.resolve().then(options.loadEntries);
+    void entriesPromise.catch(() => undefined);
+
+    let selectResponse: Response;
+    try {
+      selectResponse = await selectPromise;
+    } catch {
+      return { status: "unsupported" };
+    }
+    if (selectResponse.status === 501) {
+      nativeExportDialogUnsupported = true;
+      return { status: "unsupported" };
+    }
+    if (!selectResponse.ok) {
+      throw new Error(await responseErrorMessage(selectResponse, "打开系统另存为窗口失败。"));
+    }
+    const selection = await selectResponse.json() as {
+      cancelled?: boolean;
+      token?: string;
+      filename?: string;
+      directory?: string;
+    };
+    if (selection.cancelled) {
+      return { status: "cancelled" };
+    }
+    const token = String(selection.token ?? "").trim();
+    if (!token) {
+      return { status: "unsupported" };
+    }
+    rememberNativeExportDirectory(selection.directory);
+
+    options.onSaveTargetReady?.();
+    updateExportProgress("writing", "正在生成并写入 E、JSON 和 SVG 文件…");
+    const entries = await entriesPromise;
+    const encodedFiles = entries.map((entry) => ({
+      ext: entry.ext,
+      base64: uint8ArrayToBase64(encodeTextAsBytes(entry.text, entry.encoding ?? "utf-8"))
+    }));
+
+    const writeResponse = await fetch(`${apiPath(NATIVE_EXPORT_WRITE_BUNDLE_PATH)}?token=${encodeURIComponent(token)}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ files: encodedFiles })
+    });
+    if (!writeResponse.ok) {
+      throw new Error(await responseErrorMessage(writeResponse, "写入组合导出文件失败。"));
+    }
+    const payload = await writeResponse.json() as {
+      baseName?: unknown;
+      directory?: unknown;
+      files?: Array<{ ext?: unknown; filename?: unknown; path?: unknown }>;
+      viewToken?: unknown;
+      filename?: unknown;
+      path?: unknown;
+    };
+    const viewToken = String(payload?.viewToken ?? "").trim();
+    const savedFile: SavedExportFile | null = viewToken
+      ? {
+          token: viewToken,
+          filename: String(payload?.filename ?? `${safeBase}.svg`),
+          path: String(payload?.path ?? "")
+        }
+      : null;
+    const writtenFiles: NativeBundleWrittenFile[] = Array.isArray(payload?.files)
+      ? payload.files.map((item) => ({
+          ext: String(item?.ext ?? ""),
+          filename: String(item?.filename ?? ""),
+          path: String(item?.path ?? "")
+        }))
+      : [];
+    return {
+      status: "saved",
+      baseName: String(payload?.baseName ?? safeBase),
+      directory: String(payload?.directory ?? selection.directory ?? ""),
+      files: writtenFiles,
+      savedFile
+    };
+  });
 }
 
 /** 用系统默认绑定的工具打开此前导出的文件（由后端按文件关联拉起）。 */
@@ -260,6 +516,7 @@ async function saveFileWithNativeDialog(
   loadBytes: () => Promise<Uint8Array> | Uint8Array,
   downloadFallback: (bytes: Uint8Array) => void
 ): Promise<boolean> {
+  return withTrackedSaveOperation(`正在打开另存为窗口（${options.filename}）…`, async () => {
   const rememberedDirectory = readRememberedNativeExportDirectory();
   const selectPromise = fetch(apiPath(NATIVE_EXPORT_SELECT_PATH), {
     method: "POST",
@@ -277,6 +534,7 @@ async function saveFileWithNativeDialog(
   void bytesPromise.catch(() => undefined);
 
   const fallbackToBrowserDownload = async (message: string) => {
+    updateExportProgress("writing", `正在生成导出文件（${options.filename}）…`);
     const bytes = await bytesPromise;
     options.onSaveTargetReady?.();
     if (message) {
@@ -304,6 +562,7 @@ async function saveFileWithNativeDialog(
   const selection = await selectResponse.json() as {
     cancelled?: boolean;
     token?: string;
+    filename?: string;
     directory?: string;
   };
   if (selection.cancelled) {
@@ -317,6 +576,8 @@ async function saveFileWithNativeDialog(
 
   // 计时起点：用户选完路径这一刻（不把选择器停留时间算进「总耗时」）
   options.onSaveTargetReady?.();
+  const targetLabel = String(selection.filename ?? options.filename).trim() || options.filename;
+  updateExportProgress("writing", `正在生成并导出 ${targetLabel}…`);
   const bytes = await bytesPromise;
   let writeResponse: Response;
   try {
@@ -340,6 +601,7 @@ async function saveFileWithNativeDialog(
   // 据此决定弹框里给不给【查看】。不 await 的话 onSaved 落在后面的微任务里，读到的还是 null。
   await notifySavedExportFile(options.onSaved, writeResponse, options.filename);
   return true;
+  });
 }
 
 /** 写盘响应里的 viewToken 是「查看」的唯一凭据；缺/旧字段一律不提示可查看。 */

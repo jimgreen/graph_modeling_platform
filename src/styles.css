@@ -18826,3 +18826,82 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   background: #141a24;
   border-color: rgba(148, 163, 184, 0.32);
 }
+
+/* ============================================================================
+   导出过程实时阶段提示条与按钮加载态（紧凑单行胶囊 32px，不遮挡画布交互）
+   ============================================================================ */
+@keyframes gmp-export-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.export-spin-icon {
+  animation: gmp-export-spin 0.85s linear infinite;
+}
+
+.topbar-primary-button.export-busy,
+.topbar-primary-button:has(.export-spin-icon) {
+  color: #2563eb;
+  border-color: rgba(37, 99, 235, 0.45);
+  background: rgba(37, 99, 235, 0.08);
+}
+
+[data-theme="dark"] .topbar-primary-button.export-busy,
+[data-theme="dark"] .topbar-primary-button:has(.export-spin-icon),
+.dark-theme .topbar-primary-button.export-busy,
+.dark-theme .topbar-primary-button:has(.export-spin-icon) {
+  color: #60a5fa;
+  border-color: rgba(96, 165, 250, 0.45);
+  background: rgba(59, 130, 246, 0.16);
+}
+
+.export-progress-banner {
+  position: fixed;
+  top: 50px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 12000;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(37, 99, 235, 0.32);
+  background: rgba(255, 255, 255, 0.96);
+  color: #1e3a8a;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.12);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.export-progress-spinner {
+  width: 13px;
+  height: 13px;
+  border: 2px solid rgba(37, 99, 235, 0.24);
+  border-top-color: #2563eb;
+  border-radius: 50%;
+  animation: gmp-export-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+[data-theme="dark"] .export-progress-banner,
+.dark-theme .export-progress-banner {
+  border-color: rgba(96, 165, 250, 0.38);
+  background: rgba(15, 23, 42, 0.94);
+  color: #dbeafe;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.42);
+}
+
+[data-theme="dark"] .export-progress-spinner,
+.dark-theme .export-progress-spinner {
+  border-color: rgba(96, 165, 250, 0.25);
+  border-top-color: #60a5fa;
+}

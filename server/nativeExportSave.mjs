@@ -1,7 +1,8 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { access } from "node:fs/promises";
-import { basename, dirname, isAbsolute, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { createInterface } from "node:readline";
 import { atomicWriteFile } from "../shared/atomicWrite.mjs";
 
 const TARGET_TTL_MS = 10 * 60 * 1000;
@@ -172,6 +173,228 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
 `;
 
 const encodedWindowsSaveDialogScript = Buffer.from(WINDOWS_SAVE_DIALOG_SCRIPT, "utf16le").toString("base64");
+
+// 常驻 Windows STA 对话框与文件打开宿主脚本：
+// 服务启动后一次性完成 System.Windows.Forms 程序集加载与 NativeDialogPromoter C# 编译（消除每次点击导出 4.8~5.4 秒的冷启动开销），
+// 随后通过 stdin/stdout 单行 JSON 协议串行响应另存为弹窗（saveDialog）、默认程序打开（openFile）与健康探测（ping）。
+const WINDOWS_PERSISTENT_DIALOG_WORKER_SCRIPT = String.raw`
+$ErrorActionPreference = "Stop"
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+[Console]::InputEncoding = $utf8NoBom
+[Console]::OutputEncoding = $utf8NoBom
+Add-Type -AssemblyName System.Windows.Forms
+$dialogPromoterType = @"
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Threading;
+
+public static class NativeDialogPromoter
+{
+    private delegate bool EnumThreadDelegate(IntPtr hWnd, IntPtr lParam);
+
+    [DllImport("kernel32.dll")]
+    public static extern uint GetCurrentThreadId();
+
+    [DllImport("user32.dll")]
+    private static extern bool EnumThreadWindows(uint threadId, EnumThreadDelegate callback, IntPtr lParam);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetClassName(IntPtr hWnd, StringBuilder className, int maxCount);
+
+    [DllImport("user32.dll")]
+    private static extern bool SetWindowPos(
+        IntPtr hWnd,
+        IntPtr insertAfter,
+        int x,
+        int y,
+        int width,
+        int height,
+        uint flags
+    );
+
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern bool BringWindowToTop(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetProcessWindowStation();
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetThreadDesktop(uint dwThreadId);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern bool GetUserObjectInformation(
+        IntPtr hObj,
+        int nIndex,
+        StringBuilder pvInfo,
+        uint nLength,
+        out uint lpnLengthNeeded
+    );
+
+    private static string GetUserObjectName(IntPtr handle)
+    {
+        if (handle == IntPtr.Zero)
+        {
+            return "";
+        }
+        StringBuilder name = new StringBuilder(256);
+        uint needed = 0;
+        if (!GetUserObjectInformation(handle, 2, name, (uint)(name.Capacity * 2), out needed))
+        {
+            return "";
+        }
+        return name.ToString();
+    }
+
+    public static bool IsInteractiveDefaultDesktop(uint threadId)
+    {
+        if (!Environment.UserInteractive)
+        {
+            return false;
+        }
+        string winsta = GetUserObjectName(GetProcessWindowStation());
+        string desktop = GetUserObjectName(GetThreadDesktop(threadId));
+        return string.Equals(winsta, "WinSta0", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(desktop, "Default", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static void PromoteNextDialog(uint threadId, int timeoutMilliseconds)
+    {
+        ThreadPool.QueueUserWorkItem(delegate
+        {
+            DateTime deadline = DateTime.UtcNow.AddMilliseconds(timeoutMilliseconds);
+            while (DateTime.UtcNow < deadline)
+            {
+                IntPtr dialogHandle = IntPtr.Zero;
+                EnumThreadWindows(threadId, delegate(IntPtr hWnd, IntPtr lParam)
+                {
+                    StringBuilder className = new StringBuilder(32);
+                    GetClassName(hWnd, className, className.Capacity);
+                    if (className.ToString() == "#32770")
+                    {
+                        dialogHandle = hWnd;
+                        return false;
+                    }
+                    return true;
+                }, IntPtr.Zero);
+
+                if (dialogHandle != IntPtr.Zero)
+                {
+                    IntPtr hwndTopmost = new IntPtr(-1);
+                    const uint flags = 0x0001 | 0x0002 | 0x0040;
+                    SetWindowPos(dialogHandle, hwndTopmost, 0, 0, 0, 0, flags);
+                    BringWindowToTop(dialogHandle);
+                    SetForegroundWindow(dialogHandle);
+                    return;
+                }
+
+                Thread.Sleep(25);
+            }
+        });
+    }
+}
+"@
+Add-Type -TypeDefinition $dialogPromoterType
+
+$dialogThreadId = [NativeDialogPromoter]::GetCurrentThreadId()
+if (-not [NativeDialogPromoter]::IsInteractiveDefaultDesktop($dialogThreadId)) {
+  [Console]::Out.WriteLine('{"type":"ready","interactive":false}')
+  [Console]::Out.Flush()
+  exit 0
+}
+[Console]::Out.WriteLine('{"type":"ready","interactive":true}')
+[Console]::Out.Flush()
+# 预热 JSON 编解码 cmdlet JIT，将首次实际请求的解析开销从 ~350ms 降至 ~1ms
+$null = '{"id":"0"}' | ConvertFrom-Json
+$null = @{ id = "0"; ok = $true } | ConvertTo-Json -Compress
+
+while ($null -ne ($line = [Console]::In.ReadLine())) {
+  if ([string]::IsNullOrWhiteSpace($line)) {
+    continue
+  }
+  $reqId = ""
+  try {
+    $req = $line | ConvertFrom-Json
+    $reqId = [string]$req.id
+    $cmd = [string]$req.cmd
+    if ($cmd -eq "ping") {
+      $resp = @{ id = $reqId; ok = $true; pong = $true } | ConvertTo-Json -Compress
+      [Console]::Out.WriteLine($resp)
+      [Console]::Out.Flush()
+      continue
+    }
+    if ($cmd -eq "saveDialog") {
+      $dialog = New-Object System.Windows.Forms.SaveFileDialog
+      try {
+        $dialog.Title = [string]$req.title
+        $dialog.FileName = [string]$req.filename
+        $dialog.Filter = [string]$req.filter
+        $dialog.DefaultExt = [string]$req.defaultExtension
+        $dialog.AddExtension = $true
+        $dialog.OverwritePrompt = $true
+        $dialog.RestoreDirectory = $true
+        $initialDirectory = [string]$req.initialDirectory
+        if (-not ($initialDirectory -and (Test-Path -LiteralPath $initialDirectory -PathType Container))) {
+          $startIn = [string]$req.startIn
+          $initialDirectory = switch ($startIn) {
+            "desktop" { [Environment]::GetFolderPath([Environment+SpecialFolder]::Desktop) }
+            "documents" { [Environment]::GetFolderPath([Environment+SpecialFolder]::MyDocuments) }
+            "downloads" { Join-Path $env:USERPROFILE "Downloads" }
+            "music" { [Environment]::GetFolderPath([Environment+SpecialFolder]::MyMusic) }
+            "pictures" { [Environment]::GetFolderPath([Environment+SpecialFolder]::MyPictures) }
+            "videos" { [Environment]::GetFolderPath([Environment+SpecialFolder]::MyVideos) }
+            default { "" }
+          }
+        }
+        if ($initialDirectory -and (Test-Path -LiteralPath $initialDirectory -PathType Container)) {
+          $dialog.InitialDirectory = $initialDirectory
+        }
+        [NativeDialogPromoter]::PromoteNextDialog($dialogThreadId, 10000)
+        $result = $dialog.ShowDialog()
+        if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
+          $resp = @{ id = $reqId; ok = $true; cancelled = $false; path = [string]$dialog.FileName } | ConvertTo-Json -Compress
+        } else {
+          $resp = @{ id = $reqId; ok = $true; cancelled = $true } | ConvertTo-Json -Compress
+        }
+        [Console]::Out.WriteLine($resp)
+        [Console]::Out.Flush()
+      } finally {
+        $dialog.Dispose()
+      }
+      continue
+    }
+    if ($cmd -eq "openFile") {
+      try {
+        $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+        $startInfo.FileName = [string]$req.path
+        $startInfo.UseShellExecute = $true
+        if ($null -eq [System.Diagnostics.Process]::Start($startInfo)) {
+          throw "系统未能打开该文件。"
+        }
+        $resp = @{ id = $reqId; ok = $true } | ConvertTo-Json -Compress
+      } catch {
+        $reason = $_.Exception
+        if ($null -ne $_.Exception.InnerException) { $reason = $_.Exception.InnerException }
+        $resp = @{ id = $reqId; ok = $false; error = [string]$reason.Message } | ConvertTo-Json -Compress
+      }
+      [Console]::Out.WriteLine($resp)
+      [Console]::Out.Flush()
+      continue
+    }
+    $unknownResp = @{ id = $reqId; ok = $false; error = "未知指令: $cmd" } | ConvertTo-Json -Compress
+    [Console]::Out.WriteLine($unknownResp)
+    [Console]::Out.Flush()
+  } catch {
+    $errResp = @{ id = $reqId; ok = $false; error = [string]$_.Exception.Message } | ConvertTo-Json -Compress
+    [Console]::Out.WriteLine($errResp)
+    [Console]::Out.Flush()
+  }
+}
+`;
+const encodedPersistentWorkerScript = Buffer.from(WINDOWS_PERSISTENT_DIALOG_WORKER_SCRIPT, "utf16le").toString("base64");
 const SAVE_DIALOG_START_IN_VALUES = new Set(["desktop", "documents", "downloads", "music", "pictures", "videos"]);
 
 export class NativeExportSaveError extends Error {
@@ -426,14 +649,340 @@ export function isAllowedNativeExportOrigin(request) {
   }
 }
 
+export function createPersistentWindowsDialogWorker(dependencies = {}) {
+  const spawnImpl = dependencies.spawnImpl ?? spawn;
+  let child = null;
+  let readlineInterface = null;
+  let readyPromise = null;
+  let pendingRequest = null;
+  let queue = Promise.resolve();
+  let disposed = false;
+  let interactiveUnsupported = false;
+  let requestSeq = 0;
+
+  const setIdleRefState = (active) => {
+    if (!child) {
+      return;
+    }
+    if (active) {
+      child.ref?.();
+      child.stdout?.ref?.();
+      child.stderr?.ref?.();
+    } else {
+      child.unref?.();
+      child.stdout?.unref?.();
+      child.stderr?.unref?.();
+    }
+  };
+
+  const cleanupCurrentChild = (reasonError) => {
+    const activePending = pendingRequest;
+    const currentChild = child;
+    const currentReadline = readlineInterface;
+    pendingRequest = null;
+    child = null;
+    readlineInterface = null;
+    readyPromise = null;
+    if (currentReadline) {
+      try {
+        currentReadline.close();
+      } catch {
+        // ignore readline cleanup errors
+      }
+    }
+    if (currentChild) {
+      try {
+        currentChild.stdin?.end();
+      } catch {
+        // ignore stdin close errors
+      }
+      try {
+        currentChild.kill();
+      } catch {
+        // ignore process kill errors
+      }
+    }
+    if (activePending) {
+      activePending.reject(reasonError ?? new Error("常驻另存为宿主进程已退出。"));
+    }
+  };
+
+  const ensureReady = () => {
+    if (disposed) {
+      return Promise.reject(new NativeExportSaveError("dialog-failed", "另存为服务已关闭。"));
+    }
+    if (interactiveUnsupported) {
+      return Promise.reject(
+        new NativeExportSaveError("unsupported", "当前运行环境不在交互式桌面，不支持本地快速另存为。")
+      );
+    }
+    if (readyPromise) {
+      return readyPromise;
+    }
+    readyPromise = new Promise((resolveReady, rejectReady) => {
+      let settledReady = false;
+      let stderrText = "";
+      let spawned;
+      try {
+        spawned = spawnImpl(
+          "powershell.exe",
+          ["-NoProfile", "-Sta", "-WindowStyle", "Hidden", "-EncodedCommand", encodedPersistentWorkerScript],
+          {
+            stdio: ["pipe", "pipe", "pipe"],
+            windowsHide: true
+          }
+        );
+      } catch (error) {
+        readyPromise = null;
+        rejectReady(error);
+        return;
+      }
+      child = spawned;
+      // 启动握手阶段保持 ref，待收到 ready 且无挂起请求后再转入空闲 unref
+      setIdleRefState(true);
+
+      spawned.stderr?.setEncoding?.("utf8");
+      spawned.stderr?.on?.("data", (chunk) => {
+        if (stderrText.length < 4096) {
+          stderrText += String(chunk ?? "");
+        }
+      });
+
+      const rl = createInterface({ input: spawned.stdout, crlfDelay: Infinity });
+      readlineInterface = rl;
+
+      rl.on("line", (rawLine) => {
+        const trimmed = String(rawLine ?? "").trim();
+        if (!trimmed) {
+          return;
+        }
+        let message;
+        try {
+          message = JSON.parse(trimmed);
+        } catch {
+          return;
+        }
+        if (!settledReady && message?.type === "ready") {
+          settledReady = true;
+          if (!message.interactive) {
+            interactiveUnsupported = true;
+            cleanupCurrentChild();
+            rejectReady(
+              new NativeExportSaveError("unsupported", "当前运行环境不在交互式桌面，不支持本地快速另存为。")
+            );
+            return;
+          }
+          if (!pendingRequest) {
+            setIdleRefState(false);
+          }
+          resolveReady();
+          return;
+        }
+        if (pendingRequest && String(message?.id ?? "") === pendingRequest.id) {
+          const current = pendingRequest;
+          pendingRequest = null;
+          current.resolve(message);
+        }
+      });
+
+      const handleExitOrError = (err) => {
+        if (child !== spawned) {
+          return;
+        }
+        const detail = stderrText.trim();
+        const failure = err instanceof Error
+          ? err
+          : new Error(detail || "常驻另存为宿主进程意外退出。");
+        if (!settledReady) {
+          settledReady = true;
+          cleanupCurrentChild();
+          rejectReady(failure);
+          return;
+        }
+        cleanupCurrentChild(failure);
+      };
+
+      spawned.once("error", handleExitOrError);
+      spawned.once("close", () => handleExitOrError());
+    });
+    return readyPromise;
+  };
+
+  const sendCommand = (cmd, payload = {}, requestOptions = {}) => {
+    const run = async () => {
+      const signal = requestOptions?.signal;
+      if (signal?.aborted) {
+        return { ok: true, cancelled: true, aborted: true };
+      }
+      await ensureReady();
+      if (signal?.aborted) {
+        return { ok: true, cancelled: true, aborted: true };
+      }
+      const id = String(++requestSeq);
+      setIdleRefState(true);
+      try {
+        return await new Promise((resolveReq, rejectReq) => {
+          let aborted = false;
+          const onAbort = () => {
+            aborted = true;
+            pendingRequest = null;
+            cleanupCurrentChild();
+            // 客户端取消或刷新页面杀掉旧对话框后，后台立即静默预热新宿主进程，保证下次点击依旧瞬弹
+            if (!disposed && !interactiveUnsupported) {
+              void ensureReady().catch(() => undefined);
+            }
+            resolveReq({ ok: true, cancelled: true, aborted: true });
+          };
+          if (signal) {
+            signal.addEventListener("abort", onAbort, { once: true });
+          }
+          pendingRequest = {
+            id,
+            resolve: (msg) => {
+              if (signal) {
+                signal.removeEventListener("abort", onAbort);
+              }
+              if (!aborted) {
+                resolveReq(msg);
+              }
+            },
+            reject: (err) => {
+              if (signal) {
+                signal.removeEventListener("abort", onAbort);
+              }
+              if (!aborted) {
+                rejectReq(err);
+              }
+            }
+          };
+          try {
+            child.stdin.write(`${JSON.stringify({ id, cmd, ...payload })}\n`, "utf8");
+          } catch (writeError) {
+            if (signal) {
+              signal.removeEventListener("abort", onAbort);
+            }
+            pendingRequest = null;
+            cleanupCurrentChild();
+            rejectReq(writeError);
+          }
+        });
+      } finally {
+        setIdleRefState(false);
+      }
+    };
+    const resultPromise = queue.then(run, run);
+    queue = resultPromise.then(() => undefined, () => undefined);
+    return resultPromise;
+  };
+
+  return {
+    warmup() {
+      if (disposed || interactiveUnsupported) {
+        return Promise.resolve(false);
+      }
+      return ensureReady().then(() => true, () => false);
+    },
+    async ping() {
+      const startedAt = performance.now();
+      const response = await sendCommand("ping");
+      return { ok: Boolean(response?.ok && response?.pong), elapsedMs: performance.now() - startedAt };
+    },
+    async chooseSaveFile(normalizedOptions, requestOptions = {}) {
+      let response;
+      try {
+        response = await sendCommand("saveDialog", normalizedOptions, requestOptions);
+      } catch (error) {
+        if (error instanceof NativeExportSaveError) {
+          throw error;
+        }
+        const detail = String(error?.message ?? "").trim();
+        throw new NativeExportSaveError(
+          "dialog-failed",
+          detail ? `打开系统另存为窗口失败：${detail}` : "打开系统另存为窗口失败。"
+        );
+      }
+      if (response?.aborted || response?.cancelled) {
+        return null;
+      }
+      if (!response?.ok) {
+        const detail = String(response?.error ?? "").trim();
+        throw new NativeExportSaveError(
+          "dialog-failed",
+          detail ? `打开系统另存为窗口失败：${detail}` : "打开系统另存为窗口失败。"
+        );
+      }
+      const selectedPath = String(response?.path ?? "").trim();
+      if (!selectedPath) {
+        throw new NativeExportSaveError("dialog-failed", "系统另存为窗口没有返回有效文件路径。");
+      }
+      return resolve(selectedPath);
+    },
+    async openFile(filePath) {
+      const target = String(filePath ?? "").trim();
+      if (!target) {
+        throw new NativeExportSaveError("invalid-path", "没有可打开的文件路径。");
+      }
+      let response;
+      try {
+        response = await sendCommand("openFile", { path: target });
+      } catch (error) {
+        if (error instanceof NativeExportSaveError) {
+          throw error;
+        }
+        throw new NativeExportSaveError("open-failed", "未能用默认程序打开文件，请确认该文件类型已绑定打开程序。");
+      }
+      if (!response?.ok) {
+        const detail = String(response?.error ?? "").split("<")[0].trim().replace(/[.。]+$/u, "");
+        throw new NativeExportSaveError(
+          "open-failed",
+          detail
+            ? `未能用默认程序打开文件：${detail}。请确认该文件类型已绑定打开程序。`
+            : "未能用默认程序打开文件，请确认该文件类型已绑定打开程序。"
+        );
+      }
+    },
+    dispose() {
+      disposed = true;
+      cleanupCurrentChild(new Error("另存为服务已关闭。"));
+    }
+  };
+}
+
+function stripKnownBundleExtension(filename, allowedExtensions) {
+  const raw = String(filename ?? "").trim();
+  const lower = raw.toLowerCase();
+  for (const ext of allowedExtensions) {
+    if (ext && lower.endsWith(ext.toLowerCase()) && raw.length > ext.length) {
+      return raw.slice(0, raw.length - ext.length).replace(/[. ]+$/gu, "");
+    }
+  }
+  return raw.replace(/[. ]+$/gu, "");
+}
+
 export function createNativeExportSaveService(dependencies = {}) {
   const platform = dependencies.platform ?? process.platform;
+  const canUsePersistentWorker =
+    platform === "win32"
+    && dependencies.usePersistentWorker !== false
+    && !dependencies.chooseFile
+    && !dependencies.execFileImpl;
+  const persistentWorker = canUsePersistentWorker
+    ? createPersistentWindowsDialogWorker({ spawnImpl: dependencies.spawnImpl })
+    : null;
   const chooseFile = dependencies.chooseFile
-    ?? ((options, requestOptions) => showWindowsSaveFileDialog(options, { platform, signal: requestOptions?.signal }));
+    ?? (persistentWorker
+      ? (options, requestOptions) => persistentWorker.chooseSaveFile(options, requestOptions)
+      : (options, requestOptions) => showWindowsSaveFileDialog(options, {
+          platform,
+          signal: requestOptions?.signal,
+          execFileImpl: dependencies.execFileImpl
+        }));
   // 默认走原子写（审查 D-P1-2）：导出中断不留半写损坏文件；测试仍可注入 writeFileImpl
   const writeFileImpl = dependencies.writeFileImpl ?? atomicWriteFile;
   const openFileImpl = dependencies.openFileImpl
-    ?? ((filePath) => openFileWithSystemDefault(filePath, { platform, execFileImpl: dependencies.execFileImpl }));
+    ?? (persistentWorker && !dependencies.openFileImpl
+      ? (filePath) => persistentWorker.openFile(filePath)
+      : (filePath) => openFileWithSystemDefault(filePath, { platform, execFileImpl: dependencies.execFileImpl }));
   // 路径探测走异步 fs：openWrittenFile 在 HTTP 请求路径上，同步 existsSync 会阻塞事件循环。
   // 测试仍可注入 accessImpl（与 writeFileImpl / openFileImpl 同一派发注入风格）
   const accessImpl = dependencies.accessImpl ?? access;
@@ -461,6 +1010,24 @@ export function createNativeExportSaveService(dependencies = {}) {
   };
 
   return {
+    warmup() {
+      if (platform !== "win32" || desktopDialogUnsupported || !persistentWorker) {
+        return Promise.resolve(false);
+      }
+      return persistentWorker.warmup();
+    },
+
+    pingWorker() {
+      if (!persistentWorker) {
+        return Promise.resolve({ ok: false, elapsedMs: 0 });
+      }
+      return persistentWorker.ping();
+    },
+
+    dispose() {
+      persistentWorker?.dispose();
+    },
+
     async selectFile(options, requestOptions = {}) {
       if (platform !== "win32" || desktopDialogUnsupported) {
         return { supported: false, cancelled: false };
@@ -509,6 +1076,71 @@ export function createNativeExportSaveService(dependencies = {}) {
         filename: basename(target.path),
         path: target.path,
         bytes: Buffer.isBuffer(data) ? data.length : Buffer.byteLength(String(data ?? ""), "utf8"),
+        viewToken,
+        writeDurationMs: performance.now() - startedAt
+      };
+    },
+
+    /**
+     * 组合导出原子写盘：基于一次「另存为」选定的目录与基础文件名，在同目录一次性写出多份同名前缀配套文件（如 .e / .json / .svg）。
+     */
+    async writeBundle(token, entries) {
+      cleanupExpiredTargets();
+      const normalizedToken = String(token ?? "").trim();
+      const target = targets.get(normalizedToken);
+      if (!target) {
+        throw new NativeExportSaveError("invalid-token", "另存为目标已失效，请重新选择保存位置。");
+      }
+      targets.delete(normalizedToken);
+      if (!Array.isArray(entries) || entries.length === 0) {
+        throw new NativeExportSaveError("bad-bundle", "没有可写入的组合导出文件。");
+      }
+      const normalizedEntries = entries.map((entry) => {
+        const ext = String(entry?.ext ?? "").trim().toLowerCase();
+        if (!/^\.[a-z0-9][a-z0-9._-]*$/u.test(ext) || ext.includes("..")) {
+          throw new NativeExportSaveError("bad-bundle", `非法的导出文件扩展名：${ext || "(空)"}`);
+        }
+        const rawData = entry?.data;
+        const buffer = Buffer.isBuffer(rawData)
+          ? rawData
+          : rawData instanceof Uint8Array
+            ? Buffer.from(rawData.buffer, rawData.byteOffset, rawData.byteLength)
+            : Buffer.from(String(rawData ?? ""), "utf8");
+        return { ext, buffer };
+      });
+
+      const resolvedDirectory = resolve(dirname(target.path));
+      const pickedFilename = basename(target.path);
+      const baseName = safeSuggestedName(
+        stripKnownBundleExtension(pickedFilename, normalizedEntries.map((item) => item.ext))
+      );
+
+      const startedAt = performance.now();
+      const writtenFiles = [];
+      for (const item of normalizedEntries) {
+        const filename = `${baseName}${item.ext}`;
+        const filePath = resolve(join(resolvedDirectory, filename));
+        if (dirname(filePath) !== resolvedDirectory) {
+          throw new NativeExportSaveError("bad-bundle", "导出目标路径越界。");
+        }
+        await writeFileImpl(filePath, item.buffer);
+        writtenFiles.push({
+          ext: item.ext,
+          filename,
+          path: filePath,
+          bytes: item.buffer.length
+        });
+      }
+
+      const primaryWritten = writtenFiles.find((item) => item.ext === ".svg") ?? writtenFiles[0];
+      const viewToken = createToken();
+      viewTargets.set(viewToken, { path: primaryWritten.path, createdAt: now() });
+      return {
+        directory: resolvedDirectory,
+        baseName,
+        files: writtenFiles,
+        filename: primaryWritten.filename,
+        path: primaryWritten.path,
         viewToken,
         writeDurationMs: performance.now() - startedAt
       };

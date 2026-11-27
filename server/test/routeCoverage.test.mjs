@@ -22,6 +22,7 @@ const PREFIX = "/webgrp";
 const INTENTIONALLY_UNDOCUMENTED = new Set([
   "POST /webgrp/exports/native/select-file",
   "POST /webgrp/exports/native/write-text",
+  "POST /webgrp/exports/native/write-bundle",
   "POST /webgrp/exports/native/open-file",
   // MCP（streamable HTTP 无状态端点）：不是 REST 端点，没有「路径 + query + JSON 信封」
   // 这套 REST 契约可文档化 —— 它收 JSON-RPC 请求、按协议版本协商、GET/DELETE 只回 405。

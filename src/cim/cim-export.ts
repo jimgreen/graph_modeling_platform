@@ -68,8 +68,8 @@ export function cimFilename(projectName: string, safeFilePart?: (name: string) =
 }
 
 /** 工厂：装配导出动作。菜单项与导出处理均走此函数。 */
-export function createCimExport(scope: CimExportScope): () => Promise<boolean> {
-  return async () => {
+export function createCimExport(scope: CimExportScope): (textEncoding?: "utf-8" | "gbk") => Promise<boolean> {
+  return async (textEncoding: "utf-8" | "gbk" = "utf-8") => {
     const latestScope = (): CimExportScope =>
       ((scope as CimExportScope & { __appScopeRef?: { current?: CimExportScope } }).__appScopeRef?.current) ?? scope;
     const {
@@ -148,6 +148,11 @@ export function createCimExport(scope: CimExportScope): () => Promise<boolean> {
       scope.showGlobalMessage?.("CIM/XML 导出失败（无法连接后端服务）。");
       return false;
     }
+    const normalizedEncoding: "utf-8" | "gbk" = textEncoding === "gbk" ? "gbk" : "utf-8";
+    const encodingLabel = normalizedEncoding === "gbk" ? "GBK" : "UTF-8";
+    const encodedXml = normalizedEncoding === "gbk"
+      ? xml.replace(/^<\?xml(\s+[^>]*?)encoding=(["'])UTF-8\2/iu, '<?xml$1encoding="GBK"')
+      : xml;
     const filename = cimFilename(latestScope().projectName ?? currentProjectName, safeFilePart);
     // 本机另存为才拿得到磁盘路径 → 弹框里才有【查看】
     let savedFile: SavedExportFile | null = null;
@@ -156,11 +161,11 @@ export function createCimExport(scope: CimExportScope): () => Promise<boolean> {
       saved = typeof saveLazyTextFile === "function"
         ? await saveLazyTextFile({
             filename,
-            loadText: () => xml,
+            loadText: () => encodedXml,
             mime: "application/xml",
             description: "CIM/XML 模型文件",
             extensions: [".xml"],
-            encoding: "utf-8",
+            encoding: normalizedEncoding,
             preferNativeDialog: true,
             onSaveTargetReady: markSaveTargetReady,
             onSaved: (file) => {
@@ -176,9 +181,8 @@ export function createCimExport(scope: CimExportScope): () => Promise<boolean> {
     if (saved) {
       writeOperationLog?.(`导出 CIM/XML：${filename}`);
       // 保存成功提示：与 SVG / E / JSON 同格式同渠道（弹框优先，缺省回落全局 message）。
-      // 编码固定 UTF-8（CIM/XML 不走 GBK 分支，见上面的 saveLazyTextFile 选项）。
       const elapsedSeconds = ((performance.now() - exportStartedAt) / 1000).toFixed(2);
-      const successMessage = `CIM/XML 文件导出成功：${filename}；字符编码：UTF-8；总耗时：${elapsedSeconds} 秒`;
+      const successMessage = `CIM/XML 文件导出成功：${filename}；字符编码：${encodingLabel}；总耗时：${elapsedSeconds} 秒`;
       if (typeof scope.showStandaloneExportCompletion === "function") {
         scope.showStandaloneExportCompletion("CIM/XML 文件导出完成", successMessage, [], savedFile);
       } else {

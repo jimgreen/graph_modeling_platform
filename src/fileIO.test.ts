@@ -1,5 +1,18 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { openExportedFile, resetNativeExportDialogAvailabilityForTest, saveBlobFile, saveLazyBlobFile, saveLazyTextFile, saveTextFile, writeTextFileToDirectory } from "./fileIO";
+import {
+  getExportProgressState,
+  openExportedFile,
+  resetExportProgressForTest,
+  resetNativeExportDialogAvailabilityForTest,
+  runGuardedUserExportAction,
+  saveBlobFile,
+  saveLazyBlobFile,
+  saveLazyTextFile,
+  saveNativeTextBundle,
+  saveTextFile,
+  subscribeExportProgress,
+  writeTextFileToDirectory
+} from "./fileIO";
 import type { SavedExportFile } from "./fileIO";
 import { encodeGbk } from "./encoding/gbk";
 
@@ -1143,6 +1156,114 @@ describe("本机另存为的准入判定与降级兜底", () => {
       expect(showSaveFilePicker).toHaveBeenCalledTimes(2);
     } finally {
       resetNativeExportDialogAvailabilityForTest();
+    }
+  });
+
+  test("saveNativeTextBundle 支持通过一次另存为同时指定目录与基础文件名，并并行生成三份文件落盘", async () => {
+    try {
+      const order: string[] = [];
+      let resolveSelect!: (res: Response) => void;
+      const selectPromise = new Promise<Response>((r) => {
+        resolveSelect = r;
+      });
+      const fetchMock = vi.fn()
+        .mockImplementationOnce(() => {
+          order.push("select");
+          return selectPromise;
+        })
+        .mockImplementationOnce(async (url: string, init?: RequestInit) => {
+          order.push("write-bundle");
+          expect(url).toBe("/webgrp/exports/native/write-bundle?token=bundle-tok");
+          const body = JSON.parse(String(init?.body)) as { files: Array<{ ext: string; base64: string }> };
+          expect(body.files.map((f) => f.ext)).toEqual([".e", ".json", ".svg"]);
+          return jsonResponse({
+            ok: true,
+            baseName: "自定义站名",
+            directory: "D:\\exports",
+            filename: "自定义站名.svg",
+            path: "D:\\exports\\自定义站名.svg",
+            viewToken: "view-bundle-1",
+            files: [
+              { ext: ".e", filename: "自定义站名.e", path: "D:\\exports\\自定义站名.e" },
+              { ext: ".json", filename: "自定义站名.json", path: "D:\\exports\\自定义站名.json" },
+              { ext: ".svg", filename: "自定义站名.svg", path: "D:\\exports\\自定义站名.svg" }
+            ]
+          });
+        });
+
+      vi.stubGlobal("window", { location: { hostname: "127.0.0.1" } });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const bundlePromise = saveNativeTextBundle({
+        suggestedBaseName: "qinling",
+        onSaveTargetReady: () => order.push("target-ready"),
+        loadEntries: async () => {
+          order.push("load-entries");
+          return [
+            { ext: ".e", text: "E-DATA" },
+            { ext: ".json", text: '{"ok":true}' },
+            { ext: ".svg", text: "<svg/>" }
+          ];
+        }
+      });
+
+      await vi.waitFor(() => expect(order).toEqual(["select", "load-entries"]));
+      resolveSelect(jsonResponse({
+        supported: true,
+        cancelled: false,
+        token: "bundle-tok",
+        filename: "自定义站名.svg",
+        directory: "D:\\exports"
+      }));
+
+      const outcome = await bundlePromise;
+      expect(order).toEqual(["select", "load-entries", "target-ready", "write-bundle"]);
+      expect(outcome).toMatchObject({
+        status: "saved",
+        baseName: "自定义站名",
+        directory: "D:\\exports",
+        savedFile: {
+          token: "view-bundle-1",
+          filename: "自定义站名.svg",
+          path: "D:\\exports\\自定义站名.svg"
+        }
+      });
+    } finally {
+      resetExportProgressForTest();
+      resetNativeExportDialogAvailabilityForTest();
+    }
+  });
+
+  test("runGuardedUserExportAction 发布实时导出进度并拦截重复点击", async () => {
+    try {
+      const showGlobalMessage = vi.fn();
+      vi.stubGlobal("showGlobalMessage", showGlobalMessage);
+      const seenStates: Array<{ active: boolean; phase: string; label: string }> = [];
+      const unsubscribe = subscribeExportProgress(() => {
+        seenStates.push({ ...getExportProgressState() });
+      });
+
+      let finishExport!: () => void;
+      const slowTask = new Promise<void>((resolve) => {
+        finishExport = resolve;
+      });
+
+      const firstRun = runGuardedUserExportAction("导出 SVG", () => slowTask);
+      expect(getExportProgressState().active).toBe(true);
+
+      // 导出进行中再次点击：立即返回 false 并弹出防连点提示
+      const secondRun = await runGuardedUserExportAction("导出 SVG", () => Promise.resolve());
+      expect(secondRun).toBe(false);
+      expect(showGlobalMessage).toHaveBeenCalledWith("正在导出文件中，请稍候，切勿重复点击。");
+
+      finishExport();
+      await expect(firstRun).resolves.toBe(true);
+      expect(getExportProgressState().active).toBe(false);
+      expect(seenStates.some((state) => state.active && state.label.includes("导出 SVG"))).toBe(true);
+      expect(seenStates.at(-1)?.active).toBe(false);
+      unsubscribe();
+    } finally {
+      resetExportProgressForTest();
     }
   });
 });

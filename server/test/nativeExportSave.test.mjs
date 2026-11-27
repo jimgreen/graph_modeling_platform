@@ -3,10 +3,13 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { EventEmitter } from "node:events";
+import { PassThrough } from "node:stream";
 import {
   NativeExportSaveError,
   buildSystemDefaultOpenCommand,
   createNativeExportSaveService,
+  createPersistentWindowsDialogWorker,
   isAllowedNativeExportOrigin,
   normalizeNativeExportDialogOptions,
   openFileWithSystemDefault,
@@ -811,20 +814,139 @@ describe("native export save service", () => {
         expect(seen).toBe("powershell.exe");
       }
     });
+  });
 
-    // 剩下两条覆盖率报告点名的分支，本文件**无法**用输入覆盖，如实记录而不硬凑恒绿断言：
-    //
-    // ① nativeExportSave.mjs:193 `String(value ?? "")`（powershellSingleQuoted 内部）。
-    //    该函数全文件只有一处调用（:230），传进去的 `target` 已被 :224 的
-    //    `if (!target) throw` 挡过一遍 —— 走到那里时它必是非空字符串，
-    //    nullish 分支**不可达**。这正是 AGENTS.md「Upstream already normalises, so
-    //    your own normaliser is invisible」那条：即使导出它，也只能用 raw 值直接调才看得到。
-    //
-    // ② nativeExportSave.mjs:286 的 `catch (error)`。
-    //    它在加测试**之前**就报 count=0，而它内部 287-294 各语句的 count 是 3 ——
-    //    即三条 openFileWithSystemDefault 失败用例明明都进过这个 catch。
-    //    v8 对 catch 子句的 branch 计数本身不可靠（记在这里，免得下一个人以为是漏网）。
-    //    真要验证 catch 承重，得改它**内部**的行为（已由「open-failed only reports the
-    //    script's own line」那条用例承担）。
+  describe("writeBundle 与常驻预热对话框宿主", () => {
+    test("writeBundle 基于选定路径剥离后缀并在同目录一次性写出 .e / .json / .svg 配套文件", async () => {
+      const written = [];
+      const selectedSvgPath = resolve("tmp", "bundle-dir", "秦岭微网_v2.svg");
+      const service = createNativeExportSaveService({
+        platform: "win32",
+        chooseFile: async () => selectedSvgPath,
+        writeFileImpl: async (filePath, data) => {
+          written.push({ filePath, text: Buffer.from(data).toString("utf8") });
+        }
+      });
+
+      const selected = await service.selectFile({
+        filename: "qinling.svg",
+        extensions: [".svg", ".e", ".json"]
+      });
+      const result = await service.writeBundle(selected.token, [
+        { ext: ".e", data: Buffer.from("<!Entity=1!>", "utf8") },
+        { ext: ".json", data: Buffer.from('{"name":"秦岭"}', "utf8") },
+        { ext: ".svg", data: Buffer.from("<svg/>", "utf8") }
+      ]);
+
+      const expectedDir = resolve("tmp", "bundle-dir");
+      expect(result.baseName).toBe("秦岭微网_v2");
+      expect(result.directory).toBe(expectedDir);
+      expect(result.filename).toBe("秦岭微网_v2.svg");
+      expect(result.viewToken).toBeTruthy();
+      expect(written.map((item) => item.filePath)).toEqual([
+        resolve(expectedDir, "秦岭微网_v2.e"),
+        resolve(expectedDir, "秦岭微网_v2.json"),
+        resolve(expectedDir, "秦岭微网_v2.svg")
+      ]);
+
+      // 令牌一次性消费，不可二次重放
+      await expect(
+        service.writeBundle(selected.token, [{ ext: ".svg", data: Buffer.from("<svg/>") }])
+      ).rejects.toMatchObject({ code: "invalid-token" });
+
+      // 非法扩展名拦截防穿越
+      const selected2 = await service.selectFile({ filename: "qinling.svg", extensions: [".svg"] });
+      await expect(
+        service.writeBundle(selected2.token, [{ ext: ".svg/../../evil", data: Buffer.from("x") }])
+      ).rejects.toMatchObject({ code: "bad-bundle" });
+    });
+
+    test("常驻预热宿主启动一次即可串行复用多次另存为与文件打开请求，中止时自动销毁并后台重建", async () => {
+      const children = [];
+      const spawnImpl = vi.fn(() => {
+        const proc = new EventEmitter();
+        const stdin = new PassThrough();
+        const stdout = new PassThrough();
+        const stderr = new PassThrough();
+        let killed = false;
+        Object.assign(proc, {
+          stdin,
+          stdout,
+          stderr,
+          kill: vi.fn(() => {
+            if (!killed) {
+              killed = true;
+              stdout.end();
+              proc.emit("close", 1);
+            }
+          }),
+          ref: vi.fn(),
+          unref: vi.fn()
+        });
+        children.push(proc);
+
+        queueMicrotask(() => {
+          stdout.write('{"type":"ready","interactive":true}\n');
+        });
+
+        let buf = "";
+        stdin.on("data", (chunk) => {
+          buf += chunk.toString("utf8");
+          const lines = buf.split(/\r?\n/);
+          buf = lines.pop() ?? "";
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            const req = JSON.parse(line);
+            if (req.cmd === "ping") {
+              stdout.write(`${JSON.stringify({ id: req.id, ok: true, pong: true })}\n`);
+            } else if (req.cmd === "saveDialog") {
+              if (req.filename === "hang.svg") {
+                // 模拟用户一直停在另存为对话框未点确定，等待外部 AbortSignal 取消
+                continue;
+              }
+              stdout.write(`${JSON.stringify({
+                id: req.id,
+                ok: true,
+                cancelled: false,
+                path: resolve("tmp", req.filename)
+              })}\n`);
+            } else if (req.cmd === "openFile") {
+              stdout.write(`${JSON.stringify({ id: req.id, ok: true })}\n`);
+            }
+          }
+        });
+        return proc;
+      });
+
+      const worker = createPersistentWindowsDialogWorker({ spawnImpl });
+      await expect(worker.warmup()).resolves.toBe(true);
+      expect(spawnImpl).toHaveBeenCalledTimes(1);
+
+      // 连续两次另存为 + 一次打开文件 + 一次 ping 全部复用同一个常驻子进程（spawnImpl 仍为 1 次）
+      const firstPath = await worker.chooseSaveFile(normalizeNativeExportDialogOptions({ filename: "a.svg", extensions: [".svg"] }));
+      const secondPath = await worker.chooseSaveFile(normalizeNativeExportDialogOptions({ filename: "b.e", extensions: [".e"] }));
+      await worker.openFile(firstPath);
+      const ping = await worker.ping();
+      expect(firstPath).toBe(resolve("tmp", "a.svg"));
+      expect(secondPath).toBe(resolve("tmp", "b.e"));
+      expect(ping.ok).toBe(true);
+      expect(spawnImpl).toHaveBeenCalledTimes(1);
+
+      // 客户端断开中止挂起的另存为请求：杀掉旧进程并自动后台拉起第 2 个预热宿主
+      const abortController = new AbortController();
+      const hangingPromise = worker.chooseSaveFile(
+        normalizeNativeExportDialogOptions({ filename: "hang.svg", extensions: [".svg"] }),
+        { signal: abortController.signal }
+      );
+      await new Promise((r) => setTimeout(r, 10));
+      abortController.abort();
+      await expect(hangingPromise).resolves.toBeNull();
+      expect(children[0].kill).toHaveBeenCalledTimes(1);
+
+      await vi.waitFor(() => expect(spawnImpl).toHaveBeenCalledTimes(2));
+      const thirdPath = await worker.chooseSaveFile(normalizeNativeExportDialogOptions({ filename: "c.json", extensions: [".json"] }));
+      expect(thirdPath).toBe(resolve("tmp", "c.json"));
+      worker.dispose();
+    });
   });
 });

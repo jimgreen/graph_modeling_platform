@@ -1,4 +1,4 @@
-import { useCallback, lazy, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, lazy, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { MemoizedCanvasArea } from "./appCanvasArea";
 import { predefinedEDeviceTemplateByFile } from "../predefinedEDeviceTemplates";
 import { AppLeftPanel } from "./appLeftPanel";
@@ -24,7 +24,14 @@ import { TOPOLOGY_WARNING_PAGE_SIZE } from "./appCoreCanvasUtilities";
 import type { CustomComponentLibraryDefinition, CustomDeviceDraft, CustomParamDraft, ImageAsset, ImageFolder } from "./appCoreCanvasUtilities";
 import type { MeasurementGroup } from "../measurements";
 import { decodeAuto } from "../encoding/gbk";
-import { openExportedFile, type SavedExportFile } from "../fileIO";
+import {
+  getExportProgressState,
+  isUserExportInFlight,
+  openExportedFile,
+  runGuardedUserExportAction,
+  subscribeExportProgress,
+  type SavedExportFile
+} from "../fileIO";
 import { interfaceCustomizationCss, isInterfaceCustomizationVisible } from "../interfaceCustomization";
 import { E_DEVICE_TEMPLATE_ALLOWED_MODEL_TYPES as TEMPLATE_ALLOWED_MODEL_TYPES, eDeviceTemplateNetworkTypeMismatchMessage, eDeviceTemplateSingleTypeMismatchMessage } from "../eDeviceTemplateTypePolicy";
 import { isSkipBeforeUnload } from "../spaceSwitch";
@@ -41,6 +48,19 @@ const LazyVoltageLevelDialog = lazy(() => import("../VoltageLevelDialog")
 import { buildUserCustomizationInventory, restoreUserCustomizationItems, type UserCustomizationDomain } from "../userCustomizations";
 import { moveSelectedTableRows, nextTableRowSelection, uniqueCopiedFieldName } from "../definitionTableSelection";
 import { WindowCloseButton } from "../WindowCloseButton";
+
+function ExportProgressBanner() {
+  const progress = useSyncExternalStore(subscribeExportProgress, getExportProgressState, getExportProgressState);
+  if (!progress.active) {
+    return null;
+  }
+  return (
+    <div className="export-progress-banner" role="status" aria-live="polite">
+      <span className="export-progress-spinner" aria-hidden="true" />
+      <span>{progress.label || "正在导出文件…"}</span>
+    </div>
+  );
+}
 import {
   resolveComponentLibraryClassFamilyMetadata,
   resolveComponentLibraryClassMetadata
@@ -813,10 +833,16 @@ export function renderAppView(__appScope: Record<string, any>) {
     return hasManualCustomization ? "自定义" : "原始定义";
   })();
   const requestExportWithSave = (doExport: () => void | Promise<void>) => {
+    if (isUserExportInFlight()) {
+      showGlobalMessage("正在导出文件中，请稍候，切勿重复点击。");
+      return;
+    }
+    const guardedExport = () => runGuardedUserExportAction("导出文件", () => doExport());
     requestUnsavedChangeAction({
       kind: "export",
       label: "导出",
       onResolved: () => {
+        const doExport = guardedExport;
         void doExport();
       }
     });
@@ -2663,6 +2689,7 @@ export function renderAppView(__appScope: Record<string, any>) {
         </div>
       </section>
     </div>)}
+    <ExportProgressBanner />
     <div className={`app-shell left-panel-${leftPanelMode} right-panel-${rightPanelMode} ${sidePanelResize ? "side-panel-resizing" : ""} ${statusbarResize ? "statusbar-resizing" : ""} ${topologyWarningPanelResize ? "topology-warning-panel-resizing" : ""} ${nodeDoubleClickDialogDrag || nodeDoubleClickDialogResize ? "node-double-click-dialog-moving" : ""} ${deviceLibraryDialogDrag || deviceLibraryDialogResize ? "device-library-dialog-moving" : ""} ${canvasResizeDrag ? "canvas-resizing" : ""}`} style={appShellStyle}>
       {isInterfaceCustomizationVisible(__appScope.interfaceCustomization, "module.leftPanel") && renderSidePanelEdgeTrigger("left")}
       {isInterfaceCustomizationVisible(__appScope.interfaceCustomization, "module.rightPanel") && renderSidePanelEdgeTrigger("right")}

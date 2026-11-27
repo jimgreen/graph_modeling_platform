@@ -466,3 +466,118 @@ export function renderSvgElementMarkup(value: unknown): string {
     .join("");
   return `<${value.type}${attrs}>${renderSvgElementMarkup(props.children)}</${value.type}>`;
 }
+
+/* 生成态状态图标视觉变换与端子引线几何对齐（画布与导出 SVG 共用单源） */
+
+const STATE_ICON_NUMBER_CACHE = new Map<string, RegExp>();
+function readStateIconSvgNumber(markup: string, name: string, fallback: number) {
+  let pattern = STATE_ICON_NUMBER_CACHE.get(name);
+  if (!pattern) {
+    pattern = new RegExp(`\\b${name}\\s*=\\s*["']?([-+]?\\d*\\.?\\d+)`, "i");
+    STATE_ICON_NUMBER_CACHE.set(name, pattern);
+  }
+  const match = pattern.exec(markup);
+  const parsed = Number(match?.[1]);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+const GENERATED_GROUP_PATTERN = /<g\b([^>]*)>([\s\S]*?data-state-icon-preserve-view-box[\s\S]*?)<\/g>/gi;
+const GROUP_TRANSFORM_PATTERN = /transform\s*=\s*["']translate\(([-+]?[\d.]+)[ ,]+([-+]?[\d.]+)\)(?:\s+rotate\(([-+]?[\d.]+)\))?/i;
+const INNER_SVG_PATTERN = /<svg\b([^>]*)/i;
+
+function decodeStateIconSvgDataUrl(value: string) {
+  const source = String(value ?? "").trim();
+  if (!source.startsWith("data:image/svg+xml")) {
+    return "";
+  }
+  const commaIndex = source.indexOf(",");
+  if (commaIndex < 0) {
+    return "";
+  }
+  const metadata = source.slice(0, commaIndex).toLowerCase();
+  const payload = source.slice(commaIndex + 1);
+  try {
+    if (metadata.includes(";base64")) {
+      return decodeBase64Text(payload);
+    }
+    return decodeURIComponent(payload);
+  } catch {
+    return payload;
+  }
+}
+
+export function generatedStateIconVisualTransform(imageHref: string, nodeSize: { width: number; height: number }) {
+  const svg = decodeStateIconSvgDataUrl(imageHref);
+  if (!svg || !svg.includes("data-state-icon-drawing") || !svg.includes("data-state-icon-preserve-view-box")) {
+    return null;
+  }
+  const groupPattern = GENERATED_GROUP_PATTERN;
+  groupPattern.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = groupPattern.exec(svg))) {
+    const groupAttrs = match[1] ?? "";
+    const body = match[2] ?? "";
+    const transformMatch = GROUP_TRANSFORM_PATTERN.exec(groupAttrs);
+    const innerSvgMatch = INNER_SVG_PATTERN.exec(body);
+    if (!transformMatch || !innerSvgMatch) {
+      continue;
+    }
+    const innerAttrs = innerSvgMatch[1] ?? "";
+    const width = readStateIconSvgNumber(innerAttrs, "width", 0);
+    const height = readStateIconSvgNumber(innerAttrs, "height", 0);
+    if (width <= 0 || height <= 0) {
+      continue;
+    }
+    const parsedTranslateX = Number(transformMatch[1]);
+    const parsedTranslateY = Number(transformMatch[2]);
+    return {
+      x: ((Number.isFinite(parsedTranslateX) ? parsedTranslateX : 120) - 120) * (nodeSize.width / 240),
+      y: ((Number.isFinite(parsedTranslateY) ? parsedTranslateY : 80) - 80) * (nodeSize.height / 160),
+      scale: Math.min(
+        (width * (nodeSize.width / 240)) / Math.max(1, nodeSize.width),
+        (height * (nodeSize.height / 160)) / Math.max(1, nodeSize.height)
+      ),
+      rotation: Number(transformMatch[3] ?? 0) || 0
+    };
+  }
+  return null;
+}
+
+export function adjustGeneratedStateIconTerminalStub(
+  terminal: { anchor: { x: number; y: number } },
+  renderPoint: { x: number; y: number },
+  stub: { from: { x: number; y: number }; to: { x: number; y: number } },
+  nodeScaleX: number,
+  nodeScaleY: number,
+  terminalVisualTransform: { x: number; y: number; scale: number; rotation: number } | null
+) {
+  if (!terminalVisualTransform) {
+    return stub;
+  }
+  const safeScaleX = nodeScaleX === 0 ? 1 : nodeScaleX;
+  const safeScaleY = nodeScaleY === 0 ? 1 : nodeScaleY;
+  const inverseScaleX = 1 / safeScaleX;
+  const inverseScaleY = 1 / safeScaleY;
+  const displayedAnchor = {
+    x: terminal.anchor.x * (Math.sign(safeScaleX) || 1),
+    y: terminal.anchor.y * (Math.sign(safeScaleY) || 1)
+  };
+  const horizontal = Math.abs(displayedAnchor.x) >= Math.abs(displayedAnchor.y);
+  const radians = ((Number(terminalVisualTransform.rotation) || 0) * Math.PI) / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  const basePoint = {
+    x: renderPoint.x + stub.from.x * inverseScaleX,
+    y: renderPoint.y + stub.from.y * inverseScaleY
+  };
+  const visualPoint = {
+    x: terminalVisualTransform.x + (basePoint.x * cos - basePoint.y * sin) * terminalVisualTransform.scale,
+    y: terminalVisualTransform.y + (basePoint.x * sin + basePoint.y * cos) * terminalVisualTransform.scale
+  };
+  return {
+    ...stub,
+    from: horizontal
+      ? { x: (visualPoint.x - renderPoint.x) * safeScaleX, y: stub.from.y }
+      : { x: stub.from.x, y: (visualPoint.y - renderPoint.y) * safeScaleY }
+  };
+}

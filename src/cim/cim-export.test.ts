@@ -360,4 +360,29 @@ describe("createCimExport 分支补强", () => {
     expect(message).toMatch(/^CIM\/XML 文件导出成功：缺参站\.xml；字符编码：UTF-8；总耗时：\d+\.\d{2} 秒$/u);
     vi.unstubAllGlobals();
   });
+
+  test("指定 GBK 编码时同步替换 XML 声明头并按 gbk 编码写入及提示", async () => {
+    const fetchMock = vi.fn(async () => new Response(
+      '<?xml version="1.0" encoding="UTF-8"?><cim:FullModel/>',
+      { status: 200, headers: { "content-type": "application/xml" } }
+    ));
+    vi.stubGlobal("fetch", fetchMock);
+    const saveLazyTextFile = vi.fn().mockResolvedValue(true);
+    const showStandaloneExportCompletion = vi.fn();
+    const exportCim = createCimExport({
+      nodes: [node("bus1", "ac-bus", { i_vbase: "110" })],
+      edges: [],
+      projectName: "秦岭站",
+      activeModelId: "m1",
+      saveLazyTextFile,
+      showStandaloneExportCompletion
+    } as never);
+    await expect(exportCim("gbk")).resolves.toBe(true);
+    const options = saveLazyTextFile.mock.calls[0][0];
+    expect(options.encoding).toBe("gbk");
+    expect(options.loadText()).toContain('<?xml version="1.0" encoding="GBK"?>');
+    const [, message] = showStandaloneExportCompletion.mock.calls[0];
+    expect(message).toMatch(/^CIM\/XML 文件导出成功：秦岭站\.xml；字符编码：GBK；总耗时：\d+\.\d{2} 秒$/u);
+    vi.unstubAllGlobals();
+  });
 });

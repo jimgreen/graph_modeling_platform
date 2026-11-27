@@ -106,10 +106,12 @@ describe("live canvas edge DOM", () => {
   });
 
   test("maps generated state-icon terminal stubs through the inverse signed node scale", () => {
-    const source = readFileSync(new URL("./appExtracted/appCanvasArea.tsx", import.meta.url), "utf8");
+    const canvasSource = readFileSync(new URL("./appExtracted/appCanvasArea.tsx", import.meta.url), "utf8");
+    const svgUtilsSource = readFileSync(new URL("./svgUtils.ts", import.meta.url), "utf8");
 
-    expect(source).toContain("renderPoint.x + stub.from.x * inverseScaleX");
-    expect(source).toContain("renderPoint.y + stub.from.y * inverseScaleY");
+    expect(canvasSource).toContain("adjustGeneratedStateIconTerminalStub");
+    expect(svgUtilsSource).toContain("renderPoint.x + stub.from.x * inverseScaleX");
+    expect(svgUtilsSource).toContain("renderPoint.y + stub.from.y * inverseScaleY");
   });
 
   test("keeps a mirrored state-icon terminal stub pointed toward the device body", () => {

@@ -1039,6 +1039,7 @@ async function readJsonBody(request, maxBodyBytes = maxImageBodyBytes, oversizeM
 const {
   handleSelectNativeExportFile,
   handleWriteNativeExportText,
+  handleWriteNativeExportBundle,
   handleOpenNativeExportFile
 } = createNativeExportHandlers({
   readJsonBody,
@@ -2814,6 +2815,9 @@ export async function createImageServer({
     [routeKey("POST", "/exports/native/write-text"), async ({ url, request, response }) => {
       await handleWriteNativeExportText(url, request, response, nativeExportSaveService);
     }],
+    [routeKey("POST", "/exports/native/write-bundle"), async ({ url, request, response }) => {
+      await handleWriteNativeExportBundle(url, request, response, nativeExportSaveService);
+    }],
     [routeKey("POST", "/exports/native/open-file"), async ({ url, request, response }) => {
       await handleOpenNativeExportFile(url, request, response, nativeExportSaveService);
     }],
@@ -3113,8 +3117,15 @@ export async function createImageServer({
       try {
         if (instanceRegistry) {
           await instanceRegistry.register();
+          // 真实服务启动后后台异步预热 Windows 另存为 STA 宿主进程，将首次点击另存为延迟从 ~5s 降至 <80ms
+          void nativeExportSaveService.warmup?.();
           server.once("close", () => {
+            nativeExportSaveService.dispose?.();
             void instanceRegistry.release();
+          });
+        } else {
+          server.once("close", () => {
+            nativeExportSaveService.dispose?.();
           });
         }
         resolveServer(server);

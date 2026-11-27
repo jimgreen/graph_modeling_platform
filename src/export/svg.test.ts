@@ -957,4 +957,97 @@ describe("buildSvgDocument 电流流水线开关", () => {
     expect(hiddenLabelNode.style.display).toBe("none");
     expect(hiddenMeasNode.style.display).toBe("none");
   });
+
+  test("水平镜像翻转设备（scaleX < 0）导出端子引线时抵消外层镜像变换，避免引线反向成 T 字头", () => {
+    const baseNode = createDefaultNode("ac-load", { x: 200, y: 150 });
+    const rightTerminal = {
+      ...(baseNode.terminals[0] ?? { id: "t1", label: "", type: "ac" as const }),
+      id: "t1",
+      anchor: { x: 1, y: 0.5 }
+    };
+    const normalDevice: ModelNode = {
+      ...baseNode,
+      id: "dev-normal",
+      scaleX: 1,
+      scaleY: 1,
+      terminals: [rightTerminal]
+    };
+    const flippedDevice: ModelNode = {
+      ...baseNode,
+      id: "dev-flipped",
+      scaleX: -1,
+      scaleY: 1,
+      terminals: [rightTerminal]
+    };
+
+    const normalMarkup = buildSvgDeviceConnectorMarkup(normalDevice);
+    const flippedMarkup = buildSvgDeviceConnectorMarkup(flippedDevice);
+
+    // 未翻转节点不冗余输出单位缩放，保持既有 SVG 基线逐字节兼容
+    expect(normalMarkup).not.toContain("scale(1 1)");
+    // 水平翻转节点在内层端子组补 scale(-1 1) 抵消外层镜像，使向右伸出的引线不会反向指回图标中心
+    expect(flippedMarkup).toMatch(/transform="translate\([^)]+\)\s+scale\(-1 1\)"/);
+  });
+
+  test("设备端子直连自适应线路时导出引线线宽自动对齐线路宽度，且不与未连线路的同型设备混用 symbol", () => {
+    const baseLoad = createDefaultNode("ac-load", { x: 160, y: 150 });
+    const rightTerminal = {
+      ...(baseLoad.terminals[0] ?? { id: "t1", label: "", type: "ac" as const }),
+      id: "t1",
+      anchor: { x: 1, y: 0.5 }
+    };
+    const devConnected: ModelNode = {
+      ...baseLoad,
+      id: "dev-connected",
+      name: "负荷-连线",
+      terminals: [rightTerminal]
+    };
+    const devTarget: ModelNode = {
+      ...baseLoad,
+      id: "dev-target",
+      name: "负荷-对端",
+      position: { x: 360, y: 260 },
+      terminals: [rightTerminal]
+    };
+    const devIdle: ModelNode = {
+      ...baseLoad,
+      id: "dev-idle",
+      name: "负荷-悬空",
+      position: { x: 560, y: 150 },
+      terminals: [rightTerminal]
+    };
+    const lineTemplate = DEVICE_LIBRARY.find((item) => item.kind === "ac-routable-line")!;
+    const startPt = getTerminalPoint(devConnected, "t1");
+    const endPt = getTerminalPoint(devTarget, "t1");
+    const routableLine = createRoutableLineDeviceFromEndpoints(
+      lineTemplate,
+      startPt,
+      endPt,
+      devConnected.layerId,
+      {
+        source: routableLineDeviceEndpointRefForNode(devConnected, "t1"),
+        target: routableLineDeviceEndpointRefForNode(devTarget, "t1")
+      }
+    );
+
+    const svg = buildSvgDocument([devConnected, devTarget, devIdle, routableLine], [], {
+      width: 900,
+      height: 600
+    });
+
+    const symbolIdOf = (nodeId: string) =>
+      svg.match(new RegExp(`<use id="${nodeId}"[^>]*xlink:href="#([^"]+)"`))?.[1] ?? "";
+    const symbolMarkupOf = (symbolId: string) =>
+      svg.match(new RegExp(`<symbol id="${symbolId}"[\\s\\S]*?<\\/symbol>`))?.[0] ?? "";
+
+    const connectedSymbolId = symbolIdOf(devConnected.id);
+    const idleSymbolId = symbolIdOf(devIdle.id);
+    expect(connectedSymbolId).toBeTruthy();
+    expect(idleSymbolId).toBeTruthy();
+    expect(connectedSymbolId).not.toBe(idleSymbolId);
+    // ac-routable-line 默认线宽为 4，所连端子引线对齐为 4；未连自适应线路的同型设备保持自身默认线宽 2.5
+    expect(symbolMarkupOf(connectedSymbolId)).toContain('stroke-width="4"');
+    expect(symbolMarkupOf(idleSymbolId)).toContain('stroke-width="2.5"');
+    expect(symbolMarkupOf(idleSymbolId)).not.toContain('stroke-width="4"');
+  });
 });

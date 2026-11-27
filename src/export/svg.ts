@@ -77,9 +77,11 @@ import {
   type ProjectMeasurementConfig
 } from "../measurements.ts";
 import {
+  adjustGeneratedStateIconTerminalStub,
   backendImageIdFromHref,
   escapeXml,
   formatSvgNumber,
+  generatedStateIconVisualTransform,
   inlineBackendImageRefsInSvgDataUrl,
   renderSvgElementMarkup,
   resolveNodeForegroundImage,
@@ -217,20 +219,45 @@ export function buildSvgDeviceConnectorMarkup(
   colorDisplayMode: ColorDisplayMode = "energy",
   colorPalette: ColorPalette = DEFAULT_COLOR_PALETTE,
   voltagePaint: { terminalRef?: (terminalId: string) => string | undefined } | null = null,
-  themeMode: CanvasThemeMode = "light"
+  themeMode: CanvasThemeMode = "light",
+  options?: {
+    imageHref?: string;
+    terminalStrokeWidth?: (terminal: ExportVoltageTerminal) => number;
+  }
 ) {
   if (isBusNode(node) || isStaticNode(node) || isRoutableLineDeviceKind(node.kind)) {
     return "";
   }
   const nodeScaleX = getNodeScaleX(node);
   const nodeScaleY = getNodeScaleY(node);
+  // 外层 <g transform={nodeGeometryTransform(node)}> 已施加 scale(nodeScaleX nodeScaleY)，
+  // 而 terminalStubSegment 产出的 stub 偏移是在抵消外层翻转/缩放后的显示空间内计算的；
+  // 与画布 appCanvasArea 同口径补上反向抵消 scale(1/scaleX 1/scaleY)，避免镜像图元引线反向成 T 字头。
+  // 当缩放均为 1 时省略 scale 子句，保持标准图元 golden 基线逐字节不变。
+  const inverseScaleX = nodeScaleX === 0 ? 1 : 1 / nodeScaleX;
+  const inverseScaleY = nodeScaleY === 0 ? 1 : 1 / nodeScaleY;
+  const inverseScaleTransform = inverseScaleX !== 1 || inverseScaleY !== 1
+    ? ` scale(${formatSvgNumber(inverseScaleX)} ${formatSvgNumber(inverseScaleY)})`
+    : "";
+  const terminalVisualTransform = options?.imageHref
+    ? generatedStateIconVisualTransform(options.imageHref, node.size)
+    : null;
   const dashArray = isEndpointContainerKind(node.kind) ? "" : svgStrokeDashArray(node.params.strokeStyle);
   const dashAttribute = dashArray ? ` stroke-dasharray="${escapeXml(dashArray)}"` : "";
   const connectors = node.terminals
     .map((terminal) => {
       const renderPoint = terminalRenderLocalPoint(terminal, node.size, nodeScaleX, nodeScaleY, node.kind);
-      const stub = terminalStubSegment(terminal, nodeScaleX, nodeScaleY, 24, node.kind, node.size);
-      const strokeWidth = terminalStubStrokeWidth(node, terminal);
+      const stub = adjustGeneratedStateIconTerminalStub(
+        terminal,
+        renderPoint,
+        terminalStubSegment(terminal, nodeScaleX, nodeScaleY, 24, node.kind, node.size),
+        nodeScaleX,
+        nodeScaleY,
+        terminalVisualTransform
+      );
+      const strokeWidth = options?.terminalStrokeWidth
+        ? options.terminalStrokeWidth(terminal)
+        : terminalStubStrokeWidth(node, terminal);
       const terminalColor = getTerminalDisplayColor(node, terminal, colorDisplayMode, colorPalette, themeMode);
       const paintRef = voltagePaint?.terminalRef?.(String(terminal.id ?? ""));
       // 导出态电压色走槽/class：有槽链 --tN，无槽删属性靠 <use class> 继承；
@@ -241,7 +268,7 @@ export function buildSvgDeviceConnectorMarkup(
         : voltagePaint && isElectric
           ? "" // 导出态电端子单电压：删属性，靠 <use class> 继承
           : ` stroke="${escapeXml(terminalColor)}"`;
-      return `<g transform="translate(${formatSvgNumber(renderPoint.x)} ${formatSvgNumber(renderPoint.y)})">
+      return `<g transform="translate(${formatSvgNumber(renderPoint.x)} ${formatSvgNumber(renderPoint.y)})${inverseScaleTransform}">
   <line x1="${formatSvgNumber(stub.from.x)}" y1="${formatSvgNumber(stub.from.y)}" x2="${formatSvgNumber(stub.to.x)}" y2="${formatSvgNumber(stub.to.y)}"${strokeAttribute} stroke-width="${formatSvgNumber(strokeWidth)}" stroke-linecap="round"${dashAttribute}/>
 </g>`;
     })
@@ -889,6 +916,30 @@ ${rules.join("\n")}
   const symbolIdBySignature = new Map<string, string>();
   const symbolIdByVisualInput = new Map<string, string>();
   const textLayerMarkup: string[] = [];
+  // 设备端子直连自适应线路（routable-line）时，导出引线线宽自动对齐所连线路宽度，消除无编辑态圆点时的粗细断阶
+  const connectedRoutableLineStrokeWidthByTerminalKey = new Map<string, number>();
+  for (const candidateNode of exportNodes) {
+    if (!isRoutableLineDeviceKind(candidateNode.kind)) {
+      continue;
+    }
+    if (!layerVisible(nodeLayerId(candidateNode))) {
+      continue;
+    }
+    const lineWidth = getDeviceStrokeWidth(candidateNode);
+    const refs = routableLineDeviceEndpointRefs(inferMissingRoutableLineDeviceEndpointRefs(candidateNode, exportNodes));
+    for (const endpoint of [refs.source, refs.target]) {
+      if (endpoint?.nodeId && endpoint.terminalId) {
+        const key = `${endpoint.nodeId}:${endpoint.terminalId}`;
+        const prev = connectedRoutableLineStrokeWidthByTerminalKey.get(key) ?? 0;
+        if (lineWidth > prev) {
+          connectedRoutableLineStrokeWidthByTerminalKey.set(key, lineWidth);
+        }
+      }
+    }
+  }
+  const exportTerminalConnectorStrokeWidth = (targetNode: ModelNode, terminal: ExportVoltageTerminal) =>
+    connectedRoutableLineStrokeWidthByTerminalKey.get(`${targetNode.id}:${terminal.id}`)
+      ?? terminalStubStrokeWidth(targetNode, terminal);
   const cacheableStandardSymbolVisualToken = (symbolNode: ModelNode, stateVisual: DeviceStateVisual | null) => {
     const glyphVariant = getDeviceGlyphVariant(symbolNode.kind);
     if (
@@ -901,9 +952,21 @@ ${rules.join("\n")}
     }
     const nodeScaleX = getNodeScaleX(symbolNode);
     const nodeScaleY = getNodeScaleY(symbolNode);
+    const stateVisualImageHref = resolveStateVisualImageHref(stateVisual, imageAssets);
+    const effectiveImageHref = exportSvgImageHref(stateVisualImageHref || resolveNodeImage(symbolNode, imageAssets), imageExportPathById);
+    const terminalVisualTransform = effectiveImageHref
+      ? generatedStateIconVisualTransform(effectiveImageHref, symbolNode.size)
+      : null;
     const terminalVisuals = symbolNode.terminals.map((terminal) => {
       const renderPoint = terminalRenderLocalPoint(terminal, symbolNode.size, nodeScaleX, nodeScaleY, symbolNode.kind);
-      const stub = terminalStubSegment(terminal, nodeScaleX, nodeScaleY, 24, symbolNode.kind, symbolNode.size);
+      const stub = adjustGeneratedStateIconTerminalStub(
+        terminal,
+        renderPoint,
+        terminalStubSegment(terminal, nodeScaleX, nodeScaleY, 24, symbolNode.kind, symbolNode.size),
+        nodeScaleX,
+        nodeScaleY,
+        terminalVisualTransform
+      );
       return [
         terminal.type,
         terminal.anchor.x,
@@ -917,12 +980,11 @@ ${rules.join("\n")}
         stub.from.y,
         stub.to.x,
         stub.to.y,
-        terminalStubStrokeWidth(symbolNode, terminal),
+        exportTerminalConnectorStrokeWidth(symbolNode, terminal),
         // 电压模式下剔除端子电压色：跨电压同种图元共用 symbol（颜色由 use 上的类/槽驱动）
         colorDisplayMode === "voltage" ? "" : getTerminalDisplayColor(symbolNode, terminal, colorDisplayMode, colorPalette, themeMode)
       ];
     });
-    const stateVisualImageHref = resolveStateVisualImageHref(stateVisual, imageAssets);
     return JSON.stringify([
       symbolNode.kind,
       glyphVariant,
@@ -1040,7 +1102,10 @@ ${rules.join("\n")}
         const glyphTextMarkup = renderSvgElementMarkup(DeviceGlyph({ node: voltageColoredNode, mode: "text", colorDisplayMode, colorPalette: glyphColorPalette, themeMode, stateVisual, voltagePaint: glyphTerminalPaint }));
         // terminalGeometryVisible=false：端子几何由调用方注入，正文不得重复输出（引线按端子类型着色）
         const connectorMarkup = terminalGeometryVisible
-          ? buildSvgDeviceConnectorMarkup(voltageColoredNode, colorDisplayMode, colorPalette, glyphTerminalPaint, themeMode)
+          ? buildSvgDeviceConnectorMarkup(voltageColoredNode, colorDisplayMode, colorPalette, glyphTerminalPaint, themeMode, {
+              imageHref,
+              terminalStrokeWidth: (terminal) => exportTerminalConnectorStrokeWidth(symbolNode, terminal)
+            })
           : "";
         const imageMarkup = imageHref
           ? svgImageContentMarkup(imageHref, {
