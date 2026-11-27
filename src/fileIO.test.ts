@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { openExportedFile, saveBlobFile, saveLazyBlobFile, saveLazyTextFile, saveTextFile, writeTextFileToDirectory } from "./fileIO";
+import { openExportedFile, resetNativeExportDialogAvailabilityForTest, saveBlobFile, saveLazyBlobFile, saveLazyTextFile, saveTextFile, writeTextFileToDirectory } from "./fileIO";
 import type { SavedExportFile } from "./fileIO";
 import { encodeGbk } from "./encoding/gbk";
 
@@ -1113,5 +1113,36 @@ describe("本机另存为的准入判定与降级兜底", () => {
 
     expect(fetchMock.mock.calls[1]?.[0]).toBe(`${WRITE_URL_PREFIX}42`);
     expect(showGlobalMessage).not.toHaveBeenCalled();
+  });
+
+  test("★ 后端返回 501（非交互桌面）时无缝降级到浏览器 showSaveFilePicker，且后续导出不再请求 select-file", async () => {
+    try {
+      const write = vi.fn(async (_data: Blob | string) => undefined);
+      const close = vi.fn(async () => undefined);
+      const showSaveFilePicker = vi.fn(async () => ({
+        createWritable: async () => ({ write, close })
+      }));
+      const fetchMock = vi.fn().mockResolvedValue(
+        jsonResponse({ error: "当前运行环境不支持本地快速另存为。" }, 501)
+      );
+      const showGlobalMessage = vi.fn();
+      vi.stubGlobal("showGlobalMessage", showGlobalMessage);
+      vi.stubGlobal("window", { location: { hostname: "127.0.0.1" }, showSaveFilePicker });
+      vi.stubGlobal("fetch", fetchMock);
+
+      // 第一次：后端返回 501 → 切到浏览器 showSaveFilePicker，不弹错误 toast
+      await expect(saveLazyTextFile({ ...nativeOptions, loadText: () => "<svg/>" })).resolves.toBe(true);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(showSaveFilePicker).toHaveBeenCalledTimes(1);
+      expect(write).toHaveBeenCalledWith(new TextEncoder().encode("<svg/>"));
+      expect(showGlobalMessage).not.toHaveBeenCalled();
+
+      // 第二次：直接命中会话缓存，跳过 select-file 直接唤起浏览器 showSaveFilePicker
+      await expect(saveLazyTextFile({ ...nativeOptions, loadText: () => "<svg>2</svg>" })).resolves.toBe(true);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(showSaveFilePicker).toHaveBeenCalledTimes(2);
+    } finally {
+      resetNativeExportDialogAvailabilityForTest();
+    }
   });
 });

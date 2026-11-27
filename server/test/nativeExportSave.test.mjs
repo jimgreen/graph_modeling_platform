@@ -207,6 +207,7 @@ describe("native export save service", () => {
     )).resolves.toBeNull();
 
     const script = Buffer.from(encodedCommand, "base64").toString("utf16le");
+    expect(script).toContain("IsInteractiveDefaultDesktop");
     expect(script).toContain("PromoteNextDialog");
     expect(script).toContain("IntPtr hwndTopmost = new IntPtr(-1)");
     expect(script).toContain("SetWindowPos(dialogHandle, hwndTopmost");
@@ -215,6 +216,46 @@ describe("native export save service", () => {
     expect(script).toContain('"downloads" { Join-Path $env:USERPROFILE "Downloads" }');
     expect(script).toContain("$dialog.ShowDialog()");
     expect(commandOptions.env.GRAPH_MODEL_EXPORT_INITIAL_DIRECTORY).toBe(rememberedDirectory);
+  });
+
+  test("returns unsupported and caches the result when running outside the interactive default desktop", async () => {
+    const execFileImpl = vi.fn((_command, _args, _options, callback) => {
+      callback(null, "UNAVAILABLE", "");
+    });
+    await expect(showWindowsSaveFileDialog(
+      { filename: "model.svg", extensions: [".svg"] },
+      { platform: "win32", execFileImpl }
+    )).rejects.toMatchObject({ code: "unsupported" });
+
+    const chooseFile = vi.fn(async () => {
+      throw new NativeExportSaveError("unsupported", "非交互桌面");
+    });
+    const service = createNativeExportSaveService({ platform: "win32", chooseFile });
+    await expect(service.selectFile({ filename: "model.svg", extensions: [".svg"] })).resolves.toEqual({
+      supported: false,
+      cancelled: false
+    });
+    // 同一进程内第二次调用直接命中缓存，不再重复拉起弹窗子进程
+    await expect(service.selectFile({ filename: "model.e", extensions: [".e"] })).resolves.toEqual({
+      supported: false,
+      cancelled: false
+    });
+    expect(chooseFile).toHaveBeenCalledTimes(1);
+  });
+
+  test("treats aborted save dialog request as cancelled without throwing", async () => {
+    const abortController = new AbortController();
+    const execFileImpl = vi.fn((_command, _args, options, callback) => {
+      expect(options.signal).toBe(abortController.signal);
+      abortController.abort();
+      const abortError = new Error("aborted");
+      abortError.name = "AbortError";
+      callback(abortError, "", "");
+    });
+    await expect(showWindowsSaveFileDialog(
+      { filename: "model.svg", extensions: [".svg"] },
+      { platform: "win32", execFileImpl, signal: abortController.signal }
+    )).resolves.toBeNull();
   });
 
   test("exposes a typed invalid-token error", () => {

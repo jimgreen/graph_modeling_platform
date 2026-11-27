@@ -797,6 +797,8 @@ describe("app view device definition parameter rows", () => {
 
     expect(exportActions).toContain('label: "导出 CIM/XML"');
     expect(exportActions).toContain("action: exportCimFile, validatesEInterface: false");
+    expect(exportActions).toContain('className="export-menu-trigger"');
+    expect(exportActions).toMatch(/className="export-menu-trigger"[\s\S]*?onClick=/);
     expect(source).toContain("exportCimFile,");
   });
 

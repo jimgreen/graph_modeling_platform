@@ -17,16 +17,32 @@ export function createNativeExportHandlers({
       return;
     }
     const payload = await readJsonBody(request, 64 * 1024, "另存为参数过大。");
+    const abortController = new AbortController();
+    // 客户端断开连接（刷新/关页/取消请求）时主动中止未完成的弹窗子进程，防止孤儿进程堆积
+    const handleClientClose = () => {
+      if (!response.writableEnded) {
+        abortController.abort();
+      }
+    };
+    response.on("close", handleClientClose);
     try {
-      const result = await nativeExportSaveService.selectFile(payload);
+      const result = await nativeExportSaveService.selectFile(payload, { signal: abortController.signal });
+      if (abortController.signal.aborted || response.writableEnded) {
+        return;
+      }
       if (!result.supported) {
         sendError(response, 501, "当前运行环境不支持本地快速另存为。");
         return;
       }
       sendJson(response, 200, result);
     } catch (error) {
+      if (abortController.signal.aborted || response.writableEnded) {
+        return;
+      }
       const message = error instanceof Error ? error.message : "打开系统另存为窗口失败。";
       sendError(response, 500, message);
+    } finally {
+      response.off("close", handleClientClose);
     }
   }
 

@@ -843,15 +843,18 @@ function AppTopbarContent({ scope }: { scope: Record<string, any> }) {
               { key: "svg", label: "导出 SVG", icon: <Download size={16}/>, action: exportSvgFile, validatesEInterface: false },
               { key: "json", label: "导出 JSON", icon: <Download size={16}/>, action: exportJsonFile, validatesEInterface: false },
               { key: "cim", label: "导出 CIM/XML", icon: <FileJson size={16}/>, action: exportCimFile, validatesEInterface: false }
-            ].map((item) => (
+            ].map((item) => {
+              const defaultEncoding: "utf-8" | "gbk" = item.key === "e" ? "gbk" : "utf-8";
+              return (
               <div className="export-menu-item" key={item.key}>
-                <button type="button" id={`topbar-export-${item.key}`} className="export-menu-trigger" disabled={modelActionsDisabled} title={item.label} aria-label={item.label} aria-haspopup="menu">{item.icon}<span>{item.label}</span><ChevronRight className="export-submenu-chevron" size={14}/></button>
+                <button type="button" id={`topbar-export-${item.key}`} className="export-menu-trigger" disabled={modelActionsDisabled} onClick={(event) => { event.currentTarget.blur(); requestEncodedExport(item.action, defaultEncoding, item.validatesEInterface); }} title={item.label} aria-label={item.label} aria-haspopup="menu">{item.icon}<span>{item.label}</span><ChevronRight className="export-submenu-chevron" size={14}/></button>
                 <div className="export-encoding-submenu" role="menu" aria-label={`${item.label}字符编码`}>
-                  <button type="button" id={`topbar-export-${item.key}-utf8`} role="menuitem" disabled={modelActionsDisabled} onClick={() => requestEncodedExport(item.action, "utf-8", item.validatesEInterface)} aria-label={`${item.label}，UTF-8 编码`}>UTF-8</button>
-                  <button type="button" id={`topbar-export-${item.key}-gbk`} role="menuitem" disabled={modelActionsDisabled} onClick={() => requestEncodedExport(item.action, "gbk", item.validatesEInterface)} aria-label={`${item.label}，GBK 编码`}>GBK</button>
+                  <button type="button" id={`topbar-export-${item.key}-utf8`} role="menuitem" disabled={modelActionsDisabled} onClick={(event) => { event.currentTarget.blur(); requestEncodedExport(item.action, "utf-8", item.validatesEInterface); }} aria-label={`${item.label}，UTF-8 编码`}>UTF-8</button>
+                  <button type="button" id={`topbar-export-${item.key}-gbk`} role="menuitem" disabled={modelActionsDisabled} onClick={(event) => { event.currentTarget.blur(); requestEncodedExport(item.action, "gbk", item.validatesEInterface); }} aria-label={`${item.label}，GBK 编码`}>GBK</button>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>}
         {visible("topbar.sendModel") && T("发送", <button type="button" id="topbar-send-model" className="topbar-primary-button" disabled={modelActionsDisabled} onClick={() => setSendModelDialogOpen(true)} aria-label="发送"><Send size={16}/></button>)}

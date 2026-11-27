@@ -51,6 +51,48 @@ public static class NativeDialogPromoter
     [DllImport("user32.dll")]
     private static extern bool BringWindowToTop(IntPtr hWnd);
 
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetProcessWindowStation();
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetThreadDesktop(uint dwThreadId);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern bool GetUserObjectInformation(
+        IntPtr hObj,
+        int nIndex,
+        StringBuilder pvInfo,
+        uint nLength,
+        out uint lpnLengthNeeded
+    );
+
+    private static string GetUserObjectName(IntPtr handle)
+    {
+        if (handle == IntPtr.Zero)
+        {
+            return "";
+        }
+        StringBuilder name = new StringBuilder(256);
+        uint needed = 0;
+        if (!GetUserObjectInformation(handle, 2, name, (uint)(name.Capacity * 2), out needed))
+        {
+            return "";
+        }
+        return name.ToString();
+    }
+
+    public static bool IsInteractiveDefaultDesktop(uint threadId)
+    {
+        if (!Environment.UserInteractive)
+        {
+            return false;
+        }
+        string winsta = GetUserObjectName(GetProcessWindowStation());
+        string desktop = GetUserObjectName(GetThreadDesktop(threadId));
+        return string.Equals(winsta, "WinSta0", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(desktop, "Default", StringComparison.OrdinalIgnoreCase);
+    }
+
     public static void PromoteNextDialog(uint threadId, int timeoutMilliseconds)
     {
         ThreadPool.QueueUserWorkItem(delegate
@@ -115,6 +157,10 @@ if ($initialDirectory -and (Test-Path -LiteralPath $initialDirectory -PathType C
 }
 
 $dialogThreadId = [NativeDialogPromoter]::GetCurrentThreadId()
+if (-not [NativeDialogPromoter]::IsInteractiveDefaultDesktop($dialogThreadId)) {
+  [Console]::Write("UNAVAILABLE")
+  exit 0
+}
 [NativeDialogPromoter]::PromoteNextDialog($dialogThreadId, 10000)
 $result = $dialog.ShowDialog()
 if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
@@ -332,11 +378,15 @@ export async function showWindowsSaveFileDialog(options, dependencies = {}) {
         encoding: "utf8",
         env,
         maxBuffer: 1024 * 1024,
-        windowsHide: true
+        windowsHide: true,
+        ...(dependencies.signal ? { signal: dependencies.signal } : {})
       },
       dependencies.execFileImpl
     ));
   } catch (error) {
+    if (error?.name === "AbortError" || error?.code === "ABORT_ERR" || dependencies.signal?.aborted) {
+      return null;
+    }
     const detail = String(error?.stderr ?? "").trim();
     throw new NativeExportSaveError(
       "dialog-failed",
@@ -344,6 +394,9 @@ export async function showWindowsSaveFileDialog(options, dependencies = {}) {
     );
   }
   const encodedPath = stdout.trim();
+  if (encodedPath === "UNAVAILABLE") {
+    throw new NativeExportSaveError("unsupported", "当前运行环境不在交互式桌面，不支持本地快速另存为。");
+  }
   if (encodedPath === "CANCEL") {
     return null;
   }
@@ -375,7 +428,8 @@ export function isAllowedNativeExportOrigin(request) {
 
 export function createNativeExportSaveService(dependencies = {}) {
   const platform = dependencies.platform ?? process.platform;
-  const chooseFile = dependencies.chooseFile ?? ((options) => showWindowsSaveFileDialog(options, { platform }));
+  const chooseFile = dependencies.chooseFile
+    ?? ((options, requestOptions) => showWindowsSaveFileDialog(options, { platform, signal: requestOptions?.signal }));
   // 默认走原子写（审查 D-P1-2）：导出中断不留半写损坏文件；测试仍可注入 writeFileImpl
   const writeFileImpl = dependencies.writeFileImpl ?? atomicWriteFile;
   const openFileImpl = dependencies.openFileImpl
@@ -387,6 +441,9 @@ export function createNativeExportSaveService(dependencies = {}) {
   const createToken = dependencies.createToken ?? randomUUID;
   const targets = new Map();
   const viewTargets = new Map();
+  // 当前服务端进程若探测到不在交互主桌面（WinSta0\Default），进程生命周期内桌面不会切换，
+  // 缓存该结论避免后续每次导出都重复拉起 PowerShell 子进程。
+  let desktopDialogUnsupported = false;
 
   const cleanupExpiredTargets = () => {
     const cutoff = now() - TARGET_TTL_MS;
@@ -404,12 +461,21 @@ export function createNativeExportSaveService(dependencies = {}) {
   };
 
   return {
-    async selectFile(options) {
-      if (platform !== "win32") {
+    async selectFile(options, requestOptions = {}) {
+      if (platform !== "win32" || desktopDialogUnsupported) {
         return { supported: false, cancelled: false };
       }
       cleanupExpiredTargets();
-      const selectedPath = await chooseFile(normalizeNativeExportDialogOptions(options));
+      let selectedPath;
+      try {
+        selectedPath = await chooseFile(normalizeNativeExportDialogOptions(options), requestOptions);
+      } catch (error) {
+        if (error instanceof NativeExportSaveError && error.code === "unsupported") {
+          desktopDialogUnsupported = true;
+          return { supported: false, cancelled: false };
+        }
+        throw error;
+      }
       if (!selectedPath) {
         return { supported: true, cancelled: true };
       }

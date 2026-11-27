@@ -114,12 +114,19 @@ export type SavedExportFile = {
   path: string;
 };
 
+let nativeExportDialogUnsupported = false;
+
+/** 仅供单元测试重置「本机服务端弹窗不可用」会话缓存。 */
+export function resetNativeExportDialogAvailabilityForTest() {
+  nativeExportDialogUnsupported = false;
+}
+
 export function isPickerAbort(error: unknown) {
   return error instanceof DOMException && error.name === "AbortError";
 }
 
 function canUseNativeExportDialog(options: Pick<TextSaveOptions, "preferNativeDialog">) {
-  if (!options.preferNativeDialog || typeof fetch !== "function") {
+  if (nativeExportDialogUnsupported || !options.preferNativeDialog || typeof fetch !== "function") {
     return false;
   }
   const hostname = String(window.location?.hostname ?? "").trim().toLowerCase();
@@ -175,10 +182,68 @@ type NativeExportDialogOptions = {
   mime: string;
   description: string;
   extensions: string[];
+  pickerId?: string;
   startIn?: SaveFilePickerStartIn;
   onSaved?: (file: SavedExportFile) => void;
   onSaveTargetReady?: () => void;
 };
+
+/**
+ * 后端不支持本地原生另存为（501，如非交互桌面/无界面服务）时的无缝降级：
+ * 优先尝试浏览器自带 `showSaveFilePicker`，若不支持或手势已失效则直接退回浏览器下载。
+ */
+async function saveBytesWithBrowserPickerOrDownload(
+  options: NativeExportDialogOptions,
+  bytesPromise: Promise<Uint8Array>,
+  downloadFallback: (bytes: Uint8Array) => void
+): Promise<boolean> {
+  const picker = (window as SaveFilePickerWindow).showSaveFilePicker;
+  if (typeof picker === "function") {
+    let handle: Awaited<ReturnType<NonNullable<SaveFilePickerWindow["showSaveFilePicker"]>>>;
+    try {
+      handle = await picker.call(window, {
+        id: options.pickerId ?? EXPORT_SAVE_PICKER_ID,
+        suggestedName: options.filename,
+        ...(options.startIn ? { startIn: options.startIn } : {}),
+        types: [
+          {
+            description: options.description,
+            accept: {
+              [options.mime]: options.extensions
+            }
+          }
+        ],
+        excludeAcceptAllOption: false
+      });
+    } catch (error) {
+      if (isPickerAbort(error)) {
+        return false;
+      }
+      const bytes = await bytesPromise;
+      options.onSaveTargetReady?.();
+      downloadFallback(bytes);
+      return true;
+    }
+    options.onSaveTargetReady?.();
+    const bytes = await bytesPromise;
+    try {
+      const writable = await handle.createWritable();
+      await writable.write(bytes as unknown as Blob);
+      await writable.close();
+      return true;
+    } catch (error) {
+      if (isPickerAbort(error)) {
+        return false;
+      }
+      downloadFallback(bytes);
+      return true;
+    }
+  }
+  const bytes = await bytesPromise;
+  options.onSaveTargetReady?.();
+  downloadFallback(bytes);
+  return true;
+}
 
 /**
  * 本机另存为：弹系统「另存为」→ 后端原子写盘 → 换回一枚可「查看」的令牌。
@@ -226,6 +291,11 @@ async function saveFileWithNativeDialog(
     selectResponse = await selectPromise;
   } catch {
     return fallbackToBrowserDownload("本地快速保存服务不可用，已改为浏览器下载。");
+  }
+  if (selectResponse.status === 501) {
+    // 后端明确不支持本机原生弹窗（如非交互桌面 / 非 Windows），记录会话缓存并无缝切换至浏览器原生保存
+    nativeExportDialogUnsupported = true;
+    return saveBytesWithBrowserPickerOrDownload(options, bytesPromise, downloadFallback);
   }
   if (!selectResponse.ok) {
     const message = await responseErrorMessage(selectResponse, "本地快速保存服务不可用，已改为浏览器下载。");

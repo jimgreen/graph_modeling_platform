@@ -2332,10 +2332,17 @@ export function useRenderBatch(__appScope: Record<string, any>) {
   const exportSvg = __s("exportSvg", createExportSvg); Object.assign(__appScope, { exportSvg });
   const exportEFile = __s("exportEFile", createExportEFile); Object.assign(__appScope, { exportEFile });
   const exportCimFile = async (...args: unknown[]) => {
+    // 必须在异步动态 import 之前同步校验未保存闸门：
+    // 若用户刚在「未保存修改」弹窗里点「保存并继续」，skipSaveCheckFlag 仅在同步调用帧内有效，
+    // 延后到 await import() 之后校验会被错误拦截。
+    if (!ensureSavedBeforeExport()) {
+      return false;
+    }
     // CIM 导出为低频按需动作：触发时动态加载 src/cim/cim-export，避免占用首屏主包体积
     const { createCimExport } = await import("../cim/cim-export");
     const runner = createCimExport({
       ...__appScope,
+      ensureSavedBeforeExport: () => true,
       schemePath: schemePathForScheme(activeSchemeKey),
       apiPath,
       backendErrorMessage,
