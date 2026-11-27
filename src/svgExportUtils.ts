@@ -21,19 +21,24 @@ import {
   measurementFormatValueText
 } from "./measurements.ts";
 import { escapeXml, formatSvgNumber, svgStrokeDashArray } from "./svgUtils.ts";
-import { nodeLabelText, nodeLabelFontSize, nodeLabelShouldRender, nodeLabelTextAnchor, nodeLabelTransform, nodeLabelVertical, nodeLabelVerticalSegments, nodeLabelVerticalTokenY, nodeLabelCanvasCenter } from "./nodeLabelUtils.ts";
+import { nodeLabelText, nodeLabelExplicitColor, nodeLabelFontSize, nodeLabelShouldRender, nodeLabelTextAnchor, nodeLabelTransform, nodeLabelVertical, nodeLabelVerticalSegments, nodeLabelVerticalTokenY, nodeLabelCanvasCenter } from "./nodeLabelUtils.ts";
 import { clampNumber } from "./canvasViewport.ts";
+import { themedMeasurementTextColor } from "./themedColors.ts";
 
-function svgNodeLabelBaseAttributes(node: ModelNode) {
-  return `dominant-baseline="middle" fill="${escapeXml(node.params._labelColor || "#334155")}" font-family="${escapeXml(node.params._labelFontFamily || "Arial")}" font-size="${formatSvgNumber(nodeLabelFontSize(node))}" font-weight="${escapeXml(node.params._labelFontWeight || "500")}" font-style="${escapeXml(node.params._labelFontStyle || "normal")}" text-decoration="${escapeXml(node.params._labelTextDecoration || "none")}" paint-order="stroke" stroke="rgba(255,255,255,0.85)" stroke-width="3" stroke-linejoin="round"`;
+function svgNodeLabelBaseAttributes(node: ModelNode, themeMode: "light" | "dark" = "light") {
+  const fill = themeMode === "dark"
+    ? (nodeLabelExplicitColor(node) || "#e2e8f0")
+    : (node.params._labelColor || "#334155");
+  const haloStroke = themeMode === "dark" ? "rgba(0,0,0,0.85)" : "rgba(255,255,255,0.85)";
+  return `dominant-baseline="middle" fill="${escapeXml(fill)}" font-family="${escapeXml(node.params._labelFontFamily || "Arial")}" font-size="${formatSvgNumber(nodeLabelFontSize(node))}" font-weight="${escapeXml(node.params._labelFontWeight || "500")}" font-style="${escapeXml(node.params._labelFontStyle || "normal")}" text-decoration="${escapeXml(node.params._labelTextDecoration || "none")}" paint-order="stroke" stroke="${haloStroke}" stroke-width="3" stroke-linejoin="round"`;
 }
 
-function buildSvgNodeLabelTextMarkup(node: ModelNode) {
+function buildSvgNodeLabelTextMarkup(node: ModelNode, themeMode: "light" | "dark" = "light") {
   const text = nodeLabelText(node);
   if (!text) {
     return "";
   }
-  const baseAttributes = svgNodeLabelBaseAttributes(node);
+  const baseAttributes = svgNodeLabelBaseAttributes(node, themeMode);
   if (nodeLabelVertical(node)) {
     return nodeLabelVerticalSegments(text)
       .map(
@@ -45,25 +50,25 @@ function buildSvgNodeLabelTextMarkup(node: ModelNode) {
   return `<text x="0" y="0" text-anchor="${escapeXml(nodeLabelTextAnchor(node))}" ${baseAttributes} style="writing-mode: horizontal-tb;">${escapeXml(text)}</text>`;
 }
 
-export function buildSvgNodeLabelMarkup(node: ModelNode) {
+export function buildSvgNodeLabelMarkup(node: ModelNode, themeMode: "light" | "dark" = "light") {
   const text = nodeLabelText(node);
   if (!nodeLabelShouldRender(node, true) || !text) {
     return "";
   }
-  return `<g class="export-node-label ${nodeLabelVertical(node) ? "vertical" : "horizontal"}" transform="${nodeLabelTransform(node)}">${buildSvgNodeLabelTextMarkup(node)}</g>`;
+  return `<g class="export-node-label ${nodeLabelVertical(node) ? "vertical" : "horizontal"}" transform="${nodeLabelTransform(node)}">${buildSvgNodeLabelTextMarkup(node, themeMode)}</g>`;
 }
 
 export function buildSvgNodeLabelTextElementsMarkup(
   node: ModelNode,
   id: string,
-  options: { attributes?: string; visible?: boolean } = {}
+  options: { attributes?: string; visible?: boolean; themeMode?: "light" | "dark" } = {}
 ) {
   const text = nodeLabelText(node);
   if (!nodeLabelShouldRender(node, true) || !text) {
     return "";
   }
   const center = nodeLabelCanvasCenter(node);
-  const commonAttributes = `${options.attributes ? `${options.attributes} ` : ""}${svgNodeLabelBaseAttributes(node)}`;
+  const commonAttributes = `${options.attributes ? `${options.attributes} ` : ""}${svgNodeLabelBaseAttributes(node, options.themeMode ?? "light")}`;
   const stylePrefix = options.visible === false ? "display:none; " : "";
   if (nodeLabelVertical(node)) {
     const segments = nodeLabelVerticalSegments(text);
@@ -224,10 +229,17 @@ export function exportSvgLayerScriptMarkup(includeScript: boolean) {
   function exportSvgLayerVisible(layerId) {
     return !layerId || layerState[layerId] !== false;
   }
+  const intrinsicHiddenNodes = new WeakSet();
+  root.querySelectorAll("[layer-id]").forEach((node) => {
+    const layerId = node.getAttribute("layer-id") || "";
+    if (exportSvgLayerVisible(layerId) && node.style.display === "none") {
+      intrinsicHiddenNodes.add(node);
+    }
+  });
   function exportSvgApplyLayerVisibility() {
     root.querySelectorAll("[layer-id]").forEach((node) => {
       const layerId = node.getAttribute("layer-id") || "";
-      node.style.display = exportSvgLayerVisible(layerId) ? "" : "none";
+      node.style.display = !intrinsicHiddenNodes.has(node) && exportSvgLayerVisible(layerId) ? "" : "none";
     });
     root.querySelectorAll("[source-dev-id][target-dev-id]").forEach((edge) => {
       const sourceLayerId = deviceLayerById[edge.getAttribute("source-dev-id") || ""] || "";
@@ -454,7 +466,7 @@ export function buildExportMeasurementGroupMarkup(
   group: MeasurementGroup,
   measurementConfig: PlatformMeasurementConfig,
   usedSvgIds?: Set<string>,
-  options: { layerId?: string; visible?: boolean; deviceId?: string; ownerDeviceId?: string } = {}
+  options: { layerId?: string; visible?: boolean; deviceId?: string; ownerDeviceId?: string; themeMode?: "light" | "dark" } = {}
 ) {
   const metrics = exportMeasurementGroupMetrics(node, group, measurementConfig);
   if (!metrics) {
@@ -467,6 +479,7 @@ export function buildExportMeasurementGroupMarkup(
   const borderDashAttribute = borderDashArray ? ` stroke-dasharray="${escapeXml(borderDashArray)}"` : "";
   const deviceId = options.deviceId ?? node.id;
   const ownerDeviceId = options.ownerDeviceId ?? deviceId;
+  const themeMode = options.themeMode === "dark" ? "dark" : "light";
   const charWidthFor = (fontSize: number) => fontSize * MEASUREMENT_CHAR_WIDTH_RATIO;
   const rowsMarkup = metrics.rows.map((row, index) => {
     const col = metrics.columns <= 1 ? 0 : index % metrics.columns;
@@ -482,7 +495,8 @@ export function buildExportMeasurementGroupMarkup(
       ? exportSvgUniqueId(exportMeasurementValueElementId(exportedItemId, deviceId), usedSvgIds, "mv")
       : "";
     const valueIdAttribute = valueTextId ? ` id="${escapeXml(valueTextId)}"` : "";
-    const commonAttributes = `fill="${escapeXml(row.display.color)}" font-family="${escapeXml(metrics.fontFamily)}" font-size="${formatSvgNumber(row.fontSize)}" font-weight="${escapeXml(row.display.fontWeight)}" font-style="${escapeXml(row.display.fontStyle)}" text-decoration="${escapeXml(row.display.textDecoration)}"`;
+    const itemColor = themeMode === "dark" ? themedMeasurementTextColor(row.display.color, "dark") : row.display.color;
+    const commonAttributes = `fill="${escapeXml(itemColor)}" font-family="${escapeXml(metrics.fontFamily)}" font-size="${formatSvgNumber(row.fontSize)}" font-weight="${escapeXml(row.display.fontWeight)}" font-style="${escapeXml(row.display.fontStyle)}" text-decoration="${escapeXml(row.display.textDecoration)}"`;
     const labelMarkup = row.labelText
       ? `<tspan class="measurement-label ml" x="${formatSvgNumber(labelEndX)}" text-anchor="end">${escapeXml(row.labelText)}</tspan>`
       : "";

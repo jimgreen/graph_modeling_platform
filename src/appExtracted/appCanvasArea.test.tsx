@@ -1233,4 +1233,18 @@ describe("Phase 3B 画布 SVG 分层渲染解耦", () => {
     expect(idxControls).toBeGreaterThan(idxOverlay);
     expect(idxMinimap).toBeGreaterThan(idxControls);
   });
+
+  it("远景缩放（< 40%）下保持设备量测框正常渲染，不挂载 data-zoom-lod 隐藏规则", () => {
+    const scope = {
+      ...baseScope(HORIZONTAL_ANCHOR, "translate(140, 80)"),
+      currentZoomPercent: 30,
+      deviceMeasurementsVisible: true,
+      visibleMeasurementGroups: [{ id: "mg-1" }],
+      renderMeasurementGroup: (group: { id: string }) => <g key={group.id} className="measurement-group" data-group-id={group.id} />
+    };
+    const html = renderToStaticMarkup(<MemoizedCanvasArea scope={scope} />);
+    expect(html).not.toContain("data-zoom-lod=");
+    expect(html).toContain('class="measurement-layer"');
+    expect(html).toContain('data-group-id="mg-1"');
+  });
 });

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "vitest";
 import * as legacy from "../appExtracted/appPersistenceLibraryExport";
 import { LIGHT_CANVAS_BACKGROUND } from "../canvasTheme";
-import { createDefaultNode, DEVICE_LIBRARY, getTerminalPoint, type ModelNode, type ProjectFile } from "../model";
+import { createDefaultNode, DEFAULT_COLOR_PALETTE, DEVICE_LIBRARY, getTerminalPoint, type ModelNode, type ProjectFile } from "../model";
 import { decodeSvgImageSource } from "../svgUtils";
 import {
   createRoutableLineDeviceFromEndpoints,
@@ -840,5 +840,121 @@ describe("buildSvgDocument 电流流水线开关", () => {
     expect(textSection).toMatch(new RegExp(`id="label_[^"]*"[^>]*>${alwaysNode.name}</text>`));
     const alwaysLabelTag = textSection.split("\n").find((line) => line.includes(`>${alwaysNode.name}</text>`)) ?? "";
     expect(alwaysLabelTag).not.toContain("display:none;");
+  });
+
+  test("电压模式下保留非预置自定义电压等级配色（如 ac:380 / dc:400），不回退为随机 hsl 色", () => {
+    const acBus = createDefaultNode("ac-bus", { x: 120, y: 120 });
+    acBus.params.vbase = "380";
+    acBus.terminals = acBus.terminals.map((t) => ({ ...t, type: "ac", vbase: "380" }));
+    const dcBus = createDefaultNode("dc-bus", { x: 320, y: 120 });
+    dcBus.params.vbase = "400";
+    dcBus.terminals = dcBus.terminals.map((t) => ({ ...t, type: "dc", vbase: "400" }));
+
+    const svg = buildSvgDocument([acBus, dcBus], [], {
+      width: 800,
+      height: 600,
+      colorDisplayMode: "voltage",
+      colorPalette: {
+        ...DEFAULT_COLOR_PALETTE,
+        voltage: {
+          ...DEFAULT_COLOR_PALETTE.voltage,
+          "ac:380": "#1d7f3a",
+          "dc:400": "#561d7f"
+        }
+      }
+    });
+
+    expect(svg).toContain(".kv380{--c-kv380:#1d7f3a;");
+    expect(svg).toContain(".dcv400{--c-dcv400:#561d7f;");
+    expect(svg).not.toContain("hsl(");
+  });
+
+  test("深色主题（themeMode=dark）导出纯黑画布底色及提亮后的标签与量测默认文字色", () => {
+    const bus = createDefaultNode("ac-bus", { x: 160, y: 160 });
+    const measurementGroup = {
+      id: "mg-dark",
+      nodeId: bus.id,
+      visible: true,
+      labelVisible: true,
+      unitVisible: true,
+      anchor: "custom" as const,
+      offset: { x: 0, y: -40 },
+      layout: "vertical" as const,
+      items: [{ id: "m-dark-1", measurementTypeId: "activePower", sourcePoint: `${bus.id}.p`, visible: true, defaultValue: 0 }]
+    };
+
+    const darkSvg = buildSvgDocument([bus], [], {
+      width: 800,
+      height: 600,
+      themeMode: "dark",
+      measurements: { version: 1, groups: [measurementGroup] }
+    });
+
+    expect(darkSvg).toContain('<rect width="100%" height="100%" fill="#000000"/>');
+    const textSection = darkSvg.slice(darkSvg.indexOf('<g id="Text_Layer"'), darkSvg.indexOf('<g id="Measurement_Layer"'));
+    expect(textSection).toContain('fill="#e2e8f0"');
+    expect(textSection).toContain('stroke="rgba(0,0,0,0.85)"');
+    const measSection = darkSvg.slice(darkSvg.indexOf('<g id="Measurement_Layer"'));
+    expect(measSection).toContain('fill="#e2e8f0"');
+  });
+
+  test("多图层脚本初始化与切换图层时保持全局隐藏的标识与量测处于隐藏状态", () => {
+    const bus = { ...createDefaultNode("ac-bus", { x: 100, y: 100 }), layerId: "layer-1" };
+    const measurementGroup = {
+      id: "mg-multi",
+      nodeId: bus.id,
+      visible: true,
+      labelVisible: true,
+      unitVisible: true,
+      anchor: "custom" as const,
+      offset: { x: 0, y: -40 },
+      layout: "vertical" as const,
+      items: [{ id: "m-multi-1", measurementTypeId: "activePower", sourcePoint: `${bus.id}.p`, visible: true, defaultValue: 0 }]
+    };
+
+    const svg = buildSvgDocument([bus], [], {
+      width: 800,
+      height: 600,
+      layers: [
+        { id: "layer-1", name: "图层1", visible: true },
+        { id: "layer-2", name: "图层2", visible: true }
+      ],
+      activeLayerId: "layer-1",
+      deviceLabelsVisible: false,
+      deviceMeasurementsVisible: false,
+      measurements: { version: 1, groups: [measurementGroup] }
+    });
+
+    const scriptBody = svg.match(/<script[^>]*><!\[CDATA\[\n([\s\S]*?)\n\]\]><\/script>/)?.[1] ?? "";
+    expect(scriptBody).toContain("intrinsicHiddenNodes");
+
+    // 构造最小 DOM 节点验证图层脚本执行后不会把初始隐藏的标签和量测恢复为 display=""
+    const makeFakeNode = (attrs: Record<string, string>, display = "") => ({
+      style: { display },
+      classList: { toggle: () => undefined },
+      getAttribute: (name: string) => attrs[name] ?? null,
+      setAttribute: (name: string, val: string) => { attrs[name] = val; },
+      addEventListener: () => undefined
+    });
+    const deviceNode = makeFakeNode({ "layer-id": "layer-1" }, "");
+    const hiddenLabelNode = makeFakeNode({ "layer-id": "layer-1" }, "none");
+    const hiddenMeasNode = makeFakeNode({ "layer-id": "layer-1" }, "none");
+    const layerDef1 = makeFakeNode({ "layer-id": "layer-1", visible: "1" });
+    const layerDef2 = makeFakeNode({ "layer-id": "layer-2", visible: "1" });
+    const rootAttrs: Record<string, string> = { "active-layer-id": "layer-1" };
+    const fakeRoot = {
+      querySelectorAll: (selector: string) => {
+        if (selector === ".export-layer-definitions > [layer-id]") return [layerDef1, layerDef2];
+        if (selector === "[layer-id]") return [deviceNode, hiddenLabelNode, hiddenMeasNode];
+        return [];
+      },
+      getAttribute: (name: string) => rootAttrs[name] ?? null,
+      setAttribute: (name: string, val: string) => { rootAttrs[name] = val; }
+    };
+    new Function("document", scriptBody)({ currentScript: { ownerDocument: { documentElement: fakeRoot } } });
+
+    expect(deviceNode.style.display).toBe("");
+    expect(hiddenLabelNode.style.display).toBe("none");
+    expect(hiddenMeasNode.style.display).toBe("none");
   });
 });

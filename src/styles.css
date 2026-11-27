@@ -2713,11 +2713,6 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   pointer-events: none;
 }
 
-/* 缩放到极远全景（<40%）时隐藏肉眼不可辨认的未选中量测框，减少超大图 SVG 排版负担 */
-.diagram-canvas[data-zoom-lod="far"] .measurement-group:not(.selected) {
-  display: none;
-}
-
 .diagram-canvas.terminal-dragging,
 .diagram-canvas.terminal-dragging * {
   cursor: grabbing !important;

@@ -49,7 +49,7 @@ function normalizeTargetUrl(raw) {
 // 生成单个格式的文本内容。返回 { text } 或 { error }。
 // templateName 仅对 E 文件生效（后端按模板重算元件定义），其余格式忽略。
 // paths：多空间路径集合（spaceStore.spacePathsFor），缺省时被调函数回落 defaultPaths。
-async function buildFileText({ kind, parts, name, templateName, paths }) {
+async function buildFileText({ kind, parts, name, templateName, svgOptions, paths }) {
   if (kind === "json") {
     const record = await readSchemeProjectRecord({ schemePath: parts, name, paths });
     if (!record) {
@@ -62,8 +62,19 @@ async function buildFileText({ kind, parts, name, templateName, paths }) {
     return error ? { error } : { text: String(file?.text ?? "") };
   }
   if (kind === "svg") {
-    // 与前端导出同口径：colorMode=voltage（前端导出原有按电压着色）
-    const { svg, error } = await renderSavedModelSvg({ parts, name, colorMode: "voltage", paths });
+    // 优先使用前端绘图区透传的实时显示选项（svgOptions），缺省时保持兼容 colorMode=voltage
+    const colorMode = svgOptions?.colorMode === "energy" || svgOptions?.colorMode === "voltage"
+      ? svgOptions.colorMode
+      : "voltage";
+    const { svg, error } = await renderSavedModelSvg({
+      parts,
+      name,
+      colorMode,
+      ...(svgOptions?.labelsVisible === false ? { deviceLabelsVisible: false } : {}),
+      ...(svgOptions?.measurementsVisible === false ? { deviceMeasurementsVisible: false } : {}),
+      ...(svgOptions?.themeMode === "dark" ? { themeMode: "dark" } : {}),
+      paths
+    });
     return error ? { error } : { text: String(svg ?? "") };
   }
   const { xml, error } = await buildCimForSavedModel({ parts, name, stableCreatedAt: true, paths });
@@ -226,9 +237,10 @@ export async function handleV1ModelSend({ request, response, url, paths }) {
     form.append("scheme_path", JSON.stringify(parts));
     form.append("sent_at", new Date(startedAt).toISOString());
 
+    const svgOptions = body?.svgOptions && typeof body.svgOptions === "object" ? body.svgOptions : undefined;
     const sentFiles = [];
     for (const spec of specs) {
-      const built = await buildFileText({ kind: spec.kind, parts, name, templateName, paths });
+      const built = await buildFileText({ kind: spec.kind, parts, name, templateName, svgOptions, paths });
       if (built.error) {
         sendV1Error(response, built.error.code, built.error.message);
         return;

@@ -297,6 +297,11 @@ export async function handleV1ModelSvg({ url, response, paths }) {
     sendV1Error(response, "bad-request", measurementsVisibleParsed.error);
     return;
   }
+  const themeMode = (url.searchParams.get("themeMode") ?? "").trim() || "light";
+  if (themeMode !== "light" && themeMode !== "dark") {
+    sendV1Error(response, "bad-request", "themeMode 仅支持 light 或 dark。");
+    return;
+  }
   const encoding = (url.searchParams.get("encoding") ?? "").trim().toLowerCase() || "utf-8";
   if (encoding !== "gbk" && encoding !== "utf-8") {
     sendV1Error(response, "bad-request", "encoding 须为 gbk 或 utf-8。");
@@ -309,6 +314,7 @@ export async function handleV1ModelSvg({ url, response, paths }) {
       colorMode,
       ...(labelsVisibleParsed.value === false ? { deviceLabelsVisible: false } : {}),
       ...(measurementsVisibleParsed.value === false ? { deviceMeasurementsVisible: false } : {}),
+      ...(themeMode === "dark" ? { themeMode: "dark" } : {}),
       paths
     });
     if (error) {

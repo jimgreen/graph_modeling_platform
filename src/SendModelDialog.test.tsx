@@ -383,4 +383,38 @@ describe("buildSendRequest 未覆盖分支（行为断言）", () => {
     // 对照档：正常名字原样透传（含需转义的字符）
     expect(nameOf({ ...bareScope, projectName: "模型 丙/一" })).toBe("模型 丙/一");
   });
+
+  test("勾选 SVG 且绘图区含实时显示状态时随请求附带 svgOptions（所见即所得）", () => {
+    const viewScope = {
+      ...scope,
+      colorDisplayMode: "energy",
+      deviceLabelsVisible: false,
+      deviceMeasurementsVisible: false,
+      themeMode: "dark"
+    };
+    const withSvg = buildSendRequest(viewScope, "http://x/y", [
+      { kind: "e", encoding: "gbk" },
+      { kind: "svg", encoding: "utf-8" }
+    ]);
+    expect(JSON.parse(withSvg.init.body)).toEqual({
+      url: "http://x/y",
+      files: [
+        { kind: "e", encoding: "gbk" },
+        { kind: "svg", encoding: "utf-8" }
+      ],
+      svgOptions: {
+        colorMode: "energy",
+        labelsVisible: false,
+        measurementsVisible: false,
+        themeMode: "dark"
+      }
+    });
+
+    // 未勾选 SVG 时不附带 svgOptions
+    const onlyE = buildSendRequest(viewScope, "http://x/y", [{ kind: "e", encoding: "gbk" }]);
+    expect(JSON.parse(onlyE.init.body)).toEqual({
+      url: "http://x/y",
+      files: [{ kind: "e", encoding: "gbk" }]
+    });
+  });
 });

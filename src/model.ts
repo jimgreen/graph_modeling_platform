@@ -4972,6 +4972,16 @@ export function resolveThemedPalette(palette: ColorPalette = DEFAULT_COLOR_PALET
       voltageEntries[key] = pick(palette.voltage[key], pair);
     }
   }
+  // 保留用户在配色设置中新增的非预置自定义电压等级（如 ac:380、dc:400 等），避免回退成随机哈希色。
+  for (const [key, customColor] of Object.entries(palette.voltage ?? {})) {
+    if (key in voltageEntries) {
+      continue;
+    }
+    const trimmed = typeof customColor === "string" ? customColor.trim() : "";
+    if (trimmed) {
+      voltageEntries[key] = trimmed;
+    }
+  }
   const energyEntries = {
     ac: pick(palette.energy.ac, ENERGY_THEME_COLORS.ac),
     dc: pick(palette.energy.dc, ENERGY_THEME_COLORS.dc),

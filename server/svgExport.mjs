@@ -93,6 +93,7 @@ export async function renderSavedModelSvg({
   colorMode = "energy",
   deviceLabelsVisible = true,
   deviceMeasurementsVisible = true,
+  themeMode = "light",
   paths
 }) {
   const record = await readSchemeProjectRecord({ schemePath: parts, name, paths });
@@ -153,6 +154,7 @@ export async function renderSavedModelSvg({
       measurementConfig,
       deviceLabelsVisible,
       deviceMeasurementsVisible,
+      ...(themeMode === "dark" ? { themeMode: "dark" } : {}),
       // 同一份 id→dataURL 映射两用：imageAssets 供 assetId 解析（节点/状态图元），imageExportPathById 供 href 替换。
       // 只读被引用的图片，不整库内联；代价是响应体随图片体积膨胀。
       imageExportPathById,

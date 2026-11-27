@@ -150,16 +150,16 @@ export function createExportSvg(__appScope: ExportImportScope) {
     }
 
     try {
-      // 三份产物全部走后端：先并行发起请求
+      // 三份产物全部走后端：先并行发起请求（统一取最新帧 scope，避免目录选择器等待期间切换显示状态漏检）
       const svgTextPromise = Promise.resolve()
-        .then(() => fetchBackendModelSvgText(__appScope, textEncoding, "SVG 生成失败。"))
+        .then(() => fetchBackendModelSvgText(latestScope(), textEncoding, "SVG 生成失败。"))
         .then(
           (value: string) => ({ ok: true as const, value }),
           (error: unknown) => ({ ok: false as const, error })
         );
       // JSON 与 SVG 同走后端：与单文件导出 createExportJsonFile 同源
       const jsonTextPromise = Promise.resolve()
-        .then(() => fetchBackendModelJsonText(__appScope, "JSON 生成失败。"))
+        .then(() => fetchBackendModelJsonText(latestScope(), "JSON 生成失败。"))
         .then(
           (value: string) => ({ ok: true as const, value }),
           (error: unknown) => ({ ok: false as const, error })
@@ -190,7 +190,7 @@ export function createExportSvg(__appScope: ExportImportScope) {
       let eGenerationError: unknown;
       let eFileWarningDetails: string[] = [];
       const eFileResult = await Promise.resolve()
-        .then(() => fetchBackendModelEFile(__appScope, textEncoding, "E 文件生成失败。"))
+        .then(() => fetchBackendModelEFile(latestScope(), textEncoding, "E 文件生成失败。"))
         .then(
           (value) => ({ ok: true as const, value }),
           (error: unknown) => ({ ok: false as const, error })
@@ -384,11 +384,43 @@ async function fetchBackendModelEFile(__appScope: ExportImportScope, textEncodin
 }
 
 // SVG 生成已移至后端 /v1/schemes/model/export?format=svg；
-// 透传当前绘图区的配色模式（energy/voltage）及设备标识/量测全局显隐开关，保证导出结果所见即所得。
+// 透传当前绘图区的配色模式（energy/voltage）、深浅主题及设备标识/量测全局显隐开关，并在存在未落盘配色变更时预刷盘，保证导出结果所见即所得。
 // XML 声明由后端产出，前端不再前置，保证响应体与落盘文件逐字节一致。
+async function flushPendingColorConfigIfNeeded(scope: ExportImportScope) {
+  const {
+    backendColorConfigLoadedRef,
+    colorDisplayMode,
+    colorPalette,
+    lastPersistedColorConfigPayloadRef,
+    normalizeColorPalette,
+    saveBackendColorConfigPayload,
+    serializeColorConfigForStorage
+  } = scope;
+  if (
+    !backendColorConfigLoadedRef?.current ||
+    typeof serializeColorConfigForStorage !== "function" ||
+    typeof saveBackendColorConfigPayload !== "function"
+  ) {
+    return;
+  }
+  const normalizedPalette = typeof normalizeColorPalette === "function"
+    ? normalizeColorPalette(colorPalette)
+    : colorPalette;
+  const normalizedPayload = serializeColorConfigForStorage(colorDisplayMode, normalizedPalette);
+  if (lastPersistedColorConfigPayloadRef?.current === normalizedPayload) {
+    return;
+  }
+  if (lastPersistedColorConfigPayloadRef) {
+    lastPersistedColorConfigPayloadRef.current = normalizedPayload;
+  }
+  await Promise.resolve(saveBackendColorConfigPayload(normalizedPayload)).catch(() => undefined);
+}
+
 async function fetchBackendModelSvgText(__appScope: ExportImportScope, textEncoding: TextFileEncoding, failureMessage: string) {
-  const { projectName, colorDisplayMode, deviceLabelsVisible, deviceMeasurementsVisible } = __appScope;
-  const path = backendExportSchemePath(__appScope);
+  const currentScope = (__appScope.__appScopeRef?.current as ExportImportScope | undefined) ?? __appScope;
+  await flushPendingColorConfigIfNeeded(currentScope);
+  const { projectName, colorDisplayMode, deviceLabelsVisible, deviceMeasurementsVisible, themeMode } = currentScope;
+  const path = backendExportSchemePath(currentScope);
   const colorMode = colorDisplayMode === "energy" || colorDisplayMode === "voltage"
     ? colorDisplayMode
     : "voltage";
@@ -398,6 +430,7 @@ async function fetchBackendModelSvgText(__appScope: ExportImportScope, textEncod
     + `&colorMode=${encodeURIComponent(colorMode)}`
     + (deviceLabelsVisible === false ? "&labelsVisible=0" : "")
     + (deviceMeasurementsVisible === false ? "&measurementsVisible=0" : "")
+    + (themeMode === "dark" ? "&themeMode=dark" : "")
     + `&encoding=${encodeURIComponent(textEncoding)}`
   );
   const response = await fetch(url, { method: "GET" });
@@ -457,7 +490,7 @@ export function createExportSvgFile(__appScope: ExportImportScope) {
     let svgTextPromise: Promise<string> | undefined;
     const loadSvgText = () => {
       // SVG 生成已移至后端 /v1/schemes/model/export?format=svg（见 fetchBackendModelSvgText）
-      svgTextPromise ??= Promise.resolve().then(() => fetchBackendModelSvgText(__appScope, textEncoding, "SVG 导出失败。"));
+      svgTextPromise ??= Promise.resolve().then(() => fetchBackendModelSvgText(latestScope(), textEncoding, "SVG 导出失败。"));
       return svgTextPromise;
     };
     // 本机另存为才拿得到磁盘路径 → 弹框里才有【查看】

@@ -35,6 +35,7 @@ import {
   isStaticNode,
   normalizeColorPalette,
   resolveDeviceStateVisual,
+  resolveThemedPalette,
   switchingDeviceUsesClosedStatus,
   terminalVoltageBaseNumber,
   voltageLevelColor
@@ -66,7 +67,7 @@ import { atLeastOneNumber } from "../canvasViewport.ts";
 import { inferESection } from "../model-eexport.ts";
 // 深浅两套画布底色与「未设置」语义统一在 canvasTheme.ts 里定义。
 // 这里曾经自带一份 `#f1f5f9` 字面量副本，与共享常量分叉，导致改主题后导出仍走浅灰。
-import { LIGHT_CANVAS_BACKGROUND, migrateLegacyCanvasBackground } from "../canvasTheme.ts";
+import { LIGHT_CANVAS_BACKGROUND, migrateLegacyCanvasBackground, themeCanvasFill, type CanvasThemeMode } from "../canvasTheme.ts";
 import { nodeLabelShouldRender } from "../nodeLabelUtils.ts";
 import { isContainerNode, withNodeUpdates } from "../acContainer.ts";
 import {
@@ -155,6 +156,8 @@ export type CanvasRenderOptions = CanvasBounds & {
   deviceLabelsVisible?: boolean;
   /** 全局设备量测显示开关（与画布顶栏「显示/隐藏设备量测」同口径）。缺省 true，不改变既有基线输出。 */
   deviceMeasurementsVisible?: boolean;
+  /** 画布深浅主题模式（与绘图区顶栏深浅主题切换同口径）。缺省 "light" 保持既有基线逐字节不变。 */
+  themeMode?: CanvasThemeMode;
   /**
    * 电流流水线图层开关。**默认 false**：缺省必须与本选项引入前的输出逐字节一致
    * （既有 golden 基线与前端「导出 SVG」按钮都不传该字段，改默认值会炸基线）。
@@ -213,7 +216,8 @@ export function buildSvgDeviceConnectorMarkup(
   node: ModelNode,
   colorDisplayMode: ColorDisplayMode = "energy",
   colorPalette: ColorPalette = DEFAULT_COLOR_PALETTE,
-  voltagePaint: { terminalRef?: (terminalId: string) => string | undefined } | null = null
+  voltagePaint: { terminalRef?: (terminalId: string) => string | undefined } | null = null,
+  themeMode: CanvasThemeMode = "light"
 ) {
   if (isBusNode(node) || isStaticNode(node) || isRoutableLineDeviceKind(node.kind)) {
     return "";
@@ -227,7 +231,7 @@ export function buildSvgDeviceConnectorMarkup(
       const renderPoint = terminalRenderLocalPoint(terminal, node.size, nodeScaleX, nodeScaleY, node.kind);
       const stub = terminalStubSegment(terminal, nodeScaleX, nodeScaleY, 24, node.kind, node.size);
       const strokeWidth = terminalStubStrokeWidth(node, terminal);
-      const terminalColor = getTerminalDisplayColor(node, terminal, colorDisplayMode, colorPalette);
+      const terminalColor = getTerminalDisplayColor(node, terminal, colorDisplayMode, colorPalette, themeMode);
       const paintRef = voltagePaint?.terminalRef?.(String(terminal.id ?? ""));
       // 导出态电压色走槽/class：有槽链 --tN，无槽删属性靠 <use class> 继承；
       // 仅电端子删属性 —— 非电端子（h2/heat）保留字面 terminalColor（身份色不归电压类管）
@@ -354,7 +358,8 @@ export function buildTemplateTerminalSlotPaint(
   node: ModelNode,
   colorDisplayMode: ColorDisplayMode,
   colorPalette: ColorPalette,
-  nodeFallback: string | (() => string)
+  nodeFallback: string | (() => string),
+  themeMode: CanvasThemeMode = "light"
 ): { nodeRef: string; terminalRef: (terminalId: string) => string | undefined } | null {
   const slotTerminals = transformerTerminalSlots(node);
   // 只有一个电端子时没有可区分的「绕组」，给槽只会让所有元素同色，不如保持字面色
@@ -369,7 +374,7 @@ export function buildTemplateTerminalSlotPaint(
       if (index < 0) {
         return undefined;
       }
-      return `var(--t${index + 1}, ${getTerminalDisplayColor(node, slotTerminals[index], colorDisplayMode, colorPalette)})`;
+      return `var(--t${index + 1}, ${getTerminalDisplayColor(node, slotTerminals[index], colorDisplayMode, colorPalette, themeMode)})`;
     }
   };
 }
@@ -383,8 +388,12 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
     const template = resolveSvgNodeTemplate(node);
     return template ? resolveDeviceStateVisual(template, node) : null;
   };
-  // 存量项目历史默认浅灰底色（#f1f5f9）与绘图区同口径归一为纯白，自定义显式底色原样保留
-  const backgroundColor = migrateLegacyCanvasBackground(canvasSize.backgroundColor) || DEFAULT_CANVAS_BACKGROUND;
+  const themeMode: CanvasThemeMode = canvasSize.themeMode === "dark" ? "dark" : "light";
+  // 存量项目历史默认浅灰底色（#f1f5f9）与绘图区同口径归一为纯白，深色模式下默认纯黑，自定义显式底色原样保留
+  const migratedBackgroundColor = migrateLegacyCanvasBackground(canvasSize.backgroundColor);
+  const backgroundColor = themeMode === "dark"
+    ? themeCanvasFill("dark", migratedBackgroundColor)
+    : (migratedBackgroundColor || DEFAULT_CANVAS_BACKGROUND);
   const backgroundImage = exportSvgImageHref(canvasSize.backgroundImage ?? "", imageExportPathById);
   const escapedBackgroundColor = escapeXml(backgroundColor);
   const colorDisplayMode = canvasSize.colorDisplayMode ?? "energy";
@@ -417,12 +426,13 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
     const backgroundSvg = buildSvgDocument(backgroundNodes, backgroundEdges, {
       width: backgroundWidth,
       height: backgroundHeight,
-      backgroundColor: backgroundPage.backgroundColor ?? backgroundProject?.canvasBackgroundColor ?? DEFAULT_CANVAS_BACKGROUND,
+      backgroundColor: backgroundPage.backgroundColor ?? backgroundProject?.canvasBackgroundColor ?? (themeMode === "dark" ? undefined : DEFAULT_CANVAS_BACKGROUND),
       backgroundImage: backgroundPage.backgroundImageUrl ?? backgroundProject?.canvasBackgroundImage ?? "",
       backgroundImageFit: backgroundProject?.canvasBackgroundImageFit,
       imageExportPathById,
       colorDisplayMode,
       colorPalette,
+      themeMode,
       deviceTemplates: canvasSize.deviceTemplates
     });
     const scopedBackgroundSvg = nestedSvgDocumentRoot(
@@ -612,16 +622,17 @@ ${scopedBackgroundSvg}
   // 残留只是 CSS 自定义属性值里的垃圾文本（浏览器判为非法颜色值，丢弃该声明）。
   // 补 `]` 是把这层垃圾也清掉：色值里的 `]` 本就不合法，正常 hex 永不含 `]`，故对正常输入零影响。
   const exportVoltageCssColor = (color: string) => color.trim().replace(/[<>{};\]]/g, "") || "#64748b";
+  const themedPalette = resolveThemedPalette(colorPalette, themeMode);
   const voltageStyleRules = new Map<string, { type: "ac" | "dc"; voltage: string; color: string }>();
   // 已登记过的类名集合：nodeVoltageSlotDeclarations 用它决定槽链到自身类还是回落到端子 1
   const registeredVoltageClasses = new Set<string>();
-  const addVoltageStyleRule = (type: "ac" | "dc", voltage: string, color = voltageLevelColor(voltage, type, colorPalette)) => {
+  const addVoltageStyleRule = (type: "ac" | "dc", voltage: string, color = voltageLevelColor(voltage, type, colorPalette, themeMode)) => {
     const normalizedVoltage = exportVoltageValue(voltage);
     voltageStyleRules.set(`${type}:${normalizedVoltage}`, { type, voltage: normalizedVoltage, color: exportVoltageCssColor(color) });
     registeredVoltageClasses.add(exportVoltageDeviceClass(type, normalizedVoltage));
   };
   if (colorDisplayMode === "voltage") {
-    Object.entries(colorPalette.voltage).forEach(([key, color]) => {
+    Object.entries(themedPalette.voltage).forEach(([key, color]) => {
       const [maybeType, maybeVoltage] = key.split(":", 2);
       if (maybeVoltage && (maybeType === "ac" || maybeType === "dc")) {
         addVoltageStyleRule(maybeType, maybeVoltage, color);
@@ -839,7 +850,7 @@ ${rules.join("\n")}
   const edgeMarkup = routedEdges
     .map((route, index) => {
       const edge = edgeById.get(route.edgeId);
-      const stroke = edge ? getConnectionStrokeColor(edge, nodeById, colorDisplayMode, colorPalette) : "#334155";
+      const stroke = edge ? getConnectionStrokeColor(edge, nodeById, colorDisplayMode, colorPalette, themeMode) : (themeMode === "dark" ? "#cbd5e1" : "#334155");
       const sourceNode = edge ? nodeById.get(edge.sourceId) : undefined;
       const targetNode = edge ? nodeById.get(edge.targetId) : undefined;
       const sourceLayerId = sourceNode ? nodeLayerId(sourceNode) : DEFAULT_MODEL_LAYER_ID;
@@ -908,7 +919,7 @@ ${rules.join("\n")}
         stub.to.y,
         terminalStubStrokeWidth(symbolNode, terminal),
         // 电压模式下剔除端子电压色：跨电压同种图元共用 symbol（颜色由 use 上的类/槽驱动）
-        colorDisplayMode === "voltage" ? "" : getTerminalDisplayColor(symbolNode, terminal, colorDisplayMode, colorPalette)
+        colorDisplayMode === "voltage" ? "" : getTerminalDisplayColor(symbolNode, terminal, colorDisplayMode, colorPalette, themeMode)
       ];
     });
     const stateVisualImageHref = resolveStateVisualImageHref(stateVisual, imageAssets);
@@ -919,7 +930,7 @@ ${rules.join("\n")}
       symbolNode.size.height,
       nodeGeometryTransform(symbolNode),
       // 电压模式下剔除节点电压描边色：跨电压同种图元共用 symbol（颜色由 use 上的类/槽驱动）
-      colorDisplayMode === "voltage" ? "" : getDeviceStrokeColor(symbolNode, colorDisplayMode, colorPalette),
+      colorDisplayMode === "voltage" ? "" : getDeviceStrokeColor(symbolNode, colorDisplayMode, colorPalette, themeMode),
       getDeviceStrokeWidth(symbolNode),
       getSwitchVisualState(symbolNode),
       Boolean(nodeExportVoltageDescriptor(symbolNode)),
@@ -931,7 +942,8 @@ ${rules.join("\n")}
       resolveNodeForegroundImage(symbolNode, imageAssets),
       symbolNode.params.foregroundImageFit ?? "",
       deviceStateVisualToken(stateVisual),
-      terminalVisuals
+      terminalVisuals,
+      ...(themeMode === "dark" ? [themeMode] : [])
     ]);
   };
   exportNodes.forEach((node) => {
@@ -951,7 +963,7 @@ ${rules.join("\n")}
       const topologyNodeAttributes = deviceTopologyNodeAttributes(node);
       const voltageAttributes = nodeVoltageAttributes(node);
       const geometryTransform = nodeGeometryTransform(node);
-      const labelMarkup = buildSvgNodeLabelMarkup(node);
+      const labelMarkup = buildSvgNodeLabelMarkup(node, themeMode);
       const template = resolveSvgNodeTemplate(node);
       const stateDefinitions = template ? getTemplateStateDefinitions(template) : [];
       const activeStateVisual = resolveSvgNodeStateVisual(node);
@@ -990,8 +1002,8 @@ ${rules.join("\n")}
         // 构造一次 slotTerminals，nodeRef 的多端子判断与 terminalRef 的子序列序号共用同一份电端子表。
         const slotTerminals = transformerTerminalSlots(symbolNode);
         // energy 默认路径无需取色：身份/电压类色仅在电压模式且有电压描述符时才计算，避免白算
-        const deviceIdentityColor = colorDisplayMode === "voltage" && voltageDescriptor ? getDeviceStrokeColor(voltageColoredNode, colorDisplayMode, colorPalette) : "";
-        const deviceVoltageClassColor = colorDisplayMode === "voltage" && voltageDescriptor ? voltageLevelColor(voltageDescriptor.voltage, voltageDescriptor.type, colorPalette) : "";
+        const deviceIdentityColor = colorDisplayMode === "voltage" && voltageDescriptor ? getDeviceStrokeColor(voltageColoredNode, colorDisplayMode, colorPalette, themeMode) : "";
+        const deviceVoltageClassColor = colorDisplayMode === "voltage" && voltageDescriptor ? voltageLevelColor(voltageDescriptor.voltage, voltageDescriptor.type, colorPalette, themeMode) : "";
         const glyphVoltagePaint = colorDisplayMode === "voltage" && voltageDescriptor
           ? {
               nodeRef: deviceIdentityColor.toLowerCase() === deviceVoltageClassColor.toLowerCase()
@@ -1020,14 +1032,15 @@ ${rules.join("\n")}
               colorPalette,
               () => stateVisual?.strokeColor
                 || stateVisual?.color?.trim()
-                || getDeviceStrokeColor(voltageColoredNode, colorDisplayMode, colorPalette)
+                || getDeviceStrokeColor(voltageColoredNode, colorDisplayMode, colorPalette, themeMode),
+              themeMode
             )
           : null);
-        const glyphMarkup = renderSvgElementMarkup(DeviceGlyph({ node: voltageColoredNode, mode: "geometry", colorDisplayMode, colorPalette: glyphColorPalette, stateVisual, voltagePaint: glyphTerminalPaint }));
-        const glyphTextMarkup = renderSvgElementMarkup(DeviceGlyph({ node: voltageColoredNode, mode: "text", colorDisplayMode, colorPalette: glyphColorPalette, stateVisual, voltagePaint: glyphTerminalPaint }));
+        const glyphMarkup = renderSvgElementMarkup(DeviceGlyph({ node: voltageColoredNode, mode: "geometry", colorDisplayMode, colorPalette: glyphColorPalette, themeMode, stateVisual, voltagePaint: glyphTerminalPaint }));
+        const glyphTextMarkup = renderSvgElementMarkup(DeviceGlyph({ node: voltageColoredNode, mode: "text", colorDisplayMode, colorPalette: glyphColorPalette, themeMode, stateVisual, voltagePaint: glyphTerminalPaint }));
         // terminalGeometryVisible=false：端子几何由调用方注入，正文不得重复输出（引线按端子类型着色）
         const connectorMarkup = terminalGeometryVisible
-          ? buildSvgDeviceConnectorMarkup(voltageColoredNode, colorDisplayMode, colorPalette, glyphTerminalPaint)
+          ? buildSvgDeviceConnectorMarkup(voltageColoredNode, colorDisplayMode, colorPalette, glyphTerminalPaint, themeMode)
           : "";
         const imageMarkup = imageHref
           ? svgImageContentMarkup(imageHref, {
@@ -1108,7 +1121,8 @@ ${rules.join("\n")}
         const labelWrapperId = exportSvgUniqueId(`label_${exportDeviceId}`, usedSvgIds, "node_label");
         textLayerMarkup.push(buildSvgNodeLabelTextElementsMarkup(node, labelWrapperId, {
           attributes: `layer-id="${escapeXml(layerId)}"${labelMetadataAttributes ? ` ${labelMetadataAttributes}` : ""}`,
-          visible: nodeLabelShouldRender(node, deviceLabelsVisible) && layerVisible(layerId)
+          visible: nodeLabelShouldRender(node, deviceLabelsVisible) && layerVisible(layerId),
+          themeMode
         }));
       }
       const useX = formatSvgNumber(node.position.x - node.size.width / 2);
@@ -1142,7 +1156,8 @@ ${rules.join("\n")}
         deviceId: associatedDevice?.deviceId ?? ownerDeviceId,
         ownerDeviceId,
         layerId,
-        visible: deviceMeasurementsVisible && layerVisible(layerId)
+        visible: deviceMeasurementsVisible && layerVisible(layerId),
+        themeMode
       });
       if (!groupMarkup) {
         return "";

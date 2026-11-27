@@ -147,6 +147,30 @@ function currentModelIndex(scope: Record<string, any>): number {
   return Number.isSafeInteger(saved) && saved > 0 ? saved : 0;
 }
 
+function buildSvgSendOptions(scope: Record<string, any>, files: Array<{ kind: string; encoding: string }>) {
+  if (!files.some((file) => file.kind === "svg")) {
+    return undefined;
+  }
+  const hasExplicitViewOptions =
+    scope.colorDisplayMode === "energy" ||
+    scope.colorDisplayMode === "voltage" ||
+    scope.deviceLabelsVisible === false ||
+    scope.deviceMeasurementsVisible === false ||
+    scope.themeMode === "dark";
+  if (!hasExplicitViewOptions) {
+    return undefined;
+  }
+  const colorMode = scope.colorDisplayMode === "energy" || scope.colorDisplayMode === "voltage"
+    ? scope.colorDisplayMode
+    : "voltage";
+  return {
+    colorMode,
+    ...(scope.deviceLabelsVisible === false ? { labelsVisible: false } : {}),
+    ...(scope.deviceMeasurementsVisible === false ? { measurementsVisible: false } : {}),
+    ...(scope.themeMode === "dark" ? { themeMode: "dark" as const } : {})
+  };
+}
+
 // 发送请求装配（纯函数，便于单测锁定前端契约；后端行为见 server/test/sendModel.test.mjs）：
 // 优先 modelId 指定模型；模型尚未分配 idx 时回退 schemePath + name（后端两种都收）。
 export function buildSendRequest(
@@ -160,13 +184,19 @@ export function buildSendRequest(
   const target = modelId > 0
     ? `modelId=${modelId}`
     : `${schemePathQueryParam("schemePath", backendExportSchemePath(scope))}&name=${encodeURIComponent(modelName)}`;
+  const svgOptions = buildSvgSendOptions(scope, files);
   return {
     requestUrl: apiPath(`/v1/schemes/model/send?${target}`),
     init: {
       method: "POST",
       headers: { "content-type": "application/json" },
-      // 未选模板时不带该字段，body 保持与旧调用一致
-      body: JSON.stringify({ url, files, ...(templateName ? { templateName } : {}) })
+      // 未选模板或无显式 SVG 视图状态时不带对应字段，body 保持与旧调用一致
+      body: JSON.stringify({
+        url,
+        files,
+        ...(templateName ? { templateName } : {}),
+        ...(svgOptions ? { svgOptions } : {})
+      })
     }
   };
 }
@@ -247,7 +277,25 @@ export function SendModelDialog({ open, onClose, scope }: Props) {
     setError("");
     setSuccess("");
     try {
-      const { requestUrl, init } = buildSendRequest(scope, target, files, checked.e ? templateName : "");
+      const latestScope = (scope.__appScopeRef?.current as Record<string, any> | undefined) ?? scope;
+      if (
+        files.some((file) => file.kind === "svg") &&
+        latestScope.backendColorConfigLoadedRef?.current &&
+        typeof latestScope.serializeColorConfigForStorage === "function" &&
+        typeof latestScope.saveBackendColorConfigPayload === "function"
+      ) {
+        const normalizedPalette = typeof latestScope.normalizeColorPalette === "function"
+          ? latestScope.normalizeColorPalette(latestScope.colorPalette)
+          : latestScope.colorPalette;
+        const normalizedPayload = latestScope.serializeColorConfigForStorage(latestScope.colorDisplayMode, normalizedPalette);
+        if (latestScope.lastPersistedColorConfigPayloadRef?.current !== normalizedPayload) {
+          if (latestScope.lastPersistedColorConfigPayloadRef) {
+            latestScope.lastPersistedColorConfigPayloadRef.current = normalizedPayload;
+          }
+          await Promise.resolve(latestScope.saveBackendColorConfigPayload(normalizedPayload)).catch(() => undefined);
+        }
+      }
+      const { requestUrl, init } = buildSendRequest(latestScope, target, files, checked.e ? templateName : "");
       const response = await fetch(requestUrl, init);
       const payload = await response.json().catch(() => null);
       if (!response.ok || !payload?.ok) {

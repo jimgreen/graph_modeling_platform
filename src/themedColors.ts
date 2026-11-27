@@ -12,13 +12,13 @@ import {
   type ColorDisplayMode,
   type ColorPalette,
   type ColorThemeMode
-} from "./model";
+} from "./model.ts";
 import {
   canvasThemeColorsFor,
   themeCanvasBackground,
   type CanvasThemeColors,
   type CanvasThemeMode
-} from "./canvasTheme";
+} from "./canvasTheme.ts";
 
 export type { ColorThemeMode };
 
