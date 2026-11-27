@@ -9,6 +9,10 @@ import { WindowCloseButton } from "../WindowCloseButton";
 import { promptText } from "../globalDialogs";
 import { moveSelectedTableRows, nextTableRowSelection } from "../definitionTableSelection";
 import { modelAssociationProjectIndexesForSchemes } from "../model";
+import {
+  repairInteractiveConnectionRoute,
+  repairInteractiveRoutableLineDeviceRoute
+} from "../model-routing";
 import { containerGatewayUnbindNotice, finalizeContainerAfterNodeDeletion } from "../acContainer";
 import { modelTrace } from "../modelTrace";
 import { runTopologyOperation } from "../topology-operation";
@@ -1895,24 +1899,33 @@ export function createOpenElementTreeItemContextMenu(__appScope: ProjectCanvasSc
 
 export function createSetEdgeManualPoints(__appScope: ProjectCanvasScope) {
   return (edgeId: string, manualPoints: Point[], routePoints?: Point[]) => {
-  const { edgeById, markRouteEdgesDirty, markStoredRouteEdgesDirty, patchGraphEdges, sameOptionalPointList } = __appScope;
+  const { canvasBounds, edgeById, markRouteEdgesDirty, markStoredRouteEdgesDirty, nodes, patchGraphEdges, sameOptionalPointList } = __appScope;
     const normalizedManualPoints = manualPoints.map((point) => ({ x: Math.round(point.x), y: Math.round(point.y) }));
     const normalizedRoutePoints = routePoints?.map((point) => ({ x: Math.round(point.x), y: Math.round(point.y) }));
     const edge = edgeById.get(edgeId);
+    const safeRoutePoints = edge && normalizedRoutePoints?.length && Array.isArray(nodes)
+      ? repairInteractiveConnectionRoute(nodes, edge, normalizedRoutePoints, canvasBounds).map((point) => ({
+          x: Math.round(point.x),
+          y: Math.round(point.y)
+        }))
+      : normalizedRoutePoints;
+    // `manualPoints` is an explicit caller input. The route may be repaired for
+    // obstacle avoidance, but it must not silently replace the user's bend list.
+    const safeManualPoints = normalizedManualPoints;
     if (
       !edge ||
       (
-        sameOptionalPointList(edge.manualPoints, normalizedManualPoints) &&
-        (!normalizedRoutePoints || sameOptionalPointList(edge.routePoints, normalizedRoutePoints))
+        sameOptionalPointList(edge.manualPoints, safeManualPoints) &&
+        (!safeRoutePoints || sameOptionalPointList(edge.routePoints, safeRoutePoints))
       )
     ) {
       return;
     }
     markRouteEdgesDirty([edgeId]);
     markStoredRouteEdgesDirty([edgeId]);
-    const nextEdge = { ...edge, manualPoints: normalizedManualPoints };
-    if (normalizedRoutePoints) {
-      nextEdge.routePoints = normalizedRoutePoints;
+    const nextEdge = { ...edge, manualPoints: safeManualPoints };
+    if (safeRoutePoints) {
+      nextEdge.routePoints = safeRoutePoints;
     } else {
       delete nextEdge.routePoints;
     }
@@ -1929,7 +1942,7 @@ export function createRouteManualPoints(__appScope: ProjectCanvasScope) {
 
 export function createFinishManualPathDrag(__appScope: ProjectCanvasScope) {
   return () => {
-  const { canvasBounds, isRoutableLineDeviceKind, manualPathDrag, nodeById, patchGraphNodes, routeManualPoints, setEdgeManualPoints, setManualPathDrag, setRoutableLineDeviceCanvasPoints, writeOperationLog } = __appScope;
+  const { canvasBounds, edgeById, isRoutableLineDeviceKind, manualPathDrag, nodeById, nodes, patchGraphNodes, routeManualPoints, setEdgeManualPoints, setManualPathDrag, setRoutableLineDeviceCanvasPoints, writeOperationLog } = __appScope;
     if (!manualPathDrag) {
       return;
     }
@@ -1937,18 +1950,21 @@ export function createFinishManualPathDrag(__appScope: ProjectCanvasScope) {
       if (manualPathDrag.nodeId) {
         const lineNode = nodeById.get(manualPathDrag.nodeId);
         if (lineNode && isRoutableLineDeviceKind(lineNode.kind)) {
-          // 松手提交：预览期间不纠正（拖拽发涩），这里一次性套端点走向强制。
-          const nextNode = setRoutableLineDeviceCanvasPoints(lineNode, manualPathDrag.previewRoutePoints, {
-            nodeById,
-            bounds: canvasBounds
-          });
+          // 松手提交：预览已做避障，提交时再一次性套端点走向强制。
+          const nextNode = Array.isArray(nodes)
+            ? repairInteractiveRoutableLineDeviceRoute(nodes, lineNode, manualPathDrag.previewRoutePoints, canvasBounds)
+            : setRoutableLineDeviceCanvasPoints(lineNode, manualPathDrag.previewRoutePoints, { nodeById, bounds: canvasBounds });
           if (nextNode !== lineNode) {
             patchGraphNodes([nextNode]);
             writeOperationLog(`调整可变线路路径：${nextNode.name}`);
           }
         }
       } else if (manualPathDrag.edgeId) {
-        setEdgeManualPoints(manualPathDrag.edgeId, routeManualPoints(manualPathDrag.previewRoutePoints), manualPathDrag.previewRoutePoints);
+        const edge = edgeById.get(manualPathDrag.edgeId);
+        const safeRoutePoints = edge && Array.isArray(nodes)
+          ? repairInteractiveConnectionRoute(nodes, edge, manualPathDrag.previewRoutePoints, canvasBounds)
+          : manualPathDrag.previewRoutePoints;
+        setEdgeManualPoints(manualPathDrag.edgeId, routeManualPoints(safeRoutePoints), safeRoutePoints);
       }
     }
     setManualPathDrag(null);

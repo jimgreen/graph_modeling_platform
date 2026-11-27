@@ -165,7 +165,7 @@ async function readConfigState(configPath, exampleConfigPath) {
     try {
       parsed = JSON.parse(await readFile(exampleConfigPath, "utf8"));
     } catch (exampleError) {
-      throw new DataRootMigrationError("DATA_DIR_CONFIG_READ_FAILED", `读取 platform.config.json.example 失败：${exampleError.message}`);
+      throw new DataRootMigrationError("DATA_DIR_CONFIG_READ_FAILED", `读取 platform.config.base.json 失败：${exampleError.message}`);
     }
   }
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {

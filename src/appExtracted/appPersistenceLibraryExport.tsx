@@ -3994,7 +3994,11 @@ export const CustomComponentTreeTemplateThumbnail = memo(function CustomComponen
 }: {
   template: DeviceTemplate;
 }) {
-  const previewNode = useMemo(() => createNodeFromTemplate(template, { x: 0, y: 0 }), [template]);
+  const previewNode = useMemo(() => {
+    const node = createNodeFromTemplate(template, { x: 0, y: 0 });
+    // 缩略图使用自己的 viewBox 缩放；不继承画布图元倍率，避免大倍率图元被裁切。
+    return { ...node, scale: 1, scaleX: 1, scaleY: 1 };
+  }, [template]);
   const width = atLeastOneNumber(previewNode.size.width, 1);
   const height = atLeastOneNumber(previewNode.size.height, 1);
   const previewScale = 18 / Math.max(width, height);

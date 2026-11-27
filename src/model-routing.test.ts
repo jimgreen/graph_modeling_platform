@@ -146,6 +146,7 @@ import {
   rerouteEdgesAroundMovedNodes,
   routeIntersectsEndpointNodeBodies,
   routeIntersectsSpecificNodes,
+  repairInteractiveConnectionRoute,
   validateConnectionEdgeRoute,
   validateConnectionEndpointRules,
   voltageBaseSettingModeForNode,
@@ -735,6 +736,39 @@ test("can render saved connection geometry without full obstacle-aware rerouting
   expect(route.points.some((point) => point.y === 263)).toBe(true);
   expect(route.path).toContain("M");
   expect(route.path).toContain("L");
+});
+
+test("repairs an interactive connection route that crosses a blocker", () => {
+  const source = withHiddenDeviceLabel(createDefaultNode("ac-source", { x: 100, y: 100 }));
+  const target = withHiddenDeviceLabel(createRightTerminalLoad({ x: 360, y: 180 }));
+  const blocker = withHiddenDeviceLabel(createRightTerminalLoad({ x: 210, y: 180 }));
+  const edge: Edge = {
+    id: "interactive-blocker-edge",
+    sourceId: source.id,
+    targetId: target.id,
+    sourceTerminalId: source.terminals[0].id,
+    targetTerminalId: target.terminals[0].id,
+    manualPoints: [{ x: 207, y: 180 }, { x: 300, y: 180 }]
+  };
+  const sourcePoint = getTerminalPoint(source, edge.sourceTerminalId);
+  const targetPoint = getTerminalPoint(target, edge.targetTerminalId);
+  const previewPoints = buildManualConnectionPreviewRoute(
+    sourcePoint,
+    edge.manualPoints ?? [],
+    targetPoint,
+    { width: 520, height: 320 }
+  );
+
+  expect(routeIntersectsSpecificNodes(previewPoints, edge, [blocker])).toBe(true);
+
+  const repaired = repairInteractiveConnectionRoute(
+    [source, target, blocker],
+    edge,
+    previewPoints,
+    { width: 520, height: 320 }
+  );
+
+  expect(routeIntersectsSpecificNodes(repaired, edge, [blocker])).toBe(false);
 });
 
 

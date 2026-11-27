@@ -2977,7 +2977,9 @@ export function createRenderLibraryTemplateButton(__appScope: Record<string, any
   return (item: DeviceTemplate, section: string) => {
   const { MemoDeviceGlyph, SvgMarkupChunk, button, cancelLibraryPlacement, clipPath, colorPalette, themeMode, componentLibraryDisplayMode, createNodeFromTemplate, defs, formatSvgNumber, g, hideLibraryFlyout, image, isBusNode, libraryPreviewByKind, modelType, nodeForegroundImage, nodeGeometryTransform, nodeImage, nodeImageContentTransform, rect, resolveNodeStateVisual, startLibraryDevicePlacement, svg, svgImageContentMarkup } = __appScope;
     const modelTypeFailureMessage = modelAssociationDeviceModelTypeFailureMessage(modelType, item.kind);
-    const preview = libraryPreviewByKind.get(item.kind) ?? createNodeFromTemplate(item, { x: 0, y: 0 });
+    const previewSource = libraryPreviewByKind.get(item.kind) ?? createNodeFromTemplate(item, { x: 0, y: 0 });
+    // 悬浮预览使用自己的 viewBox；不继承画布图元倍率，避免变压器图标被裁切。
+    const preview = { ...previewSource, scale: 1, scaleX: 1, scaleY: 1 };
     const libraryPreviewImageHref = nodeImage(preview);
     const libraryPreviewForegroundHref = nodeForegroundImage(preview);
     const libraryPreviewHasImage = !isBusNode(preview) && Boolean(libraryPreviewImageHref || libraryPreviewForegroundHref);

@@ -12,7 +12,7 @@ function configuredDataDirForScript() {
   const configCandidates = [
     path.join(process.cwd(), "platform.config.json"),
     path.join(path.dirname(path.dirname(fileURLToPath(import.meta.url))), "platform.config.json"),
-    path.join(path.dirname(path.dirname(fileURLToPath(import.meta.url))), "platform.config.json.example")
+    path.join(path.dirname(path.dirname(fileURLToPath(import.meta.url))), "platform.config.base.json")
   ];
   for (const configPath of configCandidates) {
     if (!existsSync(configPath)) continue;

@@ -143,6 +143,7 @@ import {
   segmentIntersectsNodeBody,
   segmentIntersectsRouteBlocker,
   segmentManhattanLength,
+  setRoutableLineDeviceCanvasPoints,
   setRoutableLineDeviceEndpoints,
   setRoutableLineDeviceEndpointsPreservingRoute,
   simplifyRoutePreservingEndpointStubs,
@@ -4051,6 +4052,78 @@ export function buildManualConnectionPreviewPath(
   bounds?: CanvasBounds
 ): string {
   return pointsToOrthogonalPath(buildManualConnectionPreviewRoute(sourcePoint, manualPoints, targetPoint, bounds));
+}
+
+/**
+ * 交互预览路径的最小避障修正。
+ *
+ * 拖动设备或连接线时，调用方已经先按用户手势生成了一条正交折线；
+ * 这里只在该折线穿过设备时复用正式路由器修复，未碰撞时保持用户拖出的形状。
+ * 不写入 routePoints，避免 routeEdgesForStoredRendering 把不安全的存量路径直接原样返回。
+ */
+export function repairInteractiveConnectionRoute(
+  nodes: ModelNode[],
+  edge: Edge,
+  points: Point[],
+  bounds?: CanvasBounds
+): Point[] {
+  const normalizedPoints = orthogonalizeRouteKeepingCollinear(points.map((point) => ({ ...point })));
+  if (normalizedPoints.length < 2) {
+    return normalizedPoints;
+  }
+  const previewEdge: Edge = {
+    ...edge,
+    manualPoints: normalizedPoints.length > 4
+      ? normalizedPoints.slice(2, -2).map((point) => ({ ...point }))
+      : normalizedPoints.slice(1, -1).map((point) => ({ ...point }))
+  };
+  delete previewEdge.routePoints;
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const source = nodeById.get(edge.sourceId);
+  const target = nodeById.get(edge.targetId);
+  const endpointNodes = [nodeById.get(edge.sourceId), nodeById.get(edge.targetId)].filter(
+    (node): node is ModelNode => Boolean(node)
+  );
+  const blockers = getRouteBlockingCandidateNodes(
+    normalizedPoints,
+    previewEdge,
+    nodes.filter((node) => node.id !== edge.sourceId && node.id !== edge.targetId)
+  );
+  if (
+    !routeIntersectsEndpointNodeBodies(normalizedPoints, previewEdge, endpointNodes) &&
+    !routeIntersectsSpecificNodes(normalizedPoints, previewEdge, blockers)
+  ) {
+    return normalizedPoints;
+  }
+  const repaired = source && target
+    ? routeOrthogonalEdge(source, target, nodes, edgeWithoutManualPoints(previewEdge), [], bounds)
+    : undefined;
+  return repaired?.length ? repaired.map((point) => ({ ...point })) : normalizedPoints;
+}
+
+/**
+ * 可变线路拖动预览/提交的避障修正。
+ * `setRoutableLineDeviceCanvasPoints` 只负责把画布点写回线路节点，
+ * 这里再经过同一套线路安全检查，确保线路本体也不会穿过设备。
+ */
+export function repairInteractiveRoutableLineDeviceRoute(
+  nodes: ModelNode[],
+  lineNode: ModelNode,
+  points: Point[],
+  bounds?: CanvasBounds
+): ModelNode {
+  const candidate = setRoutableLineDeviceCanvasPoints(lineNode, points);
+  const routingNodes = nodes.map((node) => node.id === candidate.id ? candidate : node);
+  if (!routableLineStoredPathSafety(candidate, routingNodes).unsafe) {
+    return candidate;
+  }
+  const updates = rebuildRoutableLineDeviceRouteUpdates(
+    routingNodes,
+    [candidate.id],
+    bounds,
+    routingNodes
+  );
+  return updates.find((node) => node.id === candidate.id) ?? candidate;
 }
 
 export type EdgePointerClick = {

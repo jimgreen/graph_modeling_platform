@@ -65,7 +65,7 @@ describe("界面定制配置接口", () => {
   });
 
   test("读取时先加载示例配置，再由自定义配置覆盖", async () => {
-    const examplePath = join(dataDir, "ui-customization.config.example");
+    const examplePath = join(dataDir, "ui-customization.config.base.json");
     await writeFile(examplePath, JSON.stringify({
       buttons: { "topbar.save": false },
       modules: { "module.canvas": false }

@@ -78,11 +78,13 @@ pnpm dev       # 开发时同时启动页面和数据服务
 
 ### 前端导出模式
 
-当 `frontend.mode` 设置为 `frontend` 时，模型导出不请求本项目的后端导出 API。浏览器直接使用共享导出模块生成 CIM/XML、E 文件和 SVG，并使用 `platform.config.json` 的 `host` 与 `backend.port` 组装目标地址：
+当 `frontend.mode` 设置为 `frontend` 时，模型导出不请求本项目的后端导出 API。浏览器直接使用共享导出模块生成 CIM/XML、E 文件和 SVG，并使用当前前端页面的 origin 加 API 前缀组装目标地址：
 
-- `http://<host>:<backend.port>/export/cim`
-- `http://<host>:<backend.port>/export/e`
-- `http://<host>:<backend.port>/export/svg`
+- `${window.location.origin}/webgrp/export/cim`
+- `${window.location.origin}/webgrp/export/e`
+- `${window.location.origin}/webgrp/export/svg`
+
+例如当前前端网址为 `http://localhost:5173` 时，CIM 地址为 `http://localhost:5173/webgrp/export/cim`。部署使用自定义 API 前缀时，以 `API_PREFIX` 的实际值替换 `/webgrp`；不要使用后端配置的 `host` 或 `backend.port` 替代当前前端 origin。
 
 三个地址均使用 `POST` multipart 请求。
 
@@ -94,7 +96,7 @@ pnpm dev       # 开发时同时启动页面和数据服务
 | E 文件 | `e_file` | GBK |
 | SVG | `svg_file` | UTF-8 |
 
-通用字段为 `model_id`、`model_name`、`scheme_path`、`format` 和 `sent_at`。接收 URL 由外部系统负责处理，平台只检查 HTTP 状态是否成功。点击保存时，模型保存成功后会自动发送这三种产物；目标端点失败不会撤销已经完成的模型保存。
+通用字段为 `model_id`、`model_name`、`scheme_path`、`format` 和 `sent_at`。接收 URL 由外部系统负责处理，平台只检查 HTTP 状态是否成功；完整字段、文件名、MIME、超时和失败语义见 `docs/FRONTEND-INTERNAL-API-CONTRACT.md` 的 6.9 节。点击保存时，模型保存成功后会自动并行发送这三种产物；目标端点失败不会撤销已经完成的模型保存。
 
 ---
 

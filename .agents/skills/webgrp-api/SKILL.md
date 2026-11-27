@@ -1,6 +1,6 @@
 ---
 name: webgrp-api
-description: Use when writing, adding, reviewing, or validating frontend HTTP API clients or backend routes in graph_modeling_platform, especially space, scheme, model, image, configuration, global-line, or /webgrp API work; also use when asked which APIs are implemented, missing, partial, or nonconforming.
+description: Use when writing, adding, reviewing, or validating frontend HTTP API clients or backend routes in graph_modeling_platform, especially space, scheme, model, image, configuration, global-line, frontend-generation export, or /webgrp API work; also use when asked which APIs are implemented, missing, partial, or nonconforming.
 compatibility: Requires the repository-local docs/FRONTEND-INTERNAL-API-CONTRACT.md and standard rg/PowerShell tooling.
 ---
 
@@ -9,6 +9,8 @@ compatibility: Requires the repository-local docs/FRONTEND-INTERNAL-API-CONTRACT
 ## Purpose
 
 Use the project API contract as the source of observable behavior. Keep frontend callers, backend routes, request encoding, response shapes, error semantics, space context, caching, and binary content types aligned so an independent implementation can replace the current server without changing the page. `check` is runtime-first: send real requests before reading source code.
+
+The contract also contains a special frontend-generation export class: the browser generates CIM/XML, E, and SVG after a successful model save and sends them as multipart POSTs to the current page origin plus `/webgrp/export/...`. These are frontend caller contracts whose receiver may be supplied by a deployment or integration service; they are not automatically local `server/` routes.
 
 ## Invocation
 
@@ -52,6 +54,7 @@ Use the repository guidance in `AGENTS.md` for scope, search, testing, data, and
 5. **Treat encoding as part of the API.** `schemePath` is JSON serialized and URL encoded once. Folder IDs, image IDs, and other path segments are URL encoded.
 6. **Runtime before source.** Run the probe script first. Only failed, skipped, timed-out, or structurally invalid requests trigger static source audit and root-cause analysis.
 7. **Keep probes safe.** Read endpoints use real data. Write endpoints use invalid or missing payloads that should be rejected before mutation; never create, rename, delete, upload, import, or overwrite data unless the user explicitly authorizes a mutation probe.
+8. **Separate frontend export callers from receiver routes.** For `POST /webgrp/export/cim`, `POST /webgrp/export/e`, and `POST /webgrp/export/svg`, verify the browser caller, current `window.location.origin`, `/webgrp` prefix, multipart fields, and file encodings separately from receiver route availability. Do not mark the frontend caller missing merely because this repository has no matching `server/` handler.
 
 ## `create` subcommand
 
@@ -64,6 +67,7 @@ Use `create` when adding a frontend API caller, adding a backend route used by t
 3. Decide the ownership boundary:
    - frontend-only caller: add or update the typed/helper function and its UI call site;
    - backend route: add handler, register the route, and update the frontend caller;
+   - frontend-generation receiver contract: document the browser caller and multipart receiver separately; do not invent a local route only to satisfy the contract;
    - shared contract change: update the contract document and all affected callers together.
 4. Implement the smallest change that preserves the documented URL, method, query/body shape, response shape, status codes, and space behavior.
 5. Check direct callers and route registration with `rg`. Inspect the response parser, not only the request line.
@@ -79,6 +83,7 @@ Use this structure in the response:
 | API | 前端调用点 | 后端路由 | 状态 |
 |---|---|---|---|
 | `GET /webgrp/...` | `src/...:line` | `server/...:line` | 已实现 / 部分实现 |
+| `POST /webgrp/export/cim` | `src/frontendExport.ts:line` | 外部接收方（本仓库可无路由） | 前端调用已实现 / 接收方未验证 |
 
 ### 请求契约
 - URL:
@@ -97,6 +102,8 @@ Use this structure in the response:
 ## `check` subcommand
 
 Use `check` as a runtime-first contract audit. It remains read-only with respect to project data: the bundled script uses safe invalid write probes and does not perform successful mutations. Do not repair findings unless the user explicitly asks.
+
+The default runtime probe targets the current repository's backend. It does not prove that a deployment-owned frontend-generation receiver exists. Do not send valid multipart export files to an unknown receiver during `check`; use static source evidence, a user-provided controlled receiver, or a browser network trace instead.
 
 ### Phase 1: real request probe
 
@@ -129,6 +136,7 @@ Build an API inventory from both sides:
 
 - **Contract:** headings, URL examples, methods, request/response sections in `docs/FRONTEND-INTERNAL-API-CONTRACT.md`;
 - **Frontend:** `fetch(`, `new WebSocket(`, `apiPath(`, `fetchBackend*`, `saveBackend*`, `deleteBackend*`, `uploadBackend*`, and helper call sites under `src/` and any requested example frontend;
+- **Frontend-generation export:** `sendFrontendExportArtifact`, `sendFrontendExportArtifacts`, `FormData`, `window.location.origin`, `/export/cim`, `/export/e`, `/export/svg`, and the save-after-success call site;
 - **Backend:** `server.mjs` exact route registrations, `apiV1*.mjs` route tables when in scope, dynamic asset routes, and handler functions;
 - **Runtime evidence:** JSON output from `scripts/check-api.mjs`, including status, content type, response shape, latency, and failure reason.
 - **Tests and additional evidence:** focused tests, browser traces, or user-provided request samples when available.
@@ -154,6 +162,11 @@ Runtime result mapping:
 - runtime `skipped` because no fixture exists: **未在当前范围验证**, then inspect route and caller statically;
 - service unavailable: report runtime verification unavailable separately; do not call the endpoint missing without source evidence.
 
+For frontend-generation export entries, use a separate two-part result:
+
+- **Frontend caller:** implemented when the save path reaches the sender and builds the documented URL, fields, and bytes;
+- **Receiver:** verified only when a controlled receiver returns a documented 2xx response or deployment evidence proves the route; absence from this repository's `server/` route table alone is not a frontend implementation failure.
+
 ### Compliance dimensions
 
 For each implemented or partial entry, check:
@@ -169,6 +182,10 @@ For each implemented or partial entry, check:
 - binary `Content-Type`, `Content-Disposition`, and no-store behavior;
 - request-size limits and normalization/migration fields;
 - frontend response parsing and user-visible error handling.
+- frontend-generation URL uses the current page origin and `/webgrp` prefix rather than a configured backend origin;
+- frontend-generation multipart field names: `model_id`, `model_name`, `scheme_path`, `format`, `sent_at`, plus `cim_file`, `e_file`, or `svg_file`;
+- frontend-generation file bytes and declared encodings: CIM/SVG UTF-8, E GBK;
+- save ordering, 30-second per-request timeout, 2xx-only success, and no rollback of a saved model when an export POST fails.
 
 ### `check` report format
 
@@ -223,6 +240,9 @@ Order findings by impact: contract-breaking response/request behavior first, mis
 - Treating a summary model with `__summaryOnly` as a complete model.
 - Reporting an endpoint as space-safe while omitting Cookie/header/query context.
 - Treating a static `/icon-library/*` resource as a `/webgrp` API route.
+- Treating `/webgrp/export/cim`, `/webgrp/export/e`, or `/webgrp/export/svg` as missing solely because `server/` has no local handler; these are frontend-generation receiver contracts.
+- Using `BACKEND_ORIGIN` or `backend.port` for frontend-generation export URLs instead of `window.location.origin`.
+- Describing a frontend-generation POST without its multipart fields, file encoding, timeout, or save-before-send ordering.
 - Calling an API “implemented” because a route exists even though the frontend never invokes it.
 - Reading the whole source tree before running the runtime probe; static analysis is the second phase for failed or unverified requests.
 - Sending valid write payloads during a default check and mutating a real space, model, image, or configuration.

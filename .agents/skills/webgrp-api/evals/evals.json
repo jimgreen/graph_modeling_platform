@@ -24,6 +24,12 @@
       "prompt": "运行 webgrp-api check，服务地址是 http://127.0.0.1:5174；发现失败接口后再分析源码根因。",
       "expected_output": "先调用 scripts/check-api.mjs 发送真实请求；安全探针不执行有效写入；只有失败、超时、跳过或响应结构异常的接口进入静态审计和根因分析。",
       "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "审计前端生成模式下点击保存后的 CIM、E 文件和 SVG 发送 API。请判断它们是否要求本仓库 server 注册后端路由，并核对 URL、multipart 字段、文件编码、保存顺序和失败语义。",
+      "expected_output": "读取 docs/FRONTEND-INTERNAL-API-CONTRACT.md 和 src/frontendExport.ts、src/appExtracted/appProjectCanvasFactories.tsx；将它们归类为前端调用契约与外部接收方契约，确认 URL 使用当前 window.location.origin + /webgrp/export/{cim|e|svg}，请求为 multipart 字段 model_id/model_name/scheme_path/format/sent_at 加对应文件字段，CIM/SVG 为 UTF-8、E 为 GBK；确认模型 PUT 保存成功后才并行发送三条 POST，发送失败不回滚模型；不因本仓缺少同名 server 路由而判定前端调用缺失，也不向未知接收方发送有效探针。",
+      "files": []
     }
   ]
 }

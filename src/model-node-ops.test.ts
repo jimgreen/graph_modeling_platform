@@ -482,6 +482,27 @@ test("creates node terminals from terminalCount instead of stale terminalTypes s
   ]);
 });
 
+test("uses a default 3x horizontal and vertical scale for two- and three-winding transformers", () => {
+  const defaultScaleCases = [
+    "ac-transformer",
+    "ac-transformer-vertical",
+    "ac-three-winding-transformer",
+    "ac-three-winding-transformer-neutral"
+  ] as const;
+
+  for (const kind of defaultScaleCases) {
+    const node = createDefaultNode(kind, { x: 0, y: 0 });
+    expect(node.scale, kind).toBe(3);
+    expect(node.scaleX, kind).toBe(3);
+    expect(node.scaleY, kind).toBe(3);
+  }
+
+  const ordinary = createDefaultNode("ac-load", { x: 0, y: 0 });
+  expect(ordinary.scale).toBe(1);
+  expect(ordinary.scaleX).toBe(1);
+  expect(ordinary.scaleY).toBe(1);
+});
+
 test("scales terminal stubs from the visible device boundary toward terminals", () => {
   const converter = createDefaultNode("dcdc-converter", { x: 100, y: 100 });
   const line = createDefaultNode("ac-line", { x: 100, y: 100 });

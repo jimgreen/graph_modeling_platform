@@ -126,7 +126,7 @@ pnpm purge:derived    # 归档存量派生文件（默认 dry-run，--apply 才�
 ### 配置
 
 配置优先级：**环境变量 > `platform.config.json` > 内置默认值**。
-模板见 [`platform.config.json.example`](platform.config.json.example)。
+模板见 [`platform.config.base.json`](platform.config.base.json)。
 
 | 环境变量 | 默认值 | 说明 |
 |----------|--------|------|

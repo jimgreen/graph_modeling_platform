@@ -5,6 +5,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { apiPath } from "./config";
 import {
   CustomComponentManagerTree,
+  CustomComponentTreeTemplateThumbnail,
   customComponentTreeContextMenuCapabilities,
   buildComponentCatalog,
   buildCustomComponentClassTree,
@@ -1957,6 +1958,29 @@ describe("E device interface definition entry", () => {
     );
     expect((html.match(/class="custom-component-tree-thumbnail"/g) ?? [])).toHaveLength(templates.length);
     expect(html).toMatch(/class="custom-component-tree-thumbnail"[\s\S]*?class="dialog-tree-bilingual dialog-tree-component-label"/);
+  });
+
+  test("图元树缩略图不继承画布图元倍率", () => {
+    const source = readFileSync(new URL("./appExtracted/appPersistenceLibraryExport.tsx", import.meta.url), "utf8");
+    const start = source.indexOf("export const CustomComponentTreeTemplateThumbnail");
+    const end = source.indexOf("export const CustomComponentManagerTree", start);
+    const thumbnailSource = source.slice(start, end);
+
+    expect(thumbnailSource).toContain("scale: 1");
+    expect(thumbnailSource).toContain("scaleX: 1");
+    expect(thumbnailSource).toContain("scaleY: 1");
+    expect(CustomComponentTreeTemplateThumbnail).toBeDefined();
+  });
+
+  test("左侧图元库悬浮预览不继承画布图元倍率", () => {
+    const source = readFileSync(new URL("./appExtracted/appDeviceDefinitionRenderers.tsx", import.meta.url), "utf8");
+    const start = source.indexOf("export function createRenderLibraryTemplateButton");
+    const end = source.indexOf("export function createRenderLibraryFlyout", start);
+    const previewSource = source.slice(start, end);
+
+    expect(previewSource).toContain("scale: 1");
+    expect(previewSource).toContain("scaleX: 1");
+    expect(previewSource).toContain("scaleY: 1");
   });
 
   test("marks only the exactly selected derived class as active", () => {

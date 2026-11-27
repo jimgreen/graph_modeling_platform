@@ -5,7 +5,7 @@ import { buildEFileExport } from "./model-eexport.ts";
 import { buildEFileExportOptionsFromLibrary } from "./export/e-file.ts";
 import { buildSvgDocument } from "./export/svg.ts";
 import { backendExportSchemePath } from "./backendExportPath.ts";
-import { BACKEND_ORIGIN, FRONTEND_EXPORT_MODE } from "./config.ts";
+import { apiPath, BACKEND_ORIGIN, FRONTEND_EXPORT_MODE } from "./config.ts";
 
 export type FrontendExportFormat = "cim" | "e" | "svg";
 
@@ -177,12 +177,22 @@ export function buildFrontendExportArtifacts(
   };
 }
 
+function currentFrontendOrigin(): string {
+  if (typeof window === "undefined") {
+    return "";
+  }
+  const origin = String(window.location?.origin ?? "").trim();
+  return origin && origin !== "null" ? origin.replace(/\/+$/u, "") : "";
+}
+
 function exportUrlForScope(scope: FrontendExportScope, format: FrontendExportFormat): string {
-  const origin = String(scope.frontendBackendOrigin ?? BACKEND_ORIGIN).trim().replace(/\/+$/u, "");
+  const origin = (currentFrontendOrigin() || String(scope.frontendBackendOrigin ?? BACKEND_ORIGIN))
+    .trim()
+    .replace(/\/+$/u, "");
   if (!origin) {
     return "";
   }
-  return `${origin}/export/${format}`;
+  return `${origin}${apiPath(`/export/${format}`)}`;
 }
 
 function artifactField(format: FrontendExportFormat): string {

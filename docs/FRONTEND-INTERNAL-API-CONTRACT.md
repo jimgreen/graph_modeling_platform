@@ -143,6 +143,9 @@ Content-Encoding: gzip        # 客户端声明支持且响应足够大时可能
 | `GET /webgrp/schemes` | 200 | 方案 API |
 | `GET /webgrp/schemes/project` | 200 | 模型 API |
 | `PUT /webgrp/schemes/project` | 200 | 模型 API |
+| `POST /webgrp/export/cim` | 前端模式保存后发送 | 前端生成模式发送 API |
+| `POST /webgrp/export/e` | 前端模式保存后发送 | 前端生成模式发送 API |
+| `POST /webgrp/export/svg` | 前端模式保存后发送 | 前端生成模式发送 API |
 | `GET /webgrp/image-folders` | 200 | 图片 API |
 | `GET /webgrp/images?folderId=root` | 200 | 图片 API |
 | `GET /webgrp/color-config` | 200 | 配置 API |
@@ -728,6 +731,80 @@ Content-Type: application/zip
 ```
 
 重名检查返回 `409`，响应中带 `conflict` 信息。
+
+### 6.9 前端生成模式保存后发送导出产物
+
+当 `frontend.mode` 设置为 `frontend` 时，用户点击保存会先按 6.3 保存模型；模型保存成功后，浏览器再把当前模型生成的 CIM/XML、E 文件和 SVG 作为三个独立的 multipart 请求发送给接收方。三个请求并行发起，任一请求失败只提示发送失败，不撤销已经完成的模型保存。
+
+这三条是**前端调用契约**：当前仓库负责生成文件并发出请求，接收 URL 由部署环境提供。`server/` 不要求注册同名的本地导出路由，审计时应把“前端调用存在”和“接收方是否提供路由”分开报告。
+
+#### URL
+
+浏览器使用当前页面的 origin（协议、主机和端口），再拼接 API 前缀和格式路径：
+
+```http
+POST ${window.location.origin}${API_PREFIX}/export/cim
+POST ${window.location.origin}${API_PREFIX}/export/e
+POST ${window.location.origin}${API_PREFIX}/export/svg
+```
+
+默认 `API_PREFIX=/webgrp`。例如当前前端网址是 `http://localhost:5173` 时，请求地址为：
+
+```http
+http://localhost:5173/webgrp/export/cim
+http://localhost:5173/webgrp/export/e
+http://localhost:5173/webgrp/export/svg
+```
+
+请求地址不能改用后端配置的 `host` 或 `backend.port`；这样可以保证发送请求的 IP 和端口与当前前端网址一致。当前页面若使用 HTTPS，发送地址也必须保持 HTTPS。
+
+#### Request
+
+请求体是 `multipart/form-data`。浏览器自动生成 boundary，调用方不要手动设置 `Content-Type`：
+
+```http
+Content-Type: multipart/form-data; boundary=<browser-generated-boundary>
+```
+
+每个请求都包含以下文本字段：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `model_id` | string | 模型稳定标识。优先取 `project.idx`，其次取当前模型 ID；转换为只含字母、数字、`.`、`_`、`-` 的字符串，空值回退 `current` |
+| `model_name` | string | 模型名称 |
+| `scheme_path` | string | 方案路径的 JSON 字符串，例如 `["地区1","主网"]`；multipart 字段内不再做 URL 编码 |
+| `format` | string | 当前产物格式：`cim`、`e` 或 `svg` |
+| `sent_at` | string | 发送时间，ISO 8601 UTC 字符串，例如 `2026-11-27T03:20:00.000Z` |
+
+另外包含一个与格式对应的文件字段：
+
+| URL | 文件字段 | 文件名 | MIME 类型 | 字节编码 |
+|---|---|---|---|---|
+| `/export/cim` | `cim_file` | `<安全模型名>.xml` | `application/xml` | UTF-8 |
+| `/export/e` | `e_file` | `<模板文件名或安全模型名>.e` | `text/plain` | GBK |
+| `/export/svg` | `svg_file` | `<安全模型名>.svg` | `image/svg+xml` | UTF-8 |
+
+文件字段的 Blob 类型会带对应的 `charset` 参数，例如 `application/xml; charset=utf-8`、`text/plain; charset=gbk` 和 `image/svg+xml; charset=utf-8`。文件内容由当前前端生成，不要求接收方再次生成或转换编码。
+
+浏览器请求使用当前页面 origin，因此同源的 `gmp_space` Cookie 会按浏览器默认策略随请求发送；空间和模型的明确定位仍以 `scheme_path`、`model_id` 和 `model_name` 为准。
+
+#### Response
+
+前端只检查 HTTP 状态是否为 2xx，不要求响应体结构；成功响应可以返回空 body 或任意 2xx JSON/text body：
+
+```http
+HTTP/1.1 200 OK
+```
+
+接收方返回非 2xx 时，前端将该格式视为发送失败并记录 HTTP 状态。网络异常、请求中断或单个请求超过 30 秒也视为发送失败。保存操作不会因导出发送失败而回滚。
+
+#### 接收方兼容要求
+
+- 必须接受 `POST /webgrp/export/cim`、`POST /webgrp/export/e` 和 `POST /webgrp/export/svg`；
+- 必须解析 multipart 文本字段和对应文件字段；
+- 必须按文件字段声明的 UTF-8/GBK 编码读取文件；
+- 成功处理返回任意 2xx；失败返回非 2xx，并在需要时提供可读的错误 body；
+- 不应要求前端手动添加 multipart boundary，也不应要求把文件内容改成 JSON Base64。
 
 ## 7. 图片和图片文件夹 API
 

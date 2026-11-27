@@ -38,6 +38,13 @@ const makeScope = (over: Record<string, unknown> = {}) => ({
 const render = (over: Record<string, unknown> = {}) =>
   renderToStaticMarkup(<AppStatusbar scope={makeScope(over)} inputs={[]}/>);
 
+describe("平台项目名", () => {
+  test("未指定启动项目时显示占位符", () => {
+    expect(render()).toContain("项目：--");
+  });
+
+});
+
 describe("空间 ID：正文显示 id，名字只进 title", () => {
   test("正文里出现 id，不出现显示名", () => {
     const html = render();

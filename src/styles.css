@@ -190,6 +190,56 @@ button:not(.ant-btn):disabled {
   overflow: hidden;
 }
 
+.inspector-empty-state {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 14px 42px;
+  color: #64748b;
+  text-align: center;
+}
+
+.inspector-empty-state-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: min(100%, 218px);
+  gap: 10px;
+  padding: 24px 18px 22px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #f8fafc;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+}
+
+.inspector-empty-state-icon {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border: 1px solid rgba(63, 143, 150, 0.2);
+  border-radius: 12px;
+  color: #3f8f96;
+  background: #d7eeee;
+}
+
+.inspector-empty-state-title {
+  color: #1e293b;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.45;
+  white-space: nowrap;
+}
+
+.inspector-empty-state-hint {
+  max-width: 24em;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
 .floating-side-panel {
   position: absolute;
   top: 70px;
@@ -814,15 +864,13 @@ button:not(.ant-btn):disabled {
     opacity: 0.5;
   }
 
-.inspector-empty-state {
-  display: grid;
-  min-height: 120px;
-  place-items: center;
-  padding: 24px 18px;
-  color: #64748b;
-  font-size: 13px;
-  text-align: center;
-}
+  .inspector-empty-state {
+    padding: 24px 12px 30px;
+  }
+
+  .inspector-empty-state-inner {
+    width: min(100%, 210px);
+  }
 
   .embedded-inspector-panel .form-stack > .inspector-tabs {
     display: none;
@@ -2395,6 +2443,10 @@ button:not(.ant-btn):disabled {
 .bottom-statusbar .status-log {
   flex: 0 1 260px;
   max-width: 260px;
+}
+
+.bottom-statusbar .status-project {
+  margin-right: auto;
 }
 
 .bottom-statusbar .topology-success {
@@ -5256,12 +5308,25 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   gap: 8px;
 }
 
+.interface-customization-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .interface-customization-actions button,
 .interface-customization-row {
-  min-height: 44px;
+  min-height: 20px;
 }
 
 .interface-customization-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 136px;
+  min-width: 136px;
+  height: 36px;
   border: 1px solid #cbd5e1;
   border-radius: 6px;
   background: #fff;
@@ -5277,18 +5342,25 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 }
 
 .interface-customization-library-button {
-  width: 100%;
-  min-height: 38px;
-  border: 1px solid #2563eb;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 136px;
+  min-width: 136px;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid #93c5fd;
   border-radius: 6px;
   background: #eff6ff;
   color: #1d4ed8;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
 }
 
 .interface-customization-library-button:hover:not(:disabled),
 .interface-customization-library-button:focus-visible {
+  border-color: #2563eb;
+  color: #1d4ed8;
   background: #dbeafe;
 }
 
@@ -5556,8 +5628,8 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   min-width: 0;
   min-height: 0;
   aspect-ratio: 1.618 / 1;
-  gap: 4px;
-  padding: 10px 8px 8px;
+  gap: 2px;
+  padding: 8px 6px 6px;
   border: 1px solid #dbe3ee;
   border-radius: 6px;
   background: #fff;
@@ -5572,6 +5644,46 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   align-items: start;
   gap: 10px;
   padding: 10px;
+}
+
+.device-library-display-device-groups {
+  display: block !important;
+  padding: 10px;
+}
+
+.device-library-display-device-group + .device-library-display-device-group {
+  margin-top: 16px;
+}
+
+.device-library-display-device-group-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 4px 6px;
+  color: #334155;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.device-library-display-device-group-title strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.device-library-display-device-group-title span {
+  margin-left: auto;
+  color: #64748b;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.device-library-display-device-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  padding-top: 10px;
 }
 
 .device-library-display-device-row:hover,
@@ -5640,14 +5752,19 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 .device-library-display-device-name {
   inline-size: 100%;
   min-width: 0;
+  min-height: 16px;
   color: #1e293b;
   font-size: 12px;
   font-weight: 600;
-  line-height: 16px;
+  line-height: 15px;
   text-align: center;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 
 .device-library-display-devices .device-library-display-device-row code {
@@ -5816,6 +5933,7 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   border: 1px solid #e2e8f0;
   border-radius: 6px;
   padding: 10px 12px 12px;
+  margin-bottom: 10px;
 }
 
 .interface-customization-fieldset legend {
@@ -5826,6 +5944,29 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   padding: 0 6px;
   color: #334155;
   font-weight: 600;
+}
+
+.interface-customization-group-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.interface-customization-group-toggle:hover,
+.interface-customization-group-toggle:focus-visible {
+  color: #1d4ed8;
+  outline: none;
+}
+
+.interface-customization-fieldset.collapsed {
+  padding-bottom: 8px;
 }
 
 .interface-customization-group-actions {
@@ -5880,10 +6021,7 @@ body.canvas-drawing-mode .image-picker-backdrop * {
 }
 
 .interface-customization-row code {
-  grid-column: 2;
-  overflow-wrap: anywhere;
-  color: #94a3b8;
-  font-size: 11px;
+  display: none;
 }
 
 .interface-customization-status {

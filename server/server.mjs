@@ -2502,7 +2502,7 @@ export async function createImageServer({
       : resolve(repositoryRoot, "ui-customization.config.json");
   const effectiveInterfaceCustomizationExamplePath = interfaceCustomizationExamplePath
     ? resolve(interfaceCustomizationExamplePath)
-    : resolve(repositoryRoot, "ui-customization.config.example");
+    : resolve(repositoryRoot, "ui-customization.config.base.json");
   const nativeExportSaveService = createNativeExportSaveService();
   // spaceStore 可注入：测试要复用自己建的那个实例，否则同进程两个写者各持注册表快照，
   // 后写者会用陈旧快照回滚对方的条目。动态 import 维持与 spaceStore 的循环依赖不静态化。
@@ -2609,7 +2609,7 @@ export async function createImageServer({
           currentRoot: dataRoot,
           targetRoot,
           configPath: platformConfigPath,
-          exampleConfigPath: join(repositoryRoot, "platform.config.json.example"),
+          exampleConfigPath: join(repositoryRoot, "platform.config.base.json"),
           archiveParent: dirname(dataRoot),
           hooks: {
             afterArchive: async () => {

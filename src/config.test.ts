@@ -9,10 +9,11 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 /** 两个前缀都由 vite define 注入的全局常量决定，测试里只能在 import 前打桩。 */
-async function loadConfig(env: { apiPrefix?: string | null; frontendBase?: string | null } = {}) {
+async function loadConfig(env: { apiPrefix?: string | null; frontendBase?: string | null; projectName?: string | null } = {}) {
   vi.resetModules();
   vi.stubGlobal("__API_PREFIX__", Object.hasOwn(env, "apiPrefix") ? env.apiPrefix : undefined);
   vi.stubGlobal("__FRONTEND_BASE__", Object.hasOwn(env, "frontendBase") ? env.frontendBase : undefined);
+  vi.stubGlobal("__PROJECT_NAME__", Object.hasOwn(env, "projectName") ? env.projectName : undefined);
   return import("./config");
 }
 
@@ -23,9 +24,10 @@ afterEach(() => {
 
 describe("默认值（构建未注入时）", () => {
   test("API 前缀回退 /webgrp，base 回退 /", async () => {
-    const { API_PREFIX, FRONTEND_BASE } = await loadConfig();
+    const { API_PREFIX, FRONTEND_BASE, PROJECT_NAME } = await loadConfig();
     expect(API_PREFIX).toBe("/webgrp");
     expect(FRONTEND_BASE).toBe("/");
+    expect(PROJECT_NAME).toBe("");
   });
 
   test("注入了 undefined 也走回退，不产出 undefined 字符串", async () => {
@@ -33,6 +35,13 @@ describe("默认值（构建未注入时）", () => {
     const { API_PREFIX, FRONTEND_BASE } = await loadConfig({ apiPrefix: undefined, frontendBase: undefined });
     expect(API_PREFIX).toBe("/webgrp");
     expect(FRONTEND_BASE).toBe("/");
+  });
+});
+
+describe("PROJECT_NAME", () => {
+  test("保留 Vite 注入的启动项目名", async () => {
+    const { PROJECT_NAME } = await loadConfig({ projectName: "example" });
+    expect(PROJECT_NAME).toBe("example");
   });
 });
 

@@ -10,6 +10,7 @@ declare const __FRONTEND_BASE__: string | undefined;
 declare const __FRONTEND_MODE__: string | undefined;
 
 declare const __BACKEND_ORIGIN__: string | undefined;
+declare const __PROJECT_NAME__: string | undefined;
 
 export const FRONTEND_BASE: string =
   (typeof __FRONTEND_BASE__ !== "undefined" ? __FRONTEND_BASE__ : undefined) ?? "/";
@@ -19,6 +20,10 @@ export const FRONTEND_EXPORT_MODE: string =
 
 export const BACKEND_ORIGIN: string =
   (typeof __BACKEND_ORIGIN__ !== "undefined" ? __BACKEND_ORIGIN__ : undefined) ?? "http://127.0.0.1:5174";
+
+// 当前启动配置选择的项目名；未指定项目时为空字符串。
+export const PROJECT_NAME: string =
+  (typeof __PROJECT_NAME__ !== "undefined" ? __PROJECT_NAME__ : undefined) ?? "";
 
 // 拼接前端 base + 子路径：frontendPath("/icon-library/x") -> "/app/icon-library/x"（base=/app/）；默认 / 时原样
 export const frontendPath = (subPath: string): string =>

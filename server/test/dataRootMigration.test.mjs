@@ -23,7 +23,7 @@ async function seedSource(source) {
 }
 
 async function writeExample(root) {
-  const examplePath = join(root, "platform.config.json.example");
+  const examplePath = join(root, "platform.config.base.json");
   await writeFile(examplePath, JSON.stringify({ dataDir: "../data", host: "127.0.0.1" }, null, 2), "utf8");
   return examplePath;
 }
@@ -33,7 +33,7 @@ function migrationFor({ source, target, root, hooks, configPath }) {
     currentRoot: source,
     targetRoot: target,
     configPath: configPath ?? join(root, "platform.config.json"),
-    exampleConfigPath: join(root, "platform.config.json.example"),
+    exampleConfigPath: join(root, "platform.config.base.json"),
     archiveParent: root,
     hooks
   });

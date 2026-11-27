@@ -22,6 +22,10 @@ import type {
   SingleNodeDragCache,
 } from "./appCoreCanvasUtilities";
 import type { SelectionRect } from "../selectionActions";
+import {
+  repairInteractiveConnectionRoute,
+  repairInteractiveRoutableLineDeviceRoute
+} from "../model-routing";
 
 import {
   type DragPreviewEndpointPoints,
@@ -2216,9 +2220,7 @@ export function createBuildRoutableLinePreviewRoutesForNodeUpdates(__appScope: S
     }
     const routeFully = options.routeFully === true;
     const referenceNodes = Array.from(baseNodeById.values());
-    const previewNodes = routeFully
-      ? referenceNodes.map((node) => previewNodeById.get(node.id) ?? node)
-      : [];
+    const previewNodes = referenceNodes.map((node) => previewNodeById.get(node.id) ?? node);
     const routes: NodeDragPreviewRoute[] = [];
     for (const lineId of lineIds) {
       const lineNode = baseNodeById.get(lineId);
@@ -2229,7 +2231,13 @@ export function createBuildRoutableLinePreviewRoutesForNodeUpdates(__appScope: S
       const displayLine = routeFully
         ? routeRoutableLineDevice(syncedLine, previewNodes, options.bounds)
         : syncedLine;
-      const points = routableLineDeviceCanvasPoints(displayLine);
+      const repairedLine = repairInteractiveRoutableLineDeviceRoute(
+        previewNodes,
+        displayLine,
+        routableLineDeviceCanvasPoints(displayLine),
+        options.bounds
+      );
+      const points = routableLineDeviceCanvasPoints(repairedLine);
       const start = points[0];
       const end = points[points.length - 1];
       if (!start || !end) {
@@ -2291,11 +2299,17 @@ export function createBuildTranslatedInternalRoutableLineDragPreviewRoutes(__app
     delta: Point,
     movedNodeIds: string[]
   ) => {
-  const { colorDisplayMode, colorPalette, themeMode, getDeviceStrokeColor, inferMissingRoutableLineDeviceEndpointRefs, isMultiNodeMoveState, isRoutableLineDeviceKind, nodeById, nodes, pointsToPreviewPath, routableLineDeviceCanvasPoints, routableLineDeviceEndpointRefs, routableLineIdsConnectedToNodeIds, translatePointBy, visibleNodeIdSet } = __appScope;
+  const { canvasBounds, colorDisplayMode, colorPalette, themeMode, getDeviceStrokeColor, inferMissingRoutableLineDeviceEndpointRefs, isMultiNodeMoveState, isRoutableLineDeviceKind, nodeById, nodes, pointsToPreviewPath, routableLineDeviceCanvasPoints, routableLineDeviceEndpointRefs, routableLineIdsConnectedToNodeIds, translatePointBy, visibleNodeIdSet } = __appScope;
     if (!dragState.wholeLayerMove && !isMultiNodeMoveState(dragState)) {
       return [];
     }
     const movedIds = new Set(movedNodeIds);
+    const previewNodes = nodes.map((node: ModelNode) => {
+      const originalPosition = dragState.originalPositions[node.id];
+      return originalPosition && movedIds.has(node.id)
+        ? { ...node, position: translatePointBy(originalPosition, delta) }
+        : node;
+    });
     const routes: NodeDragPreviewRoute[] = [];
     const seenLineIds = new Set<string>();
     for (const lineId of routableLineIdsConnectedToNodeIds(movedNodeIds)) {
@@ -2311,7 +2325,9 @@ export function createBuildTranslatedInternalRoutableLineDragPreviewRoutes(__app
       if (!refs.source?.nodeId || !refs.target?.nodeId || !movedIds.has(refs.source.nodeId) || !movedIds.has(refs.target.nodeId)) {
         continue;
       }
-      const points = routableLineDeviceCanvasPoints(lineNode).map((point: Point) => translatePointBy(point, delta));
+      const translatedPoints = routableLineDeviceCanvasPoints(lineNode).map((point: Point) => translatePointBy(point, delta));
+      const repairedLine = repairInteractiveRoutableLineDeviceRoute(previewNodes, lineNode, translatedPoints, canvasBounds);
+      const points = routableLineDeviceCanvasPoints(repairedLine);
       routes.push({
         edgeId: `routable-line:${lineNode.id}`,
         routableLineNodeId: lineNode.id,
@@ -2353,9 +2369,10 @@ export function createBuildCachedSingleNodeDragPreviewRoutes(__appScope: Selecti
   return (
     cache: SingleNodeDragCache | undefined,
     delta: Point,
-    previewEdges: Edge[]
+    previewEdges: Edge[],
+    previewNodes: ModelNode[] = []
   ): NodeDragPreviewRoute[] | null => {
-  const { pointsToPreviewPath, preserveDraggedRouteShape, shiftPreviewEndpointForDelta, simpleOrthogonalDragPreviewPoints } = __appScope;
+  const { canvasBounds, pointsToPreviewPath, preserveDraggedRouteShape, shiftPreviewEndpointForDelta, simpleOrthogonalDragPreviewPoints } = __appScope;
     if (!cache) {
       return null;
     }
@@ -2381,9 +2398,12 @@ export function createBuildCachedSingleNodeDragPreviewRoutes(__appScope: Selecti
             targetNormal: endpoint.targetNormal
           })
         : simpleOrthogonalDragPreviewPoints(start, end);
+      const safePreviewPoints = previewNodes.length > 0
+        ? repairInteractiveConnectionRoute(previewNodes, edge, previewPoints, canvasBounds)
+        : previewPoints;
       routes.push({
         edgeId: endpoint.edgeId,
-        path: pointsToPreviewPath(previewPoints),
+        path: pointsToPreviewPath(safePreviewPoints),
         color: endpoint.color
       });
     }
@@ -2459,21 +2479,24 @@ export function createBuildLightweightNodeDragPreviewRoutes(__appScope: Selectio
     delta: Point,
     scopedPreviewEdges?: Edge[]
   ): NodeDragPreviewRoute[] => {
-  const { buildCachedSingleNodeDragPreviewRoutes, buildDragPreviewEndpointPoints, buildRoutableLineDragPreviewRoutes, cachedConnectionStrokeColor, connectionEndpointPreviewRoutePoints, getRouteEndpointNormal, isBusNode, isMultiNodeMoveState, nodeById, pointsToPreviewPath, preserveDraggedRouteShape, singleNodeDragPreviewEdges, visibleEdgeIdSet } = __appScope;
+  const { buildCachedSingleNodeDragPreviewRoutes, buildDragPreviewEndpointPoints, buildRoutableLineDragPreviewRoutes, cachedConnectionStrokeColor, canvasBounds, connectionEndpointPreviewRoutePoints, getRouteEndpointNormal, isBusNode, isMultiNodeMoveState, nodeById, pointsToPreviewPath, preserveDraggedRouteShape, singleNodeDragPreviewEdges, singleNodeDragPreviewNodeFor, visibleEdgeIdSet } = __appScope;
     const previewEdges = scopedPreviewEdges ?? (
       isMultiNodeMoveState(dragState) ? dragState.overlayPreview?.dynamicEdgePreviewEdges ?? [] : singleNodeDragPreviewEdges(dragState, delta)
     );
     const multiNodeMove = isMultiNodeMoveState(dragState);
     const dragCache = dragState.singleNodeDragCache;
+    const overlayPreviewCache = multiNodeMove ? dragState.overlayPreview : undefined;
+    const movedNodeIds = dragCache?.movedNodeIds ?? overlayPreviewCache?.movedNodeIds ?? new Set(dragState.nodeIds);
+    const previewNodes = (Array.from(nodeById.values()) as ModelNode[]).map((node) =>
+      singleNodeDragPreviewNodeFor(dragState, node.id, delta) ?? node
+    );
     const cachedSingleNodePreviewRoutes = !multiNodeMove
-      ? buildCachedSingleNodeDragPreviewRoutes(dragCache, delta, previewEdges)
+      ? buildCachedSingleNodeDragPreviewRoutes(dragCache, delta, previewEdges, previewNodes)
       : null;
     const routableLinePreviewRoutes = buildRoutableLineDragPreviewRoutes(dragState, delta);
     if (cachedSingleNodePreviewRoutes) {
       return [...cachedSingleNodePreviewRoutes, ...routableLinePreviewRoutes];
     }
-    const overlayPreviewCache = multiNodeMove ? dragState.overlayPreview : undefined;
-    const movedNodeIds = dragCache?.movedNodeIds ?? overlayPreviewCache?.movedNodeIds ?? new Set(dragState.nodeIds);
     const draggedEdgeIds = dragCache?.draggedEdgeIds ?? overlayPreviewCache?.draggedEdgeIds ?? new Set(dragState.edgeIds);
     const movedBusIds = dragCache?.movedBusNodeIds ?? overlayPreviewCache?.movedBusNodeIds ?? new Set(
       dragState.nodeIds.filter((nodeId) => {
@@ -2515,9 +2538,15 @@ export function createBuildLightweightNodeDragPreviewRoutes(__appScope: Selectio
             targetNormal: getRouteEndpointNormal(endpoints.target, endpoints.end, endpoints.start, edge.targetTerminalId)
           })
         : connectionEndpointPreviewRoutePoints(edge, endpoints);
+      const previewEdge = {
+        ...edge,
+        sourcePoint: isBusNode(endpoints.source) ? endpoints.start : edge.sourcePoint,
+        targetPoint: isBusNode(endpoints.target) ? endpoints.end : edge.targetPoint
+      };
+      const safePreviewPoints = repairInteractiveConnectionRoute(previewNodes, previewEdge, previewPoints, canvasBounds);
       return [{
         edgeId: edge.id,
-        path: pointsToPreviewPath(previewPoints),
+        path: pointsToPreviewPath(safePreviewPoints),
         color
       }];
     });

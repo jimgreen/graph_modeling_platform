@@ -80,7 +80,11 @@ function schedulePanViewBoxUpdate(setViewBox: StateSetter<CanvasViewBox>, nextVi
   scheduler.schedule(nextViewBox);
 }
 import { clampNumber } from "../canvasViewport";
-import { routeEdgesForStoredRendering } from "../model-routing";
+import {
+  repairInteractiveConnectionRoute,
+  repairInteractiveRoutableLineDeviceRoute,
+  routeEdgesForStoredRendering
+} from "../model-routing";
 import {
   GLOBAL_LINE_ID_PARAM,
   applyGlobalLineRecordToNode,
@@ -965,6 +969,7 @@ export function createHandleRoutableLineNodePathPointerDown(__appScope: ProjectC
 
 export function createHandlePointerMove(__appScope: ProjectCanvasScope) {
   return (event: ReactPointerEvent<SVGSVGElement>) => {
+    const routingNodes = Array.isArray(__appScope.nodes) ? __appScope.nodes : [];
   const { CANVAS_SELECTION_DRAG_THRESHOLD, MOVE_BOUNDARY_GUARD, applyCanvasPanningVisualOffset, buildGroupTransformNodeUpdates, buildRoutableLineEndpointPreviewNodeUpdates, cancelPendingBlankCanvasDeselectOnMove, canvasBounds, canvasFrameRef, canvasFrameUserScrollRef, canvasNoScrollOffsetRef, clampCanvasNoScrollOffsetPoint, clampNumber, clampPointToCanvas, clampViewBoxToCanvas, connectSource, contextMarqueeSelectionRef, draggingRef, getNodeScaleX, getNodeScaleY, graphStore, imperativeMarqueeRectRef, isBusNode, isGroupTransformDrag, isLineSegmentBusNode, isRoutableLineDeviceKind, lastCanvasClientPointerRef, lastCanvasPointerRef, lastRawCanvasPointerRef, latestGraphStoreRef, libraryPlacement, manualPathDrag, marquee, marqueeCurrentRef, modelGeometryInsideCanvasBounds, modifierSelectionPressRef, moveOrthogonalRouteSegment, moveRoutableLineDeviceSegment, nodeById, nodeLabelDrag, nodeLabelRotateDrag, nodeLabelRotationFromPoint, normalizeNodeLabelRotation, normalizeRotationDegrees, panning, panningRef, patchGraphNodes, patchSingleTerminalAnchorFromPoint, pendingCanvasNoScrollOffsetRef, proportionalSignedScaleFromHandleDelta, proportionalSignedScaleFromUprightHandleDelta, pushUndoSnapshot, resizeLineSegmentBusGeometryFromHandleDrag, resolveConnectPreviewPoint, resolveRoutableLinePreviewPoint, rewiring, rotationDeltaBetweenTransformPoints, routableLineDeviceCanvasPoints, routableLineEndpointDrag, routableLinePlacement, sameOptionalPoint, sameOptionalPointList, scheduleConnectPreviewPoint, scheduleNodeDragMove, scheduleRewirePreviewPoint, scheduleRoutableLinePreviewPoint, screenToSvgPoint, setManualPathDrag, setMarquee, setModifierSelectionPress, setNodeLabelDrag, setNodeLabelRotateDrag, setRoutableLineDeviceCanvasPoints, setTerminalPress, setTransformDrag, setViewBox, signedScaleFromRotatedHandleDelta, signedScaleFromUprightHandleDelta, singleTransformBaseNode, skipNextCanvasScrollSyncRef, staticButtonPointerRef, staticDrawing, svgRef, terminalPress, transformDrag, transformDragChangedRef, updateGraphNodeById, updateInteractiveStaticDrawingPreview, updateLibraryPlacementPreview, updateMeasurementDrag, updateMouseStatus, updateRoutableLineEndpointDrag } = __appScope;
     const staticButtonPointer = staticButtonPointerRef.current;
     if (
@@ -1219,17 +1224,29 @@ export function createHandlePointerMove(__appScope: ProjectCanvasScope) {
       }
       const previewRoutePoints = routableLineNode && isRoutableLineDeviceKind(routableLineNode.kind)
         ? routableLineDeviceCanvasPoints(
-            "pointIndex" in nextDrag
-              ? setRoutableLineDeviceCanvasPoints(routableLineNode, nextPoints)
-              : moveRoutableLineDeviceSegment(
-                  setRoutableLineDeviceCanvasPoints(routableLineNode, originalRoutePoints),
-                  nextDrag.segmentIndex,
-                  nextDrag.orientation,
-                  point,
-                  canvasBounds
-                )
+            repairInteractiveRoutableLineDeviceRoute(
+              routingNodes,
+              routableLineNode,
+              routableLineDeviceCanvasPoints(
+                "pointIndex" in nextDrag
+                  ? setRoutableLineDeviceCanvasPoints(routableLineNode, nextPoints)
+                  : moveRoutableLineDeviceSegment(
+                      setRoutableLineDeviceCanvasPoints(routableLineNode, originalRoutePoints),
+                      nextDrag.segmentIndex,
+                      nextDrag.orientation,
+                      point,
+                      canvasBounds
+                    )
+              ),
+              canvasBounds
+            )
           )
-        : nextPoints.map((item: Point) => ({ ...item }));
+        : (() => {
+            const edge = nextDrag.edgeId ? graphStore.edgeMap.get(nextDrag.edgeId) : undefined;
+            return edge
+              ? repairInteractiveConnectionRoute(routingNodes, edge, nextPoints, canvasBounds)
+              : nextPoints.map((item: Point) => ({ ...item }));
+          })();
       if (!modelGeometryInsideCanvasBounds([], [{ points: previewRoutePoints }], canvasBounds, MOVE_BOUNDARY_GUARD)) {
         return;
       }

@@ -120,8 +120,8 @@ describe("config.mjs 默认值", () => {
     expect(only.projectDirectory).toBe(null);
   });
 
-  test("platform.config.json.example 使用 ./data 作为默认地址", () => {
-    const example = JSON.parse(readFileSync(join(repoRoot, "platform.config.json.example"), "utf8"));
+  test("platform.config.base.json 使用 ./data 作为默认地址", () => {
+    const example = JSON.parse(readFileSync(join(repoRoot, "platform.config.base.json"), "utf8"));
     expect(example.dataDir).toBe("./data");
   });
 

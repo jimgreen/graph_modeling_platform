@@ -1,6 +1,6 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Modal } from "antd";
-import { Eye, EyeOff } from "lucide-react";
+import { ChevronDown, ChevronRight, Eye, EyeOff } from "lucide-react";
 import {
   DEFAULT_INTERFACE_CUSTOMIZATION_CONFIG,
   buildHideAllInterfaceCustomizationConfig,
@@ -44,6 +44,16 @@ export function InterfaceCustomizationDialog({
 }: InterfaceCustomizationDialogProps) {
   const buttonGroups = useMemo(() => groupedDefinitions(interfaceCustomizationDefinitions("button")), []);
   const moduleGroups = useMemo(() => groupedDefinitions(interfaceCustomizationDefinitions("module")), []);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set());
+
+  const toggleGroup = (group: string) => {
+    setCollapsedGroups((current) => {
+      const next = new Set(current);
+      if (next.has(group)) next.delete(group);
+      else next.add(group);
+      return next;
+    });
+  };
 
   const updateVisibility = (id: string, visible: boolean) => {
     if (!visible && isProtectedInterfaceCustomizationId(id)) return;
@@ -104,20 +114,24 @@ export function InterfaceCustomizationDialog({
     const toggleable = items.filter((item) => !isProtectedInterfaceCustomizationId(item.id));
     const allVisible = items.every((item) => isInterfaceCustomizationVisible(config, item.id));
     const anyHideableVisible = toggleable.some((item) => isInterfaceCustomizationVisible(config, item.id));
+    const collapsed = collapsedGroups.has(group);
     return (
-    <fieldset className="interface-customization-fieldset" key={group}>
+    <fieldset className={`interface-customization-fieldset${collapsed ? " collapsed" : ""}`} key={group}>
       <legend>
-        <span>{group}</span>
+        <button type="button" className="interface-customization-group-toggle" onClick={() => toggleGroup(group)} aria-expanded={!collapsed}>
+          {collapsed ? <ChevronRight size={14} aria-hidden="true" /> : <ChevronDown size={14} aria-hidden="true" />}
+          <span>{group}</span>
+        </button>
         <span className="interface-customization-group-actions" role="group" aria-label={`${group}批量操作`}>
-          <button type="button" onClick={() => updateGroup(items, true)} disabled={busy || allVisible} title={`显示全部${group}`} aria-label={`显示全部${group}`}>
+          <button type="button" onClick={(event) => { event.stopPropagation(); updateGroup(items, true); }} disabled={busy || allVisible} title={`显示全部${group}`} aria-label={`显示全部${group}`}>
             <Eye size={14}/>
           </button>
-          <button type="button" onClick={() => updateGroup(items, false)} disabled={busy || !anyHideableVisible} title={`隐藏全部${group}`} aria-label={`隐藏全部${group}`}>
+          <button type="button" onClick={(event) => { event.stopPropagation(); updateGroup(items, false); }} disabled={busy || !anyHideableVisible} title={`隐藏全部${group}`} aria-label={`隐藏全部${group}`}>
             <EyeOff size={14}/>
           </button>
         </span>
       </legend>
-      <div className="interface-customization-list">
+      {!collapsed && <div className="interface-customization-list">
         {items.map((item) => {
           const protectedItem = isProtectedInterfaceCustomizationId(item.id);
           const visible = protectedItem ? true : isInterfaceCustomizationVisible(config, item.id);
@@ -131,11 +145,10 @@ export function InterfaceCustomizationDialog({
                 onChange={(event) => updateVisibility(item.id, event.target.checked)}
               />
               <span>{item.label}</span>
-              <code>{item.id}</code>
             </label>
           );
         })}
-      </div>
+      </div>}
     </fieldset>
     );
   });
@@ -156,12 +169,23 @@ export function InterfaceCustomizationDialog({
         <p className="interface-customization-intro">
           勾选即时预览；点击“保存设置”写入后台，直接关闭将恢复未保存修改。
         </p>
-        <button type="button" className="interface-customization-library-button" onClick={onOpenDeviceLibrary} disabled={busy}>
-          图元库显示范围
-        </button>
-        <div className="interface-customization-actions" role="group" aria-label="界面定制批量操作">
-          <button type="button" onClick={() => applyAll(true)} disabled={busy}>恢复默认（全部显示）</button>
-          <button type="button" onClick={requestHideAll} disabled={busy}>全部隐藏</button>
+        <div className="interface-customization-toolbar">
+          <button type="button" className="interface-customization-library-button" onClick={onOpenDeviceLibrary} disabled={busy}>
+            图元库显示范围
+          </button>
+          <div className="interface-customization-actions" role="group" aria-label="界面定制批量操作">
+            <button
+              type="button"
+              onClick={() => {
+                applyAll(true);
+                globalThis.showGlobalMessage?.("界面定制已恢复默认，请点击“保存设置”写入后台。");
+              }}
+              disabled={busy}
+            >
+              恢复默认
+            </button>
+            <button type="button" onClick={requestHideAll} disabled={busy}>全部隐藏</button>
+          </div>
         </div>
         <section aria-labelledby="interface-customization-buttons-title">
           <h3 id="interface-customization-buttons-title">按钮</h3>

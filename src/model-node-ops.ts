@@ -1,5 +1,6 @@
 // 节点操作相关代码（从 model.ts 提取到独立模块）
 import type { DeviceKind, DeviceTemplate, ModelNode, Point } from "./model.ts";
+import { isThreeWindingTransformerKind, isTwoWindingTransformerKind } from "./model/types.ts";
 import {
   DEFAULT_MODEL_LAYER_ID,
   DEVICE_LIBRARY_BY_KIND,
@@ -7,6 +8,7 @@ import {
   makeNodeNumber,
   normalizeDefaultDeviceSize,
   buildDefaultParams,
+  baseDeviceKind,
 } from "./model.ts";
 import {
   createTemplateTerminals,
@@ -42,7 +44,18 @@ export function createDefaultNode(kind: DeviceKind, position: Point): ModelNode 
   return createNodeFromTemplate(template, position);
 }
 
+const DEFAULT_NODE_SCALE = 1;
+const DEFAULT_TRANSFORMER_SCALE = 3;
+
+function defaultNodeScaleForKind(kind: DeviceKind): number {
+  const baseKind = baseDeviceKind(kind);
+  return isTwoWindingTransformerKind(baseKind) || isThreeWindingTransformerKind(baseKind)
+    ? DEFAULT_TRANSFORMER_SCALE
+    : DEFAULT_NODE_SCALE;
+}
+
 export function createNodeFromTemplate(template: DeviceTemplate, position: Point): ModelNode {
+  const defaultScale = defaultNodeScaleForKind(template.kind);
   const node: ModelNode = {
     id: makeId(template.kind),
     kind: template.kind,
@@ -54,9 +67,9 @@ export function createNodeFromTemplate(template: DeviceTemplate, position: Point
     position,
     size: normalizeDefaultDeviceSize(template.kind, template.size),
     rotation: template.rotation ?? 0,
-    scale: 1,
-    scaleX: 1,
-    scaleY: 1,
+    scale: defaultScale,
+    scaleX: defaultScale,
+    scaleY: defaultScale,
     terminals: createTemplateTerminals(template),
     params: buildDefaultParams(template)
   };

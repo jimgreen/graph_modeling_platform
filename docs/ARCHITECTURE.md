@@ -119,7 +119,7 @@ React 19 + Vite 7 + TypeScript 的前端图形建模平台，支持电力/氢能
 ### 平台数据根管理
 
 - `POST /webgrp/platform/data-dir`：把当前 `dataRoot` 迁移到已存在且为空的新目录；复制后比较 SHA-256 清单，压缩并校验旧目录，删除旧目录，原子更新 `platform.config.json`，最后切换运行时 `spaceStore` 与 WebSocket 空间解析；任一步失败都回滚。
-- `platform.config.json.example` 的 `dataDir` 默认值为 `./data`；启动时 `GRAPH_MODEL_DATA_DIR` 仍优先于配置文件。
+- `platform.config.base.json` 的 `dataDir` 默认值为 `./data`；启动时 `GRAPH_MODEL_DATA_DIR` 仍优先于配置文件。
 
 ### 控制台写操作（v1 control）
 

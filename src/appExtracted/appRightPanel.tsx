@@ -325,6 +325,7 @@ function AppRightPanelContent({ scope, embedded = false }: { scope: Record<strin
     patchGraphNodes
   } = scope;
   const modelActionsDisabled = !Boolean(hasActiveModel ?? scope.activeProjectKey);
+  const EmptyStateIcon = scope.PanelRightOpen ?? (() => null);
 
   // Compare inspector values with the persisted model record. The live graph
   // changes on every edit, so the dirty-render baseline is intentionally not
@@ -577,7 +578,15 @@ function AppRightPanelContent({ scope, embedded = false }: { scope: Record<strin
           <button data-ui-content="module.rightPanel.elementTreeTab" className={inspectorTab === "tree" ? "active" : ""} onClick={() => { setInspectorTab("tree"); setCompactPanelTab?.("right"); }} disabled={modelActionsDisabled}>图元树</button>
           <button data-ui-content="module.rightPanel.graphTab" className={inspectorTab === "graph" || inspectorTab === "device" ? "active" : ""} onClick={() => { setInspectorTab("graph"); setCompactPanelTab?.("right"); }} disabled={modelActionsDisabled}>图元</button>
         </div>}
-        {modelActionsDisabled ? (<div className="inspector-empty-state">请先打开模型</div>) : inspectorSelectedNode || currentModelRecord ? (<div className={`form-stack ${inspectorTab === "tree" || inspectorTab === "graph" || inspectorTab === "device" ? "graph-form-stack" : ""}`}>
+        {modelActionsDisabled ? (
+          <div className="inspector-empty-state" role="status">
+            <div className="inspector-empty-state-inner">
+              <span className="inspector-empty-state-icon" aria-hidden="true"><EmptyStateIcon size={22} strokeWidth={1.8} /></span>
+              <strong className="inspector-empty-state-title">请先打开模型</strong>
+              <span className="inspector-empty-state-hint">从左侧模型库选择一个模型，这里会显示属性与图元信息</span>
+            </div>
+          </div>
+        ) : inspectorSelectedNode || currentModelRecord ? (<div className={`form-stack ${inspectorTab === "tree" || inspectorTab === "graph" || inspectorTab === "device" ? "graph-form-stack" : ""}`}>
             <div className="inspector-tabs">
               <button data-ui-content="module.rightPanel.baseTab" className={inspectorTab === "model" ? "active" : ""} onClick={() => { setInspectorTab("model"); if (embedded) setCompactPanelTab?.("right"); }} disabled={!currentModelRecord}>
                 基础

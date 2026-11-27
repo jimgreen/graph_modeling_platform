@@ -8,7 +8,8 @@ import {
   frontendPort,
   apiPrefix,
   frontendPrefix,
-  frontendMode
+  frontendMode,
+  projectName
 } from "./server/config.mjs";
 import { name } from "./package.json";
 
@@ -123,7 +124,8 @@ export default defineConfig({
     __API_PREFIX__: JSON.stringify(apiPrefix),
     __FRONTEND_BASE__: JSON.stringify(frontendPrefix),
     __FRONTEND_MODE__: JSON.stringify(frontendMode),
-    __BACKEND_ORIGIN__: JSON.stringify(backendOrigin)
+    __BACKEND_ORIGIN__: JSON.stringify(backendOrigin),
+    __PROJECT_NAME__: JSON.stringify(projectName ?? "")
   },
   build: {
     modulePreload: false, // qiankun 环境禁用 modulepreload，避免资源路径问题

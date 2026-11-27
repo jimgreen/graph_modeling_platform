@@ -184,7 +184,8 @@ describe("无活动模型时禁用模型操作", () => {
 
     expect(viewSource).toContain("__appScope.hasActiveModel");
     expect(panelSource).toContain("const modelActionsDisabled = !Boolean(hasActiveModel ?? scope.activeProjectKey)");
-    expect(panelSource).toContain("{modelActionsDisabled ? (<div className=\"inspector-empty-state\">请先打开模型</div>)");
+    expect(panelSource).toContain('className="inspector-empty-state"');
+    expect(panelSource).toContain("请先打开模型");
     expect(panelSource).toContain("disabled={modelActionsDisabled}>图元树</button>");
   });
 });

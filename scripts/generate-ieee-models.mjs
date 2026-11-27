@@ -13,7 +13,7 @@ function configuredDataDirForScript() {
   for (const configPath of [
     path.join(process.cwd(), "platform.config.json"),
     path.join(repoRoot, "platform.config.json"),
-    path.join(repoRoot, "platform.config.json.example")
+    path.join(repoRoot, "platform.config.base.json")
   ]) {
     if (!existsSync(configPath)) continue;
     try {

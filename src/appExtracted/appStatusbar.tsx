@@ -1,4 +1,5 @@
 import { MemoizedViewSection } from "./appViewRenderBoundary";
+import { FRONTEND_EXPORT_MODE, PROJECT_NAME } from "../config";
 import type { Space } from "../spaceClient";
 
 type AppStatusbarProps = {
@@ -63,6 +64,12 @@ function AppStatusbarContent({ scope }: { scope: Record<string, any> }) {
   return (
     <footer className="bottom-statusbar" aria-label="运行状态" data-ui-module="module.statusbar">
       <div className="statusbar-resize-handle" role="separator" aria-orientation="horizontal" aria-label="调整提示信息栏高度" title="拖拽调整提示信息栏高度" onPointerDown={startStatusbarResize}/>
+      <span className="status-pill status-project" title={PROJECT_NAME ? `当前启动项目：${PROJECT_NAME}` : "未指定启动项目"}>
+        项目：{PROJECT_NAME || "--"}
+      </span>
+      <span className="status-pill">
+        生成模式：{FRONTEND_EXPORT_MODE === "frontend" ? "前端" : "后端"}
+      </span>
       <span className="status-pill">
         坐标 <span ref={mousePositionTextRef}>X:- Y:-</span>
       </span>
