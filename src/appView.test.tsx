@@ -1072,13 +1072,15 @@ expect(source).toMatch(/definitionDraftRowsForDisplay\.map\(\(row(?::\s*CustomPa
     expect(floatingDialogRule).toMatch(/transform:\s*none/);
   });
 
-  test("gives the custom device editor more height without crossing the viewport margin", () => {
+  test("gives the custom device editor compact height with breathing room around topbar and statusbar", () => {
     const styles = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
     const customDialogRule = styles.match(/\.custom-device-dialog\s*\{([\s\S]*?)\}/)?.[1] ?? "";
+    const backdropRule = styles.match(/\.image-picker-backdrop\s*\{([\s\S]*?)\}/)?.[1] ?? "";
 
-    expect(customDialogRule).toMatch(/height:\s*min\(90vh,\s*calc\(100vh\s*-\s*24px\)\)/);
-    expect(customDialogRule).toMatch(/max-height:\s*calc\(100vh\s*-\s*24px\)/);
-    expect(CUSTOM_DEVICE_DIALOG_DEFAULT_HEIGHT).toBe(860);
+    expect(backdropRule).toMatch(/padding:\s*72px\s+40px\s+48px/);
+    expect(customDialogRule).toMatch(/height:\s*min\(720px,\s*calc\(100vh\s*-\s*136px\)\)/);
+    expect(customDialogRule).toMatch(/max-height:\s*calc\(100vh\s*-\s*136px\)/);
+    expect(CUSTOM_DEVICE_DIALOG_DEFAULT_HEIGHT).toBe(700);
   });
 
   test("keeps the remaining class and component metadata fields on one desktop row", () => {

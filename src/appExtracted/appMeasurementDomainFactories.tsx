@@ -1,6 +1,7 @@
 /** 图存储状态更新、路由缓存失效与设备量测配置域工厂模块。 */
 
 import type { GraphMeasurementScope } from "./appScopeTypes";
+import { flushActiveBufferedInput } from "../components/InputComponents";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, SetStateAction } from "react";
 import { type CanvasResizeEdge, type CanvasResizePreviewRect, type CanvasViewBox } from "../canvasViewport";
 import type { MeasurementGroup } from "../measurements";
@@ -1509,7 +1510,9 @@ export function createOpenColorPaletteDialog(__appScope: GraphMeasurementScope) 
 
 export function createSaveColorPalette(__appScope: GraphMeasurementScope) {
   return () => {
-  const { colorPaletteDraft, colorPaletteTab, normalizeColorPalette, setColorDisplayMode, setColorPalette, setColorPaletteDialogOpen } = __appScope;
+    flushActiveBufferedInput();
+    const currentScope = (__appScope.__appScopeRef?.current as GraphMeasurementScope | undefined) ?? __appScope;
+    const { colorPaletteDraft, colorPaletteTab, normalizeColorPalette, setColorDisplayMode, setColorPalette, setColorPaletteDialogOpen } = currentScope;
     const normalized = normalizeColorPalette(colorPaletteDraft);
     setColorPalette(normalized);
     setColorDisplayMode(colorPaletteTab);

@@ -11,7 +11,8 @@ import { moveSelectedTableRows, nextTableRowSelection } from "../definitionTable
 import { modelAssociationProjectIndexesForSchemes } from "../model";
 import {
   repairInteractiveConnectionRoute,
-  repairInteractiveRoutableLineDeviceRoute
+  repairInteractiveRoutableLineDeviceRoute,
+  savedProjectRuntimePathKey
 } from "../model-routing";
 import { containerGatewayUnbindNotice, finalizeContainerAfterNodeDeletion } from "../acContainer";
 import { modelTrace } from "../modelTrace";
@@ -1070,6 +1071,8 @@ export function createSaveCurrentProject(__appScope: ProjectCanvasScope) {
       initialPointer: __appScope.latestActiveProjectPointerRef?.current
     });
     if (currentSelection?.loading) {
+      const notifyLoading = (__appScope.showGlobalMessage as ((msg: string) => void) | undefined) ?? showGlobalMessage;
+      notifyLoading?.("模型正在加载中，请稍候再保存。");
       writeOperationLog("模型正在切换，加载完成后再保存。");
       return false;
     }
@@ -1412,29 +1415,34 @@ export function createCreateBlankProject(__appScope: ProjectCanvasScope) {
       setCreateModelDialog((current: { schemeId: string; name: string; modelType: string; saving: boolean; error: string } | null) => current ? { ...current, error: "无法确定模型所属方案路径。" } : current);
       return;
     }
-    const record = createSavedProject(name, {
-      version: 1,
-      name,
-      modelType,
-      canvasWidth: DEFAULT_CANVAS_WIDTH,
-      canvasHeight: DEFAULT_CANVAS_HEIGHT,
-      allowAutoExpandCanvas: true,
-      canvasBackgroundColor: DEFAULT_CANVAS_BACKGROUND,
-      powerUnit: DEFAULT_POWER_UNIT,
-      voltageUnit: DEFAULT_VOLTAGE_UNIT,
-      currentUnit: DEFAULT_CURRENT_UNIT,
-      powerBaseValue: DEFAULT_POWER_BASE_VALUE,
-      subcontrolarea: "默认区域",
-      deviceIndexCounters: {},
-      nodes: [],
-      edges: []
-    });
+    const runtimeProjectId = savedProjectRuntimePathKey([...targetSchemePath, name]);
+    const record: SavedProjectRecord = {
+      ...createSavedProject(name, {
+        version: 1,
+        name,
+        modelType,
+        canvasWidth: DEFAULT_CANVAS_WIDTH,
+        canvasHeight: DEFAULT_CANVAS_HEIGHT,
+        allowAutoExpandCanvas: true,
+        canvasBackgroundColor: DEFAULT_CANVAS_BACKGROUND,
+        powerUnit: DEFAULT_POWER_UNIT,
+        voltageUnit: DEFAULT_VOLTAGE_UNIT,
+        currentUnit: DEFAULT_CURRENT_UNIT,
+        powerBaseValue: DEFAULT_POWER_BASE_VALUE,
+        subcontrolarea: "默认区域",
+        deviceIndexCounters: {},
+        nodes: [],
+        edges: []
+      }),
+      id: runtimeProjectId
+    };
     setCreateModelDialog((current: { schemeId: string; name: string; modelType: string; saving: boolean; error: string } | null) => current ? { ...current, saving: true, error: "" } : current);
     try {
       const savedRecord = await saveBackendProjectRecord(targetSchemePath, record);
+      const latestAfterCreate = (__appScope.__appScopeRef?.current as ProjectCanvasScope | undefined) ?? __appScope;
       setSchemes((current: SavedSchemeRecord[]) => upsertSavedProjectInScheme(current, targetSchemeId, savedRecord));
-      selectSingleProject(targetSchemeId, savedRecord.id);
-      requestLoadSavedProject(savedRecord, targetSchemeId);
+      (latestAfterCreate.selectSingleProject ?? selectSingleProject)(targetSchemeId, savedRecord.id);
+      (latestAfterCreate.requestLoadSavedProject ?? requestLoadSavedProject)(savedRecord, targetSchemeId);
       setCreateModelDialog(null);
       writeOperationLog(`新建${modelType}模型：${savedRecord.name}（idx=${savedRecord.project.idx}）`);
       return savedRecord;

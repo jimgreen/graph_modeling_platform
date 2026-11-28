@@ -104,8 +104,8 @@ function clampFloatingWindowFrame(frame: FloatingWindowFrame): FloatingWindowFra
 
 function defaultFloatingWindowFrame(): FloatingWindowFrame {
   const viewport = viewportSize();
-  const width = Math.min(1180, Math.max(320, viewport.width - 48));
-  const height = Math.min(760, Math.max(280, viewport.height - 48));
+  const width = Math.min(1060, Math.max(320, viewport.width - 96));
+  const height = Math.min(660, Math.max(280, viewport.height - 136));
   return clampFloatingWindowFrame({
     x: (viewport.width - width) / 2,
     y: (viewport.height - height) / 2,

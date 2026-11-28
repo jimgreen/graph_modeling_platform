@@ -3,9 +3,14 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import {
   APP_TOUR_SEEN_KEY,
   APP_TOUR_STEPS,
+  TOPBAR_GROUPS_COMPACT_SELECTOR,
+  TOPBAR_GROUPS_EXPANDED_SELECTOR,
   clearTourSeen,
+  isDomElementVisibleForTour,
   isSidePanelLockedByTour,
   readTourSeen,
+  resolveNextVisibleTourStepIndex,
+  resolveRuntimeTourSteps,
   writeTourSeen
 } from "./appTour";
 import { TOUR_SIDE_PANEL_STEP_TARGETS } from "./sidePanelVisibility";
@@ -265,5 +270,40 @@ describe("tour side panel lock wiring (source contract)", () => {
     // indexOf 取第 1 次即块首，切块起点正确。
     const lockedRuleBody = css.slice(lockedIndex, css.indexOf("}", lockedIndex));
     expect(lockedRuleBody, "锁定态规则块缺少 cursor: not-allowed").toContain("cursor: not-allowed");
+  });
+});
+
+describe("紧凑顶栏与隐藏目标下的新手引导自愈防护", () => {
+  test("isDomElementVisibleForTour 过滤不存在或 display:none（0×0）的元素", () => {
+    const fakeDoc = {
+      querySelector: (sel: string) => {
+        if (sel === ".hidden-node") {
+          return { getBoundingClientRect: () => ({ width: 0, height: 0 }) };
+        }
+        if (sel === ".visible-node") {
+          return { getBoundingClientRect: () => ({ width: 48, height: 32 }) };
+        }
+        return null;
+      }
+    };
+    expect(isDomElementVisibleForTour(".missing", fakeDoc)).toBe(false);
+    expect(isDomElementVisibleForTour(".hidden-node", fakeDoc)).toBe(false);
+    expect(isDomElementVisibleForTour(".visible-node", fakeDoc)).toBe(true);
+  });
+
+  test("顶栏处于紧凑模式（.topbar-button-groups 被隐藏）时第 6 步自动切换至 .topbar-button-groups-compact", () => {
+    const resolved = resolveRuntimeTourSteps(APP_TOUR_STEPS, (sel) => sel !== TOPBAR_GROUPS_EXPANDED_SELECTOR);
+    expect(resolved).toHaveLength(APP_TOUR_STEPS.length);
+    expect(resolved[5]?.target).toBe(TOPBAR_GROUPS_COMPACT_SELECTOR);
+
+    // 宽屏展开态下保持原锚点 .topbar-button-groups
+    const wideResolved = resolveRuntimeTourSteps(APP_TOUR_STEPS, (sel) => sel !== TOPBAR_GROUPS_COMPACT_SELECTOR);
+    expect(wideResolved[5]?.target).toBe(TOPBAR_GROUPS_EXPANDED_SELECTOR);
+  });
+
+  test("resolveNextVisibleTourStepIndex 跳过隐藏步骤，末尾无可见目标时返回 null 以结束引导移除遮罩", () => {
+    const visibleSet = new Set([".library-panel", ".canvas-content", "#topbar-save"]);
+    expect(resolveNextVisibleTourStepIndex(APP_TOUR_STEPS, 2, 1, (sel) => visibleSet.has(sel))).toBe(4);
+    expect(resolveNextVisibleTourStepIndex(APP_TOUR_STEPS, 5, 1, (sel) => visibleSet.has(sel))).toBeNull();
   });
 });

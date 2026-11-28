@@ -1128,7 +1128,10 @@ useLayoutEffect(() => {
     selection: { ...selection }
   });
   if (!selection.loading) return;
-  if (selection.projectKey === activeProjectKey && selection.schemeKey === activeSchemeKey) {
+  if (
+    selection.projectKey === activeProjectKey &&
+    (!selection.schemeKey || !activeSchemeKey || selection.schemeKey === activeSchemeKey)
+  ) {
     selection.loading = false;
   }
 }, [activeProjectKey, activeSchemeKey]);

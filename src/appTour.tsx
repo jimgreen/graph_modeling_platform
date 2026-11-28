@@ -127,6 +127,77 @@ const TOUR_STEPS: Step[] = [
   }
 ];
 
+// 顶栏工具组在紧凑视口（@container topbar <= 1560px）下会 display:none 并切换为紧凑菜单入口
+export const TOPBAR_GROUPS_EXPANDED_SELECTOR = ".topbar-button-groups";
+export const TOPBAR_GROUPS_COMPACT_SELECTOR = ".topbar-button-groups-compact";
+
+type QueryableDoc = {
+  querySelector: (selector: string) => {
+    getBoundingClientRect?: () => { width: number; height: number };
+  } | null;
+};
+
+/** 判断引导目标在当前 DOM 中是否存在且具有非零可见盒尺寸（过滤 display:none 元素）。 */
+export function isDomElementVisibleForTour(
+  selector: string,
+  doc: QueryableDoc | undefined = typeof document !== "undefined" ? document : undefined
+): boolean {
+  if (!doc || !selector) {
+    return true;
+  }
+  const element = doc.querySelector(selector);
+  if (!element) {
+    return false;
+  }
+  if (typeof element.getBoundingClientRect !== "function") {
+    return true;
+  }
+  const rect = element.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0;
+}
+
+/**
+ * 按当前视口可见性解析运行时引导步骤：
+ * 当顶栏处于紧凑模式（`.topbar-button-groups` 为 `display:none`）时，第 6 步自动锚定可见的 `.topbar-button-groups-compact`。
+ */
+export function resolveRuntimeTourSteps(
+  steps: readonly Step[] = APP_TOUR_STEPS,
+  isVisible: (selector: string) => boolean = (selector) => isDomElementVisibleForTour(selector)
+): Step[] {
+  return steps.map((step) => {
+    if (
+      step.target === TOPBAR_GROUPS_EXPANDED_SELECTOR &&
+      !isVisible(TOPBAR_GROUPS_EXPANDED_SELECTOR) &&
+      isVisible(TOPBAR_GROUPS_COMPACT_SELECTOR)
+    ) {
+      return {
+        ...step,
+        target: TOPBAR_GROUPS_COMPACT_SELECTOR
+      };
+    }
+    return step;
+  });
+}
+
+/**
+ * 当某一步的目标缺失或被隐藏（如通过界面定制关闭了对应模块/按钮）时，计算下一步应跳转的索引；
+ * 返回 `null` 表示后续已无可见步骤，应立即结束引导并移除遮罩，避免留下有遮罩无气泡的死锁。
+ */
+export function resolveNextVisibleTourStepIndex(
+  steps: readonly Step[],
+  fromIndex: number,
+  direction: 1 | -1,
+  isVisible: (selector: string) => boolean
+): number | null {
+  for (let idx = fromIndex; idx >= 0 && idx < steps.length; idx += direction) {
+    const target = typeof steps[idx]?.target === "string" ? (steps[idx].target as string) : "";
+    if (target && isVisible(target)) {
+      return idx;
+    }
+  }
+  return null;
+}
+
 // v3 的 beacon（那个蓝色小圆点）默认开启：不关掉的话，用户得先点一下蓝点才看到提示 ——
 // 首次引导要的是「一进来就说清楚」，故所有步骤统一 skipBeacon。
 export const APP_TOUR_STEPS: Step[] = TOUR_STEPS.map((step) => ({ ...step, skipBeacon: true }));
@@ -458,6 +529,24 @@ export function AppTour({ scope }: AppTourProps) {
   const handleEvent = useCallback((data: EventData) => {
     const { action, index, status, type } = data;
 
+    if (type === EVENTS.TARGET_NOT_FOUND) {
+      const direction: 1 | -1 = action === ACTIONS.PREV ? -1 : 1;
+      const runtimeSteps = resolveRuntimeTourSteps(APP_TOUR_STEPS);
+      const nextIdx = resolveNextVisibleTourStepIndex(
+        runtimeSteps,
+        index + direction,
+        direction,
+        (sel) => isDomElementVisibleForTour(sel)
+      );
+      if (nextIdx !== null) {
+        setStepIndex(nextIdx);
+      } else {
+        writeTourSeen();
+        setRun(false);
+      }
+      return;
+    }
+
     if (type === EVENTS.STEP_AFTER) {
       // 「上一步」仍然可用（showBack 时），需按 -1 处理。
       const delta = action === ACTIONS.PREV ? -1 : 1;
@@ -465,22 +554,61 @@ export function AppTour({ scope }: AppTourProps) {
     } else if (
       type === EVENTS.TOUR_END ||
       status === STATUS.SKIPPED ||
-      status === STATUS.FINISHED
+      status === STATUS.FINISHED ||
+      action === ACTIONS.CLOSE
     ) {
-      // 引导结束（完成或跳过）：写标志 + 停止
+      // 引导结束（完成、跳过或按 Esc 关闭）：写标志 + 停止
       writeTourSeen();
       setRun(false);
     }
   }, []);
 
+  // 自愈守卫：当某步目标在 DOM 中存在但被 CSS 隐藏（如 display:none 导致宽高为 0，react-joyride 不抛 TARGET_NOT_FOUND 却不渲染气泡）时，
+  // 等待侧边栏强制展开完成一帧布局后检测可见性，自动跳至可见步骤或结束引导，彻底防止全屏灰黑遮罩卡死页面。
+  useEffect(() => {
+    if (!run || typeof window === "undefined") {
+      return undefined;
+    }
+    let raf1 = 0;
+    let raf2 = 0;
+    raf1 = window.requestAnimationFrame(() => {
+      raf2 = window.requestAnimationFrame(() => {
+        const currentSteps = resolveRuntimeTourSteps(APP_TOUR_STEPS);
+        const activeStep = currentSteps[stepIndex];
+        const target = typeof activeStep?.target === "string" ? activeStep.target : "";
+        if (!target || isDomElementVisibleForTour(target)) {
+          return;
+        }
+        const fallbackIdx = resolveNextVisibleTourStepIndex(
+          currentSteps,
+          stepIndex + 1,
+          1,
+          (sel) => isDomElementVisibleForTour(sel)
+        );
+        if (fallbackIdx !== null) {
+          setStepIndex(fallbackIdx);
+        } else {
+          writeTourSeen();
+          setRun(false);
+        }
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(raf1);
+      window.cancelAnimationFrame(raf2);
+    };
+  }, [run, stepIndex]);
+
   if (!run) {
     return null;
   }
 
+  const effectiveSteps = resolveRuntimeTourSteps(APP_TOUR_STEPS);
+
   return (
     <Joyride
       run={run}
-      steps={APP_TOUR_STEPS}
+      steps={effectiveSteps}
       stepIndex={stepIndex}
       continuous
       scrollToFirstStep

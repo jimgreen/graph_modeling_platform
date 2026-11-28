@@ -3081,7 +3081,7 @@ function savedSchemeDisplayName(name: string, fallback = "未命名方案"): str
   return savedRecordDisplayName(name, fallback);
 }
 
-function savedProjectRuntimePathKey(path: string[]): string {
+export function savedProjectRuntimePathKey(path: string[]): string {
   return `project:${path.map((part) => encodeURIComponent(part)).join("/")}`;
 }
 

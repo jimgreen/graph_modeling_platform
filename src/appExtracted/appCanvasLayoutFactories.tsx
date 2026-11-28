@@ -528,6 +528,25 @@ export function createClearActiveProjectDisplay(__appScope: ProjectCanvasScope) 
   };
 }
 
+function findSchemeForProjectInList(
+  records: readonly SavedSchemeRecord[] | undefined,
+  projectId: string
+): SavedSchemeRecord | undefined {
+  if (!Array.isArray(records) || !projectId) {
+    return undefined;
+  }
+  for (const scheme of records) {
+    if (Array.isArray(scheme.projects) && scheme.projects.some((item: SavedProjectRecord) => item.id === projectId)) {
+      return scheme;
+    }
+    const nested = findSchemeForProjectInList(scheme.children, projectId);
+    if (nested) {
+      return nested;
+    }
+  }
+  return undefined;
+}
+
 export function createLoadSavedProject(__appScope: ProjectCanvasScope) {
   return (project: SavedProjectRecord, schemeId?: string) => {
     modelTrace("load-project-commit-start", {
@@ -539,8 +558,12 @@ export function createLoadSavedProject(__appScope: ProjectCanvasScope) {
       nodeCount: project.project?.nodes?.length ?? 0
     });
   const { CANVAS_INITIAL_LOD_NODE_DETAIL_LIMIT, DEFAULT_CANVAS_HEIGHT, DEFAULT_CANVAS_WIDTH, DEFAULT_CURRENT_UNIT, DEFAULT_MODEL_LAYER_ID, DEFAULT_POWER_BASE_VALUE, DEFAULT_POWER_UNIT, DEFAULT_VOLTAGE_UNIT, EMPTY_TOPOLOGY, INITIAL_TOPOLOGY_STATUS, assignMissingDeviceIndexes, cachedRoutedEdgesRef, canvasFrameRef, clearNodeDragMoveSchedule, clearRefreshRecoveryProject, currentModelSelectionRef, deferredMoveOptimizationCancelRef, deferredRoutableLineRouteRepairCancelRef, dragUndoCapturedRef, draggingRef, findSchemeForProject, fitWholeCanvasViewBox, hideImperativeMultiNodeDragOverlay, isLineSegmentBusNode, isRoutableLineDeviceKind, lastBusTerminalSyncEndpointRevisionRef, libraryTemplateByKind, lockProjectEdgeTerminals, measurementConfig, normalizeModelGroups, normalizeNodeTerminalsByTemplate, normalizeNodeTerminalsWithTemplate, normalizeProjectLayers, normalizeProjectMeasurements, pendingBusTerminalSyncNodeIdsRef, pendingRouteEdgeIdsRef, pendingStoredRouteEdgeIdsRef, rebuildRoutableLineDeviceRouteUpdates, reconcileNodeWithDefinition, reconcileProjectMeasurementsWithConfig, requestCanvasFrameCenter, resetConnectPreviewState, resolveConfiguredBackgroundLayerIds, selectSingleProject, setActiveLayerId, setActiveProjectKey, setActiveSchemeKey, setAllowAutoExpandCanvas, setBackgroundLayerIds, setBackgroundProjectId, setCanvasBackgroundColor, setCanvasBackgroundImage, setCanvasBackgroundImageAssetId, setCanvasHeight, setCanvasPanning, setCanvasSelectionScope, setCanvasVisibleViewBox, setCanvasWidth, setConnectSource, setCurrentUnit, setDeviceIndexCounters, setDragging, setElectricFlowSettings, setElectricFlowVisible, setFeeder, setGraphArrays, setGroups, setHasUnsavedChanges, setInitialCanvasDetailHydrationLimit, setInitialCanvasLodActive, setLayers, setManualPathDrag, setMarquee, setModelType, setModifierSelectionPress, setPowerBaseValue, setPowerUnit, setProjectIdx, setProjectMeasurements, setProjectName, setRewiring, setRouteRenderingReady, setSelectedEdgeId, setSelectedEdgeIds, setSelectedNodeIds, setSubcontrolarea, setSubstation, setTaiqu, setTerminalPress, setTopology, setTopologyErrors, setTopologyStatus, setTransformDrag, setUndoStack, setViewBox, setVoltageUnit, suppressNextGraphDirtyRef, writeOperationLog } = __appScope;
-    if (schemeId === undefined) {
-      schemeId = findSchemeForProject(project.id)?.id ?? "";
+    const latestScope = (__appScope.__appScopeRef?.current as ProjectCanvasScope | undefined) ?? __appScope;
+    if (!schemeId) {
+      schemeId =
+        findSchemeForProjectInList(latestScope.schemes ?? __appScope.schemes, project.id)?.id ??
+        findSchemeForProject(project.id)?.id ??
+        "";
     }
     clearRefreshRecoveryProject();
     // 存量数据修复：分侧电压参数与端子 vbase 曾因侧位表写错而分叉（右侧面板读参数、
@@ -655,8 +678,21 @@ export function createLoadSavedProject(__appScope: ProjectCanvasScope) {
     setRouteRenderingReady(false);
     setInitialCanvasLodActive(containerSafeNodes.length > CANVAS_INITIAL_LOD_NODE_DETAIL_LIMIT);
     setInitialCanvasDetailHydrationLimit(0);
+    const previousActiveProjectKey = latestScope.activeProjectKey ?? __appScope.activeProjectKey;
+    const previousActiveSchemeKey = latestScope.activeSchemeKey ?? __appScope.activeSchemeKey;
     setActiveProjectKey(project.id);
     setActiveSchemeKey(schemeId);
+    if (currentModelSelectionRef) {
+      // 当目标模型与方案和当前已提交状态一致时，React 会跳过重渲染且不触发解锁 useLayoutEffect，需同步解除 loading。
+      const activeKeysUnchanged =
+        previousActiveProjectKey === project.id &&
+        (!schemeId || !previousActiveSchemeKey || previousActiveSchemeKey === schemeId);
+      currentModelSelectionRef.current = {
+        projectKey: project.id,
+        schemeKey: schemeId,
+        loading: !activeKeysUnchanged && Boolean(currentModelSelectionRef.current?.loading)
+      };
+    }
     selectSingleProject(schemeId, project.id);
     setCanvasSelectionScope("direct");
     setSelectedNodeIds([]);
@@ -730,14 +766,16 @@ export function createLoadSavedProjectRecord(__appScope: ProjectCanvasScope) {
       selection: currentModelSelectionRef?.current,
       initialPointer: __appScope.latestActiveProjectPointerRef?.current
     });
-    if (schemeId === undefined) {
-      schemeId = findSchemeForProject(project.id)?.id ?? "";
-    }
+    const latestSchemes = ((__appScope.__appScopeRef?.current as ProjectCanvasScope | undefined)?.schemes) ?? schemes;
     if (sourceSchemes === undefined) {
-      sourceSchemes = schemes;
+      sourceSchemes = latestSchemes;
     }
-    const sourceRecords = sourceSchemes ?? schemes;
-    const resolvedSchemeId = schemeId || findSchemeForProject(project.id)?.id || "";
+    const sourceRecords = sourceSchemes ?? latestSchemes;
+    const resolvedSchemeId =
+      schemeId ||
+      findSchemeForProjectInList(sourceRecords, project.id)?.id ||
+      findSchemeForProject(project.id)?.id ||
+      "";
     if (currentModelSelectionRef) {
       currentModelSelectionRef.current = { projectKey: project.id, schemeKey: resolvedSchemeId, loading: true };
     }
@@ -819,8 +857,20 @@ export function createLoadSavedProjectRecord(__appScope: ProjectCanvasScope) {
       if (isCurrentLoad()) {
         if (loadCompleted) {
           reportProgress(100);
+          // 帧提交后兜底复位 loading，防止相同 key bailout 或非完整树环境下锁残留。
+          const releaseSelectionLoading = () => {
+            if (isCurrentLoad() && currentModelSelectionRef?.current.projectKey === project.id) {
+              currentModelSelectionRef.current.loading = false;
+            }
+          };
+          if (typeof queueMicrotask === "function") {
+            queueMicrotask(releaseSelectionLoading);
+          } else {
+            releaseSelectionLoading();
+          }
           const clearCompletedProgress = () => {
             if (isCurrentLoad()) {
+              releaseSelectionLoading();
               setLoadingModel?.(null);
             }
           };
@@ -830,6 +880,9 @@ export function createLoadSavedProjectRecord(__appScope: ProjectCanvasScope) {
             clearCompletedProgress();
           }
         } else {
+          if (currentModelSelectionRef) {
+            currentModelSelectionRef.current.loading = false;
+          }
           setLoadingModel?.(null);
         }
       }

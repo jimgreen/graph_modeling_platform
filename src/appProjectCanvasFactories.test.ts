@@ -23,6 +23,7 @@ import {
 import { createMergeNodeUpdateLists } from "./appExtracted/appSelectionDragFactories";
 import { reconcileNodeWithDefinition as reconcileNodeWithDefinitionReal } from "./definitionInstanceSync";
 import { clampCanvasNoScrollOffset } from "./canvasViewport";
+import { apiPath } from "./config";
 import { savedSchemePathForId } from "./appExtracted/appCoreCanvasUtilities";
 import { findSavedProjectRecordInSchemes, findSavedSchemeById, replaceSavedSchemeById } from "./model-routing";
 import { DEVICE_LIBRARY, DEVICE_LIBRARY_BY_KIND, calculateNodeVisualBounds, canConnectTerminals, createDefaultNode, getNodeScaleX, getNodeScaleY, getTerminalPoint, isBusNode, isCanvasNodeMovable, isLineSegmentBusNode, isRoutableLineDeviceKind, type ModelNode } from "./model";
@@ -1119,6 +1120,130 @@ describe("模型行加载进度状态", () => {
       vi.unstubAllGlobals();
     }
   });
+
+  test("初始草稿已指向同一模型且初始 schemes 为空时，恢复加载后解除 loading 锁并允许立即保存", async () => {
+    const projectKey = "project:%E6%96%B0%E5%BB%BA%E6%96%B9%E6%A1%88/%E6%96%B0%E5%BB%BA%E6%A8%A1%E5%9E%8B";
+    const fullProject = {
+      version: 1,
+      name: "新建模型",
+      idx: 1,
+      nodes: [createDefaultNode("ac-source", { x: 320, y: 240 })],
+      edges: []
+    };
+    const summaryRecord = {
+      id: projectKey,
+      name: "新建模型",
+      project: { version: 1, name: "新建模型", idx: 1, __summaryOnly: true }
+    };
+    const backendScheme = {
+      id: "1",
+      schemeId: 1,
+      name: "新建方案",
+      projects: [summaryRecord],
+      children: []
+    };
+    const currentModelSelectionRef = {
+      current: { projectKey, schemeKey: "1", loading: false }
+    };
+    const setHasUnsavedChanges = vi.fn();
+    const saveBackendProjectRecord = vi.fn(async (_path: string[], record: unknown) => record);
+
+    const { createLoadSavedProject, createLoadSavedProjectRecord } = await loadFactoriesWithMockedDeps();
+    const loadScope = createLoadScope({
+      activeProjectKey: projectKey,
+      activeSchemeKey: "1",
+      currentModelSelectionRef,
+      loadSavedProject: vi.fn(),
+      projectLoadTokenRef: { current: 0 },
+      schemes: [],
+      findSchemeForProject: () => undefined,
+      savedProjectRecordIsSummary: (record: { project?: { __summaryOnly?: boolean } }) => Boolean(record?.project?.__summaryOnly),
+      schemePathForScheme: (id: string, records?: Array<{ id: string; name: string }>) =>
+        records?.find((item) => item.id === id) ? ["新建方案"] : [],
+      schemePathForProject: () => ["新建方案"],
+      fetchBackendProjectRecord: vi.fn(async () => ({
+        id: projectKey,
+        name: "新建模型",
+        project: fullProject
+      })),
+      setSchemes: vi.fn(),
+      suppressNextBackendSchemeSyncRef: { current: false },
+      upsertSavedProjectInScheme: (records: unknown[]) => records
+    });
+    (loadScope as Record<string, unknown>).loadSavedProject = createLoadSavedProject(loadScope as never);
+    const loadSavedProjectRecord = createLoadSavedProjectRecord(loadScope as never);
+
+    await expect(
+      loadSavedProjectRecord(summaryRecord as never, undefined, [backendScheme] as never)
+    ).resolves.toBe(true);
+
+    expect(currentModelSelectionRef.current).toEqual({
+      projectKey,
+      schemeKey: "1",
+      loading: false
+    });
+
+    const hydratedRecord = { id: projectKey, name: "新建模型", project: fullProject };
+    const hydratedScheme = { ...backendScheme, projects: [hydratedRecord] };
+    const saveCurrentProject = createSaveCurrentProject({
+      activeProjectKey: projectKey,
+      activeSchemeKey: "1",
+      clearRefreshRecoveryProject: vi.fn(),
+      currentGraphDirtyBaseline: () => ({ nodes: fullProject.nodes, edges: [] }),
+      currentModelSelectionRef,
+      currentProject: () => fullProject,
+      deferredMoveOptimizationCancelRef: { current: null },
+      deferredRoutableLineRouteRepairCancelRef: { current: null },
+      findSchemeForProject: () => hydratedScheme,
+      graphDirtyBaselineRef: { current: null },
+      projectById: new Map([[projectKey, hydratedRecord]]),
+      projectName: "新建模型",
+      rememberPersistedSchemesPayload: vi.fn(),
+      saveActiveProjectPointer: vi.fn(),
+      saveBackendProjectRecord,
+      savedSchemePathForId: () => ["新建方案"],
+      savedUndoStackLengthRef: { current: 0 },
+      schemes: [hydratedScheme],
+      selectedSchemeId: "1",
+      serializeSchemesForStorage: () => "{}",
+      setActiveProjectKey: vi.fn(),
+      setHasUnsavedChanges,
+      setProjectName: vi.fn(),
+      setSchemes: vi.fn(),
+      suppressNextGraphDirtyRef: { current: 0 },
+      undoStack: [],
+      upsertSavedProjectInScheme: () => [hydratedScheme],
+      writeOperationLog: vi.fn()
+    });
+
+    await expect(saveCurrentProject()).resolves.toBe(true);
+    expect(saveBackendProjectRecord).toHaveBeenCalledTimes(1);
+    expect(setHasUnsavedChanges).toHaveBeenLastCalledWith(false);
+  });
+
+  test("模型真实加载期间点击保存会弹出全局提示并拦截保存", async () => {
+    const showGlobalMessage = vi.fn();
+    const writeOperationLog = vi.fn();
+    const saveBackendProjectRecord = vi.fn();
+    const saveCurrentProject = createSaveCurrentProject({
+      activeProjectKey: "project-1",
+      activeSchemeKey: "1",
+      currentModelSelectionRef: {
+        current: { projectKey: "project-1", schemeKey: "1", loading: true }
+      },
+      projectById: new Map(),
+      projectName: "新建模型",
+      schemes: [],
+      showGlobalMessage,
+      saveBackendProjectRecord,
+      writeOperationLog
+    });
+
+    await expect(saveCurrentProject()).resolves.toBe(false);
+    expect(showGlobalMessage).toHaveBeenCalledWith("模型正在加载中，请稍候再保存。");
+    expect(writeOperationLog).toHaveBeenCalledWith("模型正在切换，加载完成后再保存。");
+    expect(saveBackendProjectRecord).not.toHaveBeenCalled();
+  });
 });
 
 describe("保存模型不再上传 SVG/E 产物", () => {
@@ -1222,9 +1347,9 @@ describe("保存模型不再上传 SVG/E 产物", () => {
       await expect(saveCurrentProject()).resolves.toBe(true);
       expect(fetchMock).toHaveBeenCalledTimes(3);
       expect(new Set((fetchMock.mock.calls as unknown as Array<[string, RequestInit]>).map(([url]) => String(url)))).toEqual(new Set([
-        "https://receiver.example/export/cim",
-        "https://receiver.example/export/e",
-        "https://receiver.example/export/svg"
+        `https://receiver.example${apiPath("/export/cim")}`,
+        `https://receiver.example${apiPath("/export/e")}`,
+        `https://receiver.example${apiPath("/export/svg")}`
       ]));
     } finally {
       vi.unstubAllGlobals();
