@@ -9,6 +9,7 @@ import { describe, expect, test } from "vitest";
 // is not iterable`（已实测，见 appView.test.tsx 的同一备注）。
 // 先静态 import model.ts 把 model ↔ model-node-ops 这一对按正确顺序求完，appTopbar 就安全了。
 import "../model";
+import { readFileSync } from "node:fs";
 import {
   NEW_SPACE_OPTION_VALUE,
   buildSpaceSwitcherOptions,
@@ -144,6 +145,23 @@ describe("NEW_SPACE_OPTION_VALUE", () => {
     expect(NEW_SPACE_OPTION_VALUE).toBe("__new_space__");
     expect(typeof NEW_SPACE_OPTION_VALUE).toBe("string");
     expect(NEW_SPACE_OPTION_VALUE.length).toBeGreaterThan(0);
+  });
+});
+
+describe("画布三模式主题按钮", () => {
+  const source = readFileSync(new URL("./appTopbar.tsx", import.meta.url), "utf8");
+
+  test("显示太阳、月亮和调色盘三个主题图标", () => {
+    expect(source).toContain("import { ChevronDown, Download, Loader2, Menu, Moon, Palette");
+    expect(source).toContain("themeMode === \"custom\" ? <Palette");
+    expect(source).toContain("themeMode === \"dark\" ? <Moon");
+    expect(source).toContain(": <Sun");
+  });
+
+  test("按钮文案和 data-theme-mode 覆盖三种状态", () => {
+    expect(source).toContain("切换到自定义模式");
+    expect(source).toContain("切换到浅色模式");
+    expect(source).toContain("data-theme-mode={themeMode}");
   });
 });
 

@@ -261,34 +261,48 @@ describe("右臂面板的小数格式化：后缀分支留在本地，纯数值�
 });
 
 /**
- * 【基础】→【背景色】只能黑白二选一。
- *
- * 验收口径是「浅色画布纯白、深色画布纯黑」。若还留着任意取色器，用户挑一个近白色
- * （存量项目里就落盘过 #f9fafa）就会把纯黑挡掉，切主题时画布不变色。
+ * 【基础】→【背景色】提供浅色、深色、自定义三档。
+ * 自定义档才显示背景色输入，浅/深档继续保持主题纯白/纯黑口径。
  */
-describe("【基础】→【背景色】是黑白二档切换", () => {
+describe("【基础】→【背景色】是三档主题切换", () => {
   const source = readFileSync(new URL("./appRightPanel.tsx", import.meta.url), "utf8");
+  const styles = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
 
-  test("用 Segmented 提供「白色 / 黑色」两个选项", () => {
+  test("用 Segmented 提供「白色 / 黑色 / 自定义」三个选项", () => {
     expect(source).toContain('import { Segmented } from "antd";');
     expect(source).toContain('{ label: "白色", value: "light" }');
     expect(source).toContain('{ label: "黑色", value: "dark" }');
+    expect(source).toContain('{ label: "自定义", value: "custom" }');
   });
 
-  test("背景色行不再挂任意取色器", () => {
+  test("只有自定义模式显示颜色输入", () => {
     const rowStart = source.indexOf('renderChineseParamHeader("canvasBackgroundColor")');
     expect(rowStart).toBeGreaterThan(-1);
     // 取该行到下一个表头之间的一小段
     const rowEnd = source.indexOf("renderChineseParamHeader", rowStart + 10);
     const row = source.slice(rowStart, rowEnd === -1 ? rowStart + 1200 : rowEnd);
-    expect(row).not.toContain("DeferredColorInput");
-    expect(row).not.toContain('type="color"');
+    expect(row).toContain('type="color"');
+    expect(row).toContain('themeMode === "custom"');
   });
 
-  test("选白色/黑色即切主题，并清掉存量显式底色", () => {
+  test("三档选择走统一主题 setter，并清掉存量显式底色", () => {
     const index = source.indexOf('renderChineseParamHeader("canvasBackgroundColor")');
     const row = source.slice(index, index + 1400);
-    expect(row).toContain("setThemeMode(next)");
+    expect(row).toContain("setCanvasThemeMode(next)");
     expect(row).toContain('setCanvasBackgroundColor("")');
+  });
+
+  test("自定义输入所在行解除固定高度，不能溢出覆盖背景图片行", () => {
+    expect(styles).toContain(".param-table tr:has(.custom-canvas-background-input)");
+    expect(styles).toContain("height: auto;");
+    expect(source).toContain('className="custom-canvas-background-input"');
+  });
+
+  test("自定义输入出现时三档主题按钮保持整行宽度，不被 flex 收缩", () => {
+    const index = source.indexOf('renderChineseParamHeader("canvasBackgroundColor")');
+    const row = source.slice(index, index + 1600);
+    expect(row).toContain('className="canvas-theme-segmented"');
+    expect(styles).toContain(".canvas-theme-segmented");
+    expect(styles).toContain("flex: 0 0 100%;");
   });
 });

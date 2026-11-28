@@ -41,11 +41,13 @@ import {
   enumEditorValidationMessage,
   enumValuesSummaryText,
   fetchBackendSchemes,
+  fetchBackendColorConfig,
+  serializeColorConfigForStorage,
   renderEnumValuesEditor,
   buildSvgTerminalMarkup
 } from "./appExtracted/appPersistenceLibraryExport";
 import type { GraphTemplate } from "./appExtracted/appCoreCanvasUtilities";
-import { applyDeviceTemplateDefinitionOverride, createDefaultNode, DEFAULT_COLOR_PALETTE, DEVICE_LIBRARY, type DeviceTemplate } from "./model";
+import { applyDeviceTemplateDefinitionOverride, createDefaultNode, DEFAULT_COLOR_PALETTE, DEFAULT_CUSTOM_CANVAS_THEME, DEFAULT_CUSTOM_COLOR_PALETTE, DEVICE_LIBRARY, type DeviceTemplate } from "./model";
 import { deviceDefinitionOverrideForTemplate, deviceDefinitionSharedKeyForTemplate } from "./customDeviceUtils";
 import { DEFAULT_MEASUREMENT_CONFIG } from "./measurements";
 import { svgSourceFromDataUrl } from "./stateIconDrawing";
@@ -110,6 +112,61 @@ describe("model library backend response", () => {
     })));
 
     await expect(fetchBackendSchemes()).rejects.toThrow("后台方案/模型响应格式无效，已保留当前模型库。");
+  });
+});
+
+describe("color-config persistence", () => {
+  test("serializes standard palette and an independent custom theme", () => {
+    const standardPalette = {
+      ...DEFAULT_COLOR_PALETTE,
+      energy: { ...DEFAULT_COLOR_PALETTE.energy, ac: "#123456" }
+    };
+    const customTheme = {
+      background: "#102a4c",
+      colorPalette: {
+        ...DEFAULT_CUSTOM_COLOR_PALETTE,
+        energy: { ...DEFAULT_CUSTOM_COLOR_PALETTE.energy, ac: "#abcdef" }
+      }
+    };
+
+    const payload = JSON.parse(serializeColorConfigForStorage("voltage", standardPalette, "custom", customTheme));
+
+    expect(payload.colorDisplayMode).toBe("voltage");
+    expect(payload.colorPalette.energy.ac).toBe("#123456");
+    expect(payload.canvasThemeMode).toBe("custom");
+    expect(payload.customTheme.background).toBe("#102a4c");
+    expect(payload.customTheme.colorPalette.energy.ac).toBe("#abcdef");
+    expect(payload.customTheme.colorPalette.energy.ac).not.toBe(payload.colorPalette.energy.ac);
+  });
+
+  test("keeps old two-argument callers compatible and fills custom defaults", () => {
+    const payload = JSON.parse(serializeColorConfigForStorage("energy", DEFAULT_COLOR_PALETTE));
+
+    expect(payload.canvasThemeMode).toBe("light");
+    expect(payload.customTheme.background).toBe(DEFAULT_CUSTOM_CANVAS_THEME.background);
+    expect(payload.customTheme.colorPalette).toEqual(DEFAULT_CUSTOM_CANVAS_THEME.colorPalette);
+  });
+
+  test("loads custom theme fields from backend response", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      exists: true,
+      colorDisplayMode: "energy",
+      colorPalette: { energy: { ac: "#123456" } },
+      canvasThemeMode: "custom",
+      customTheme: { background: "#102a4c", colorPalette: { energy: { ac: "#abcdef" } } }
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    })));
+
+    await expect(fetchBackendColorConfig()).resolves.toMatchObject({
+      exists: true,
+      canvasThemeMode: "custom",
+      customTheme: {
+        background: "#102a4c",
+        colorPalette: { energy: { ac: "#abcdef" } }
+      }
+    });
   });
 });
 

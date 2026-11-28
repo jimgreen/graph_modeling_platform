@@ -20,7 +20,7 @@ import {
 import { currentQiankunUser, filterSpacesForCurrentUser } from "../qiankunUserSpace";
 import { startAppTour } from "../appTour";
 import { getExportProgressState, saveLazyBlobFile, subscribeExportProgress, type SavedExportFile } from "../fileIO";
-import { ChevronDown, Download, Loader2, Menu, Moon, Pencil, Redo2, Send, Sun, Trash2, Undo2, Upload } from "lucide-react";
+import { ChevronDown, Download, Loader2, Menu, Moon, Palette, Pencil, Redo2, Send, Sun, Trash2, Undo2, Upload } from "lucide-react";
 import { isInterfaceCustomizationVisible } from "../interfaceCustomization";
 import { useRuntimeWsIndicatorSnapshot } from "../runtimeWsIndicatorStore";
 
@@ -876,18 +876,18 @@ function AppTopbarContent({ scope }: { scope: Record<string, any> }) {
           <line x1="12" y1="17" x2="12" y2="17.01"/>
         </svg>
       </button>)}
-      {/* 画布主题切换：紧贴新手引导右侧，图标在太阳/月亮之间交替 */}
+      {/* 画布主题切换：紧贴新手引导右侧，按浅色 → 深色 → 自定义循环 */}
       {visible("topbar.theme") && <button
         type="button"
         id="topbar-theme-toggle"
-        className={`topbar-primary-button topbar-theme-toggle${themeMode === "dark" ? " active" : ""}`}
+        className={`topbar-primary-button topbar-theme-toggle${themeMode !== "light" ? " active" : ""}`}
         onClick={() => toggleThemeMode()}
-        aria-label={themeMode === "dark" ? "切换到浅色模式" : "切换到深色模式"}
-        aria-pressed={themeMode === "dark"}
-        title={themeMode === "dark" ? "切换到浅色模式" : "切换到深色模式"}
-        data-theme-mode={themeMode === "dark" ? "dark" : "light"}
+        aria-label={themeMode === "light" ? "切换到深色模式" : themeMode === "dark" ? "切换到自定义模式" : "切换到浅色模式"}
+        aria-pressed={themeMode !== "light"}
+        title={themeMode === "light" ? "切换到深色模式" : themeMode === "dark" ? "切换到自定义模式" : "切换到浅色模式"}
+        data-theme-mode={themeMode}
       >
-        {themeMode === "dark" ? <Moon size={16}/> : <Sun size={16}/>}
+        {themeMode === "custom" ? <Palette size={16}/> : themeMode === "dark" ? <Moon size={16}/> : <Sun size={16}/>}
       </button>}
       {visible("topbar.interfaceCustomization") && <button
         type="button"

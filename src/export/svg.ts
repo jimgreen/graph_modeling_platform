@@ -123,6 +123,7 @@ const DEFAULT_CANVAS_BACKGROUND = LIGHT_CANVAS_BACKGROUND;
 // 并按 Task 13 brief 新增 imageAssets 可注入字段。
 export type CanvasRenderOptions = CanvasBounds & {
   backgroundColor?: string;
+  customBackground?: string;
   backgroundImage?: string;
   backgroundImageFit?: string;
   backgroundPage?: {
@@ -415,12 +416,14 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
     const template = resolveSvgNodeTemplate(node);
     return template ? resolveDeviceStateVisual(template, node) : null;
   };
-  const themeMode: CanvasThemeMode = canvasSize.themeMode === "dark" ? "dark" : "light";
-  // 存量项目历史默认浅灰底色（#f1f5f9）与绘图区同口径归一为纯白，深色模式下默认纯黑，自定义显式底色原样保留
+  const themeMode: CanvasThemeMode = canvasSize.themeMode === "dark" || canvasSize.themeMode === "custom" ? canvasSize.themeMode : "light";
+  // 存量项目历史默认浅灰底色（#f1f5f9）与绘图区同口径归一为纯白；自定义模式由全局 customBackground 控制。
   const migratedBackgroundColor = migrateLegacyCanvasBackground(canvasSize.backgroundColor);
-  const backgroundColor = themeMode === "dark"
-    ? themeCanvasFill("dark", migratedBackgroundColor)
-    : (migratedBackgroundColor || DEFAULT_CANVAS_BACKGROUND);
+  const backgroundColor = themeMode === "custom"
+    ? themeCanvasFill("custom", undefined, canvasSize.customBackground)
+    : themeMode === "dark"
+      ? themeCanvasFill("dark", migratedBackgroundColor)
+      : (migratedBackgroundColor || DEFAULT_CANVAS_BACKGROUND);
   const backgroundImage = exportSvgImageHref(canvasSize.backgroundImage ?? "", imageExportPathById);
   const escapedBackgroundColor = escapeXml(backgroundColor);
   const colorDisplayMode = canvasSize.colorDisplayMode ?? "energy";
@@ -453,13 +456,16 @@ export function buildSvgDocument(nodes: ModelNode[], edges: Edge[], canvasSize: 
     const backgroundSvg = buildSvgDocument(backgroundNodes, backgroundEdges, {
       width: backgroundWidth,
       height: backgroundHeight,
-      backgroundColor: backgroundPage.backgroundColor ?? backgroundProject?.canvasBackgroundColor ?? (themeMode === "dark" ? undefined : DEFAULT_CANVAS_BACKGROUND),
+      backgroundColor: themeMode === "custom"
+        ? canvasSize.customBackground
+        : backgroundPage.backgroundColor ?? backgroundProject?.canvasBackgroundColor ?? (themeMode === "dark" ? undefined : DEFAULT_CANVAS_BACKGROUND),
       backgroundImage: backgroundPage.backgroundImageUrl ?? backgroundProject?.canvasBackgroundImage ?? "",
       backgroundImageFit: backgroundProject?.canvasBackgroundImageFit,
       imageExportPathById,
       colorDisplayMode,
       colorPalette,
       themeMode,
+      customBackground: canvasSize.customBackground,
       deviceTemplates: canvasSize.deviceTemplates
     });
     const scopedBackgroundSvg = nestedSvgDocumentRoot(
@@ -877,7 +883,9 @@ ${rules.join("\n")}
   const edgeMarkup = routedEdges
     .map((route, index) => {
       const edge = edgeById.get(route.edgeId);
-      const stroke = edge ? getConnectionStrokeColor(edge, nodeById, colorDisplayMode, colorPalette, themeMode) : (themeMode === "dark" ? "#cbd5e1" : "#334155");
+      const stroke = edge
+        ? getConnectionStrokeColor(edge, nodeById, colorDisplayMode, colorPalette, themeMode)
+        : (themeMode === "light" ? "#334155" : themeMode === "dark" ? "#cbd5e1" : "#dbeafe");
       const sourceNode = edge ? nodeById.get(edge.sourceId) : undefined;
       const targetNode = edge ? nodeById.get(edge.targetId) : undefined;
       const sourceLayerId = sourceNode ? nodeLayerId(sourceNode) : DEFAULT_MODEL_LAYER_ID;
@@ -1005,7 +1013,7 @@ ${rules.join("\n")}
       symbolNode.params.foregroundImageFit ?? "",
       deviceStateVisualToken(stateVisual),
       terminalVisuals,
-      ...(themeMode === "dark" ? [themeMode] : [])
+      ...(themeMode !== "light" ? [themeMode] : [])
     ]);
   };
   exportNodes.forEach((node) => {
@@ -1025,7 +1033,7 @@ ${rules.join("\n")}
       const topologyNodeAttributes = deviceTopologyNodeAttributes(node);
       const voltageAttributes = nodeVoltageAttributes(node);
       const geometryTransform = nodeGeometryTransform(node);
-      const labelMarkup = buildSvgNodeLabelMarkup(node, themeMode);
+      const labelMarkup = buildSvgNodeLabelMarkup(node, themeMode, canvasSize.customBackground);
       const template = resolveSvgNodeTemplate(node);
       const stateDefinitions = template ? getTemplateStateDefinitions(template) : [];
       const activeStateVisual = resolveSvgNodeStateVisual(node);
@@ -1187,7 +1195,8 @@ ${rules.join("\n")}
         textLayerMarkup.push(buildSvgNodeLabelTextElementsMarkup(node, labelWrapperId, {
           attributes: `layer-id="${escapeXml(layerId)}"${labelMetadataAttributes ? ` ${labelMetadataAttributes}` : ""}`,
           visible: nodeLabelShouldRender(node, deviceLabelsVisible) && layerVisible(layerId),
-          themeMode
+          themeMode,
+          customBackground: canvasSize.customBackground
         }));
       }
       const useX = formatSvgNumber(node.position.x - node.size.width / 2);
@@ -1222,7 +1231,8 @@ ${rules.join("\n")}
         ownerDeviceId,
         layerId,
         visible: deviceMeasurementsVisible && layerVisible(layerId),
-        themeMode
+        themeMode,
+        customBackground: canvasSize.customBackground
       });
       if (!groupMarkup) {
         return "";

@@ -360,6 +360,24 @@ describe("配置域 /webgrp/color-config & measurement-config & device-library",
     expect(got1.json.colorDisplayMode).toBe("voltage");
   });
 
+  test("color-config 保存并返回自定义主题与独立 palette", async () => {
+    const saved = await fetchJson(apiPath("/color-config"), {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        colorDisplayMode: "energy",
+        colorPalette: { energy: { ac: "#123456" } },
+        canvasThemeMode: "custom",
+        customTheme: { background: "#102a4c", colorPalette: { energy: { ac: "#abcdef" } } }
+      })
+    });
+    expect(saved.status).toBe(200);
+    expect(saved.json.canvasThemeMode).toBe("custom");
+    expect(saved.json.customTheme.background).toBe("#102a4c");
+    expect(saved.json.colorPalette.energy.ac).toBe("#123456");
+    expect(saved.json.customTheme.colorPalette.energy.ac).toBe("#abcdef");
+  });
+
   test("measurement-config 保存 → 读取", async () => {
     const saved = await fetchJson(apiPath("/measurement-config"), {
       method: "PUT",

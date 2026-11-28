@@ -73,6 +73,7 @@ import { cloneEdgeEditablePoints, calculateNodeVisualBounds,
   createNodeFromTemplate,
   ALLOW_RESIZE_TRANSFORM_PARAM,
   DEFAULT_COLOR_PALETTE,
+  DEFAULT_CUSTOM_CANVAS_THEME,
   DEVICE_LIBRARY,
   getNodeScaleX,
   getNodeScaleY,
@@ -96,6 +97,7 @@ import { cloneEdgeEditablePoints, calculateNodeVisualBounds,
   RUN_STAT_ENUM_VALUES,
   savedProjectRecordNameKey,
   normalizeColorPalette,
+  normalizeCustomCanvasTheme,
   stripSavedSchemeRuntimeIds,
   isBusNode,
   isStaticButtonCapableNode,
@@ -116,6 +118,8 @@ import { cloneEdgeEditablePoints, calculateNodeVisualBounds,
   type Point,
   type ProjectFile,
   type ColorPalette,
+  type CustomCanvasThemeConfig,
+  type CustomCanvasThemeInput,
   type ColorDisplayMode,
   type Topology,
   type ContainerTerminalAssociationValue,
@@ -173,7 +177,7 @@ import {
 } from "../components/InputComponents";
 import { MemoDeviceGlyph } from "../DeviceGlyph";
 import { resolveTemplateComponentLibrary, isReservedDeviceDefinitionParamName, projectCustomDeviceTerminalAnchorToBoundary, createDefaultCustomDeviceTerminalAnchors, normalizeDeviceDefinitionOwnership, normalizeSharedDeviceDefinitionOverrides, concreteDeviceTemplateForStorage, customDeviceImageWithTerminalConnectors,  } from "../customDeviceUtils";
-import { rotatePointAround, terminalColor, DEFAULT_CANVAS_BACKGROUND, NODE_DOUBLE_CLICK_DIALOG_DEFAULT_WIDTH, NODE_DOUBLE_CLICK_DIALOG_DEFAULT_HEIGHT, NODE_DOUBLE_CLICK_DIALOG_MIN_WIDTH, NODE_DOUBLE_CLICK_DIALOG_MIN_HEIGHT, NODE_DOUBLE_CLICK_DIALOG_MARGIN, DEVICE_LIBRARY_DIALOG_CONFIG, DEFAULT_POWER_UNIT, DEFAULT_VOLTAGE_UNIT, DEFAULT_CURRENT_UNIT, DEFAULT_POWER_BASE_VALUE, E_SECTION_OPTIONS, COMPONENT_LIBRARY_LABELS, DEFAULT_CATEGORY_LIBRARIES, PROTECTED_CATEGORY_LIBRARIES, ENERGY_COLOR_ROWS, DEVICE_TYPE_NAME_PATTERN, MAX_CUSTOM_DEVICE_TERMINALS, TERMINAL_TYPE_OPTIONS, PARAM_VALUE_TYPE_OPTIONS, CUSTOM_DEVICE_LIBRARY_STORAGE_KEY, LEGACY_CUSTOM_CATEGORY_LIBRARIES_STORAGE_KEY, CUSTOM_CATEGORY_LIBRARIES_STORAGE_KEY, LEGACY_CUSTOM_COMPONENT_LIBRARIES_STORAGE_KEY, CUSTOM_COMPONENT_LIBRARIES_STORAGE_KEY, DEVICE_DEFINITION_OVERRIDES_STORAGE_KEY, CUSTOM_GRAPH_TEMPLATE_TYPES_STORAGE_KEY, CUSTOM_GRAPH_TEMPLATES_STORAGE_KEY, COLOR_DISPLAY_MODE_STORAGE_KEY, COLOR_PALETTE_STORAGE_KEY, CANVAS_THEME_STORAGE_KEY, MEASUREMENT_CONFIG_STORAGE_KEY, DEFAULT_GRAPH_TEMPLATE_TYPES, mergeRenderViewportBounds, normalizeSavedProjectIndexes, normalizeSavedSchemeIndexes, readImageAssets, backendErrorMessage, fetchBackendJson, backendJsonRequest,  } from "./appCoreCanvasUtilities";
+import { rotatePointAround, terminalColor, DEFAULT_CANVAS_BACKGROUND, NODE_DOUBLE_CLICK_DIALOG_DEFAULT_WIDTH, NODE_DOUBLE_CLICK_DIALOG_DEFAULT_HEIGHT, NODE_DOUBLE_CLICK_DIALOG_MIN_WIDTH, NODE_DOUBLE_CLICK_DIALOG_MIN_HEIGHT, NODE_DOUBLE_CLICK_DIALOG_MARGIN, DEVICE_LIBRARY_DIALOG_CONFIG, DEFAULT_POWER_UNIT, DEFAULT_VOLTAGE_UNIT, DEFAULT_CURRENT_UNIT, DEFAULT_POWER_BASE_VALUE, E_SECTION_OPTIONS, COMPONENT_LIBRARY_LABELS, DEFAULT_CATEGORY_LIBRARIES, PROTECTED_CATEGORY_LIBRARIES, ENERGY_COLOR_ROWS, DEVICE_TYPE_NAME_PATTERN, MAX_CUSTOM_DEVICE_TERMINALS, TERMINAL_TYPE_OPTIONS, PARAM_VALUE_TYPE_OPTIONS, CUSTOM_DEVICE_LIBRARY_STORAGE_KEY, LEGACY_CUSTOM_CATEGORY_LIBRARIES_STORAGE_KEY, CUSTOM_CATEGORY_LIBRARIES_STORAGE_KEY, LEGACY_CUSTOM_COMPONENT_LIBRARIES_STORAGE_KEY, CUSTOM_COMPONENT_LIBRARIES_STORAGE_KEY, DEVICE_DEFINITION_OVERRIDES_STORAGE_KEY, CUSTOM_GRAPH_TEMPLATE_TYPES_STORAGE_KEY, CUSTOM_GRAPH_TEMPLATES_STORAGE_KEY, COLOR_DISPLAY_MODE_STORAGE_KEY, COLOR_PALETTE_STORAGE_KEY, CANVAS_THEME_STORAGE_KEY, CUSTOM_CANVAS_THEME_STORAGE_KEY, MEASUREMENT_CONFIG_STORAGE_KEY, DEFAULT_GRAPH_TEMPLATE_TYPES, mergeRenderViewportBounds, normalizeSavedProjectIndexes, normalizeSavedSchemeIndexes, readImageAssets, backendErrorMessage, fetchBackendJson, backendJsonRequest,  } from "./appCoreCanvasUtilities";
 
 // SVG 图片资产读取器注入：原先夹在 import 语句之间靠 ESM 提升才不炸，移到 import 区之后（readImageAssets 来自上一条 import）
 setSvgImageAssetsReader(readImageAssets);
@@ -458,18 +462,33 @@ export function normalizeColorDisplayMode(value?: string): ColorDisplayMode {
   return value === "voltage" ? "voltage" : "energy";
 }
 
-export function serializeColorConfigForStorage(mode: ColorDisplayMode, palette: ColorPalette) {
+export function serializeColorConfigForStorage(
+  mode: ColorDisplayMode,
+  palette: ColorPalette,
+  canvasThemeMode: CanvasThemeMode = "light",
+  customTheme: CustomCanvasThemeInput = DEFAULT_CUSTOM_CANVAS_THEME
+) {
   return JSON.stringify({
     colorDisplayMode: mode,
-    colorPalette: normalizeColorPalette(palette)
+    colorPalette: normalizeColorPalette(palette),
+    canvasThemeMode: normalizeCanvasThemeMode(canvasThemeMode),
+    customTheme: normalizeCustomCanvasTheme(customTheme)
   });
 }
 
-export async function fetchBackendColorConfig(): Promise<{ colorDisplayMode: ColorDisplayMode; colorPalette: ColorPalette; exists: boolean }> {
+export async function fetchBackendColorConfig(): Promise<{
+  colorDisplayMode: ColorDisplayMode;
+  colorPalette: ColorPalette;
+  canvasThemeMode: CanvasThemeMode;
+  customTheme: CustomCanvasThemeConfig;
+  exists: boolean;
+}> {
   const payload = await fetchBackendJson<BackendColorConfigResponse>(apiPath("/color-config"), "读取后台配色配置失败。");
   return {
     colorDisplayMode: normalizeColorDisplayMode(payload.colorDisplayMode),
     colorPalette: normalizeColorPalette(payload.colorPalette),
+    canvasThemeMode: normalizeCanvasThemeMode(payload.canvasThemeMode),
+    customTheme: normalizeCustomCanvasTheme(payload.customTheme),
     exists: Boolean(payload.exists)
   };
 }
@@ -764,6 +783,8 @@ export type LibraryPackagePayload = {
   colorConfig?: {
     colorDisplayMode: ColorDisplayMode;
     colorPalette: ColorPalette;
+    canvasThemeMode: CanvasThemeMode;
+    customTheme: CustomCanvasThemeConfig;
   };
   manifest?: LibraryPackageManifest;
 };
@@ -923,6 +944,8 @@ export function createLibraryPackage(options: {
   colorConfig?: {
     colorDisplayMode?: ColorDisplayMode;
     colorPalette?: Partial<ColorPalette>;
+    canvasThemeMode?: CanvasThemeMode;
+    customTheme?: CustomCanvasThemeInput;
   };
   manifest?: Partial<LibraryPackageManifest>;
 }): LibraryPackagePayload {
@@ -951,7 +974,9 @@ export function createLibraryPackage(options: {
   if (scope === "all" && options.colorConfig) {
     payload.colorConfig = {
       colorDisplayMode: normalizeColorDisplayMode(options.colorConfig.colorDisplayMode),
-      colorPalette: normalizeColorPalette(options.colorConfig.colorPalette)
+      colorPalette: normalizeColorPalette(options.colorConfig.colorPalette),
+      canvasThemeMode: normalizeCanvasThemeMode(options.colorConfig.canvasThemeMode),
+      customTheme: normalizeCustomCanvasTheme(options.colorConfig.customTheme)
     };
   }
   if (scope === "all" && options.manifest) {
@@ -3129,6 +3154,23 @@ export function readThemeMode(): CanvasThemeMode {
     return normalizeCanvasThemeMode(window.localStorage.getItem(CANVAS_THEME_STORAGE_KEY));
   } catch {
     return "light";
+  }
+}
+
+export function readCustomCanvasTheme(): CustomCanvasThemeConfig {
+  try {
+    const raw = window.localStorage.getItem(CUSTOM_CANVAS_THEME_STORAGE_KEY);
+    return normalizeCustomCanvasTheme(raw ? JSON.parse(raw) : DEFAULT_CUSTOM_CANVAS_THEME);
+  } catch {
+    return normalizeCustomCanvasTheme(DEFAULT_CUSTOM_CANVAS_THEME);
+  }
+}
+
+export function writeCustomCanvasTheme(customTheme: CustomCanvasThemeConfig): void {
+  try {
+    window.localStorage.setItem(CUSTOM_CANVAS_THEME_STORAGE_KEY, JSON.stringify(normalizeCustomCanvasTheme(customTheme)));
+  } catch {
+    // localStorage 不可用时退化为本次会话内生效。
   }
 }
 

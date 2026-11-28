@@ -8,18 +8,22 @@ import { reconcileNodeWithDefinition } from "./definitionInstanceSync";
 import {
   ALLOW_RESIZE_TRANSFORM_PARAM,
   CUSTOM_PARAM_DEFINITIONS_KEY,
+  DEFAULT_CUSTOM_CANVAS_THEME,
   DEFAULT_COLOR_PALETTE,
   DEVICE_LIBRARY,
   normalizeColorPalette,
+  normalizeCustomCanvasTheme,
   resolveDeviceParameterDefinitionExportSettings,
   resolveEffectiveTemplateParameterDefinitions,
   type ColorDisplayMode,
   type ColorPalette,
+  type CustomCanvasThemeConfig,
   type DeviceParameterDefinition,
   type DeviceTemplate,
   type DeviceTemplateDefinitionOverride,
   type ModelNode
 } from "./model";
+import type { CanvasThemeMode } from "./canvasTheme";
 import {
   DEFAULT_MEASUREMENT_CONFIG,
   normalizeMeasurementConfig,
@@ -54,6 +58,8 @@ export type UserCustomizationSnapshot = {
   colorConfig: {
     colorDisplayMode: ColorDisplayMode;
     colorPalette: ColorPalette;
+    canvasThemeMode?: CanvasThemeMode;
+    customTheme?: CustomCanvasThemeConfig;
   };
   imageLibrary: {
     folders: ImageFolder[];
@@ -227,7 +233,11 @@ export function normalizeUserCustomizationSnapshot(
     measurementConfig: normalizeMeasurementConfig(source.measurementConfig ?? DEFAULT_MEASUREMENT_CONFIG),
     colorConfig: {
       colorDisplayMode: source.colorConfig?.colorDisplayMode === "voltage" ? "voltage" : "energy",
-      colorPalette: normalizeColorPalette(source.colorConfig?.colorPalette ?? DEFAULT_COLOR_PALETTE)
+      colorPalette: normalizeColorPalette(source.colorConfig?.colorPalette ?? DEFAULT_COLOR_PALETTE),
+      canvasThemeMode: source.colorConfig?.canvasThemeMode === "dark" || source.colorConfig?.canvasThemeMode === "custom"
+        ? source.colorConfig.canvasThemeMode
+        : "light",
+      customTheme: normalizeCustomCanvasTheme(source.colorConfig?.customTheme ?? DEFAULT_CUSTOM_CANVAS_THEME)
     },
     imageLibrary: normalizeUserImageLibrary(source.imageLibrary)
   };

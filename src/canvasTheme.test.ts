@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
     CANVAS_THEME_COLORS,
+    CUSTOM_CANVAS_BACKGROUND,
     DARK_CANVAS_BACKGROUND,
     LIGHT_CANVAS_BACKGROUND,
     auditDarkCanvasPalette,
@@ -8,6 +9,7 @@ import {
     canvasDrawingTokens,
     canvasThemeColorsFor,
     contrastRatio,
+    customCanvasThemeColorsFor,
     flipCanvasThemeMode,
     isLightCanvasBackground,
     migrateLegacyCanvasBackground,
@@ -24,21 +26,45 @@ describe("画布主题底色", () => {
         expect(DARK_CANVAS_BACKGROUND).toBe("#000000");
         expect(themeCanvasBackground("light")).toBe("#ffffff");
         expect(themeCanvasBackground("dark")).toBe("#000000");
+        expect(CUSTOM_CANVAS_BACKGROUND).toBe("#192586");
+        expect(themeCanvasBackground("custom", CUSTOM_CANVAS_BACKGROUND)).toBe(CUSTOM_CANVAS_BACKGROUND);
     });
 
-    it("主题名归一：只有 dark 是深色", () => {
+    it("主题名归一：支持 light / dark / custom，其他值回退浅色", () => {
         expect(normalizeCanvasThemeMode("dark")).toBe("dark");
         expect(normalizeCanvasThemeMode("light")).toBe("light");
+        expect(normalizeCanvasThemeMode("custom")).toBe("custom");
         expect(normalizeCanvasThemeMode(undefined)).toBe("light");
         expect(normalizeCanvasThemeMode("auto")).toBe("light");
         expect(flipCanvasThemeMode("light")).toBe("dark");
         expect(flipCanvasThemeMode("dark")).toBe("light");
+        expect(flipCanvasThemeMode("custom")).toBe("light");
     });
 
     it("取配色时模式与底色自洽", () => {
         expect(canvasThemeColorsFor("light").canvasBackground).toBe("#ffffff");
         expect(canvasThemeColorsFor("dark").canvasBackground).toBe("#000000");
         expect(canvasDrawingTokens("dark")).toBe(canvasThemeColorsFor("dark"));
+        expect(customCanvasThemeColorsFor().canvasBackground).toBe(CUSTOM_CANVAS_BACKGROUND);
+    });
+});
+
+describe("自定义深蓝画布的可读性", () => {
+    it("默认 token 完整且主要文本/边界达到对比度门槛", () => {
+        const custom = customCanvasThemeColorsFor();
+        expect(custom.mode).toBe("custom");
+        expect(Object.keys(custom).sort()).toEqual(Object.keys(CANVAS_THEME_COLORS.light).sort());
+        expect(contrastRatio(custom.primary, custom.canvasBackground)).toBeGreaterThanOrEqual(4.5);
+        expect(contrastRatio(custom.secondary, custom.canvasBackground)).toBeGreaterThanOrEqual(4.5);
+        expect(contrastRatio(custom.selectionStroke, custom.canvasBackground)).toBeGreaterThanOrEqual(3);
+        expect(contrastRatio(custom.canvasBorder, custom.canvasBackground)).toBeGreaterThanOrEqual(2.2);
+    });
+
+    it("用户更换合法背景后仍生成对应主题 token", () => {
+        const custom = customCanvasThemeColorsFor("#f5f5f5");
+        expect(custom.canvasBackground).toBe("#f5f5f5");
+        expect(custom.primary).not.toBe(CANVAS_THEME_COLORS.dark.primary);
+        expect(contrastRatio(custom.primary, custom.canvasBackground)).toBeGreaterThanOrEqual(4.5);
     });
 });
 

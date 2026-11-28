@@ -8,7 +8,7 @@
 // 因此这里钉三层：键集精确、色值形状合法、若干具体键值逐一钉死。
 import { describe, expect, test } from "vitest";
 
-import { BUILTIN_VOLTAGE_LEVELS, VOLTAGE_LEVEL_COLORS } from "./model";
+import { BUILTIN_VOLTAGE_LEVELS, DEFAULT_CUSTOM_COLOR_PALETTE, VOLTAGE_LEVEL_COLORS } from "./model";
 
 const HEX_COLOR = /^#[0-9a-f]{6}$/;
 
@@ -60,5 +60,22 @@ describe("VOLTAGE_LEVEL_COLORS 具体键值", () => {
     // 两个值彼此不同，所以下面这条相等断言能真的咬住「把两档并成一档」的改动。
     expect(VOLTAGE_LEVEL_COLORS["220"]).toBe("#b91c1c");
     expect(VOLTAGE_LEVEL_COLORS["330"]).toBe("#7f1d1d");
+  });
+});
+
+describe("DEFAULT_CUSTOM_COLOR_PALETTE 色值形状", () => {
+  test("自定义模式覆盖全部内置电压等级及 AC/DC 变体", () => {
+    for (const voltage of BUILTIN_VOLTAGE_LEVELS) {
+      expect(DEFAULT_CUSTOM_COLOR_PALETTE.voltage[voltage]).toMatch(HEX_COLOR);
+      expect(DEFAULT_CUSTOM_COLOR_PALETTE.voltage[`ac:${voltage}`]).toMatch(HEX_COLOR);
+      expect(DEFAULT_CUSTOM_COLOR_PALETTE.voltage[`dc:${voltage}`]).toMatch(HEX_COLOR);
+    }
+  });
+
+  test("自定义模式保留四类能流颜色", () => {
+    expect(Object.keys(DEFAULT_CUSTOM_COLOR_PALETTE.energy).sort()).toEqual(["ac", "dc", "h2", "heat"]);
+    for (const color of Object.values(DEFAULT_CUSTOM_COLOR_PALETTE.energy)) {
+      expect(color).toMatch(HEX_COLOR);
+    }
   });
 });

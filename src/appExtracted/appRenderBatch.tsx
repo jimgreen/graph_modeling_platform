@@ -307,6 +307,8 @@ export function useRenderBatch(__appScope: Record<string, any>) {
     collapsedExpandedModeComponentLibraries,
     colorDisplayMode,
     colorPalette,
+    customTheme,
+    themeMode,
     componentLibraryDisplayMode,
     connectDropReady,
     connectPreviewDomRef,
@@ -598,7 +600,7 @@ export function useRenderBatch(__appScope: Record<string, any>) {
   useEffect(createAppHookCallback80(__appScope), []);
   useEffect(createAppHookCallback81(__appScope), [schemes]);
   useEffect(createAppHookCallback82(__appScope), [customDeviceTemplates, customCategoryLibraries, customComponentLibraries, deviceDefinitionOverrides, eDeviceDefinitionLabels, eDeviceDefinitionClassExportEnabled, eDeviceDefinitionFieldOrder, customGraphTemplateTypes, customGraphTemplates]);
-  useEffect(createAppHookCallback83(__appScope), [colorDisplayMode, colorPalette]);
+  useEffect(createAppHookCallback83(__appScope), [colorDisplayMode, colorPalette, themeMode, customTheme]);
   const refreshImageFolders = () =>
       fetchBackendImageFolders()
         .then((folders) => {

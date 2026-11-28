@@ -135,6 +135,7 @@ GET /webgrp/v1/models/export
 | `mergeE` | `true` 时按 `modelType` 生成独立合并 E，返回顶层 `mergedE` |
 | `includeAssociatedModels` | `true` 时递归带上模型 `model_id` 和全局线路关联模型，范围限制在当前空间 |
 | `colorMode` | 只影响 SVG：`energy` 或 `voltage` |
+| `themeMode` | 只影响 SVG：`light`（默认）、`dark` 或 `custom`；`custom` 使用空间 `color-config.json` 中的自定义背景和 palette |
 | `strict` | 只影响 CIM；启用后沿用单模型 CIM 的关键参数校验 |
 
 示例：

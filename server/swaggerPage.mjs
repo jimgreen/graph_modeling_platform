@@ -100,8 +100,8 @@ const ENDPOINTS = [
   { scope: "space", group: "配置", method: "GET", path: "/webgrp/color-config", desc: "颜色配置", response: "{ok:true,...colorConfig}", examples: [
     { label: "当前颜色配置", params: {} }
   ]},
-  { scope: "space", group: "配置", method: "PUT", path: "/webgrp/color-config", desc: "保存颜色配置", body: { colorDisplayMode: "default", colorPalette: {} }, response: "{ok:true,...colorConfig}", examples: [
-    { label: "设为默认配色", params: { __body__: { colorDisplayMode: "default", colorPalette: {} } } }
+  { scope: "space", group: "配置", method: "PUT", path: "/webgrp/color-config", desc: "保存颜色配置与画布主题", body: { colorDisplayMode: "energy", colorPalette: {}, canvasThemeMode: "custom", customTheme: { background: "#192586", colorPalette: {} } }, response: "{ok:true,...colorConfig}", examples: [
+    { label: "设为默认配色", params: { __body__: { colorDisplayMode: "energy", colorPalette: {}, canvasThemeMode: "light", customTheme: { background: "#192586", colorPalette: {} } } } }
   ]},
   { scope: "space", group: "配置", method: "GET", path: "/webgrp/measurement-config", desc: "量测配置", response: "{ok:true,groupDefaults,measurementTypes,deviceProfiles}", examples: [
     { label: "当前量测配置", params: {} }
@@ -175,7 +175,7 @@ const ENDPOINTS = [
     { label: "每模型 E + SVG", params: { q_eMode: "per-model" } },
     { label: "合并 space.e + 每模型 SVG", params: { q_eMode: "merged" } }
   ]},
-  { scope: "space", group: "v1 方案域", method: "GET", path: "/webgrp/v1/schemes/model/export", desc: "兼容单模型原始导出；新调用推荐 /webgrp/v1/models/export", query: [{ name: "format", desc: "json|svg|e-file|cim-xml" }, { name: "schemePath", desc: "方案路径" }, { name: "schemeId", desc: "方案编号" }, { name: "name", desc: "模型名" }, { name: "colorMode", desc: "仅作用于 SVG：energy（默认）|voltage" }, { name: "labelsVisible", desc: "仅作用于 SVG：全局设备标识显隐（1/0，默认 1）" }, { name: "measurementsVisible", desc: "仅作用于 SVG：全局设备量测显隐（1/0，默认 1）" }, { name: "themeMode", desc: "仅作用于 SVG：light（默认）|dark" }, { name: "encoding", desc: "SVG/E 文件编码" }], response: "按 format 返回原始 JSON/SVG/E/CIM 响应", examples: [
+  { scope: "space", group: "v1 方案域", method: "GET", path: "/webgrp/v1/schemes/model/export", desc: "兼容单模型原始导出；新调用推荐 /webgrp/v1/models/export", query: [{ name: "format", desc: "json|svg|e-file|cim-xml" }, { name: "schemePath", desc: "方案路径" }, { name: "schemeId", desc: "方案编号" }, { name: "name", desc: "模型名" }, { name: "colorMode", desc: "仅作用于 SVG：energy（默认）|voltage" }, { name: "labelsVisible", desc: "仅作用于 SVG：全局设备标识显隐（1/0，默认 1）" }, { name: "measurementsVisible", desc: "仅作用于 SVG：全局设备量测显隐（1/0，默认 1）" }, { name: "themeMode", desc: "仅作用于 SVG：light（默认）|dark|custom" }, { name: "encoding", desc: "SVG/E 文件编码" }], response: "按 format 返回原始 JSON/SVG/E/CIM 响应", examples: [
     { label: "兼容读取模型 JSON", params: { q_format: "json", q_schemePath: SP_DEFAULT, q_name: "线路" } },
     { label: "兼容读取模型 SVG", params: { q_format: "svg", q_schemePath: SP_DEFAULT, q_name: "线路" } },
     { label: "兼容读取模型 E", params: { q_format: "e-file", q_schemePath: SP_DEFAULT, q_name: "线路" } },

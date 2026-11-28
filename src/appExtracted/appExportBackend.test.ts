@@ -238,6 +238,7 @@ describe("createExportSvgFile 走后端", () => {
       callOrder.push("saveColorConfig");
     });
     const { scope } = makeScope({
+      frontendExportMode: "backend",
       colorDisplayMode: "energy",
       themeMode: "dark",
       deviceLabelsVisible: false,
@@ -255,6 +256,27 @@ describe("createExportSvgFile 走后端", () => {
     expect(url).toContain("labelsVisible=0");
     expect(url).toContain("measurementsVisible=0");
     expect(url).toContain("themeMode=dark");
+  });
+
+  test("自定义主题导出透传 themeMode=custom", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response('<svg xmlns="http://www.w3.org/2000/svg"/>', {
+      status: 200,
+      headers: { "content-type": "image/svg+xml; charset=utf-8" }
+    })));
+    const { scope } = makeScope({
+      frontendExportMode: "backend",
+      colorDisplayMode: "energy",
+      themeMode: "custom",
+      customTheme: { background: "#102a4c", colorPalette: { energy: {}, voltage: {} } },
+      backendColorConfigLoadedRef: { current: true },
+      lastPersistedColorConfigPayloadRef: { current: "new-payload" },
+      serializeColorConfigForStorage: () => "new-payload",
+      saveBackendColorConfigPayload: vi.fn(async () => {})
+    });
+
+    await createExportSvgFile(scope)("utf-8");
+    const url = String((fetch as any).mock.calls[0][0]);
+    expect(url).toContain("themeMode=custom");
   });
 
   test("后端报错时提示消息且不落盘", async () => {

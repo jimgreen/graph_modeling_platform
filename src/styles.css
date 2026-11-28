@@ -13917,6 +13917,30 @@ body.canvas-drawing-mode .image-picker-backdrop * {
   height: var(--param-table-row-height);
 }
 
+/* 自定义画布背景在背景色单元格中多出一行输入控件，不能被固定行高裁切到下一行。 */
+.param-table tr:has(.custom-canvas-background-input) {
+  height: auto;
+}
+
+.param-table tr:has(.custom-canvas-background-input) > th,
+.param-table tr:has(.custom-canvas-background-input) > td {
+  height: auto;
+  vertical-align: top;
+}
+
+.custom-canvas-background-input .ant-input {
+  min-width: 0;
+  width: auto;
+}
+
+/* 主题切换按钮独占背景色单元格的一行，避免自定义输入出现后被多控件 flex 压窄。 */
+.inspector-panel .param-table td:has(> .canvas-theme-segmented) > .canvas-theme-segmented {
+  flex: 0 0 100%;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
 .device-param-stack {
   display: grid;
   grid-template-rows: minmax(0, 1fr);

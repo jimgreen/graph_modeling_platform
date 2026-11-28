@@ -86,7 +86,9 @@ export function createCaptureUserCustomizationSnapshot(scope: Record<string, any
       measurementConfig: scope.measurementConfigDraftRef?.current ?? scope.measurementConfigDraft ?? scope.measurementConfig,
       colorConfig: {
         colorDisplayMode: scope.colorDisplayMode,
-        colorPalette: scope.colorPalette
+        colorPalette: scope.standardColorPalette ?? scope.colorPalette,
+        canvasThemeMode: scope.themeMode,
+        customTheme: scope.customTheme
       },
       imageLibrary: { folders, assets: portableAssets }
     });
@@ -103,7 +105,9 @@ export function createPersistUserCustomizationSnapshot(scope: Record<string, any
     await scope.saveBackendMeasurementConfigPayload(scope.serializeMeasurementConfigForStorage(target.measurementConfig));
     await scope.saveBackendColorConfigPayload(scope.serializeColorConfigForStorage(
       target.colorConfig.colorDisplayMode,
-      target.colorConfig.colorPalette
+      target.colorConfig.colorPalette,
+      target.colorConfig.canvasThemeMode ?? "light",
+      target.colorConfig.customTheme
     ));
 
     const currentAssets = (await scope.fetchAllBackendImages() as ImageAsset[])
@@ -154,7 +158,9 @@ export function createApplyUserCustomizationSnapshotToState(scope: Record<string
     const measurementPayload = scope.serializeMeasurementConfigForStorage(target.measurementConfig);
     const colorPayload = scope.serializeColorConfigForStorage(
       target.colorConfig.colorDisplayMode,
-      target.colorConfig.colorPalette
+      target.colorConfig.colorPalette,
+      target.colorConfig.canvasThemeMode ?? "light",
+      target.colorConfig.customTheme
     );
 
     scope.writeLocalDeviceLibraryPersistencePayload?.(target.deviceLibrary);
@@ -192,6 +198,9 @@ export function createApplyUserCustomizationSnapshotToState(scope: Record<string
     scope.setColorPalette?.(target.colorConfig.colorPalette);
     scope.setColorPaletteDraft?.(target.colorConfig.colorPalette);
     scope.setColorPaletteTab?.(target.colorConfig.colorDisplayMode);
+    scope.setThemeMode?.(target.colorConfig.canvasThemeMode ?? "light");
+    scope.setCustomTheme?.(target.colorConfig.customTheme);
+    scope.setCustomThemeDraft?.(target.colorConfig.customTheme);
     if (scope.lastPersistedColorConfigPayloadRef) {
       scope.lastPersistedColorConfigPayloadRef.current = colorPayload;
     }

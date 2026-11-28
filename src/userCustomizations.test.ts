@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import ts from "typescript";
 import {
   CUSTOM_PARAM_DEFINITIONS_KEY,
+  DEFAULT_CUSTOM_CANVAS_THEME,
   DEFAULT_COLOR_PALETTE,
   DEVICE_LIBRARY,
   applyDeviceTemplateDefinitionOverride,
@@ -52,6 +53,32 @@ const customTemplate = (kind: string, label: string, categoryLibrary = "用户�
   terminalType: "ac",
   terminalCount: 1,
   custom: true
+});
+
+describe("custom canvas theme snapshot", () => {
+  test("normalization preserves an independent custom palette and fills omitted fields", () => {
+    const normalized = normalizeUserCustomizationSnapshot({
+      colorConfig: {
+        colorDisplayMode: "energy",
+        colorPalette: structuredClone(DEFAULT_COLOR_PALETTE),
+        canvasThemeMode: "custom",
+        customTheme: {
+          ...DEFAULT_CUSTOM_CANVAS_THEME,
+          background: "#102a4c",
+          colorPalette: {
+            ...DEFAULT_CUSTOM_CANVAS_THEME.colorPalette,
+            energy: { ...DEFAULT_CUSTOM_CANVAS_THEME.colorPalette.energy, ac: "#abcdef" }
+          }
+        }
+      }
+    });
+
+    expect(normalized.colorConfig.canvasThemeMode).toBe("custom");
+    expect(normalized.colorConfig.customTheme).toBeDefined();
+    expect(normalized.colorConfig.customTheme?.background).toBe("#102a4c");
+    expect(normalized.colorConfig.customTheme?.colorPalette.energy.ac).toBe("#abcdef");
+    expect(normalized.colorConfig.colorPalette.energy.ac).toBe(DEFAULT_COLOR_PALETTE.energy.ac);
+  });
 });
 
 describe("user customization inventory", () => {

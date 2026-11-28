@@ -10,7 +10,7 @@ import {
   createClampFloatingToolbarPosition,
   createRotateControlAvoidRectFromCanvasPoints,
   createToolbarOverlapArea,
-  createAppHookCallback12, createAppHookCallback77, createAppHookCallback82, createAppHookCallback100, createAppHookCallback109, createAppHookCallback120, createJumpToAssociatedModel, createOpenNodeDoubleClickEditor } from "./appExtracted/appToolbarHookFactories";
+  createAppHookCallback12, createAppHookCallback77, createAppHookCallback78, createAppHookCallback82, createAppHookCallback83, createAppHookCallback100, createAppHookCallback109, createAppHookCallback120, createJumpToAssociatedModel, createOpenNodeDoubleClickEditor } from "./appExtracted/appToolbarHookFactories";
 import {
   applyDeviceTemplateDefinitionOverride,
   createDefaultNode,
@@ -65,6 +65,96 @@ describe("device library persistence hook", () => {
 
     expect(writeLocalDeviceLibraryPersistencePayload).not.toHaveBeenCalled();
     expect(saveBackendDeviceLibraryPayload).not.toHaveBeenCalled();
+  });
+});
+
+describe("color-config persistence hooks", () => {
+  const flushPromises = async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  };
+
+  test("loads backend custom theme and keeps standard/custom palettes separate", async () => {
+    const setColorDisplayMode = vi.fn();
+    const setColorPalette = vi.fn();
+    const setColorPaletteDraft = vi.fn();
+    const setColorPaletteTab = vi.fn();
+    const saveBackendColorConfigPayload = vi.fn(() => Promise.resolve());
+    const scope: Record<string, any> = {
+      backendColorConfigLoadedRef: { current: false },
+      colorDisplayMode: "energy",
+      colorPalette: { energy: { ac: "#111111" }, voltage: {} },
+      fetchBackendColorConfig: vi.fn().mockResolvedValue({
+        exists: true,
+        colorDisplayMode: "voltage",
+        colorPalette: { energy: { ac: "#123456" }, voltage: {} },
+        canvasThemeMode: "custom",
+        customTheme: { background: "#102a4c", colorPalette: { energy: { ac: "#abcdef" }, voltage: {} } }
+      }),
+      lastPersistedColorConfigPayloadRef: { current: null },
+      saveBackendColorConfigPayload,
+      serializeColorConfigForStorage: vi.fn(() => "backend-payload"),
+      setColorDisplayMode,
+      setColorPalette,
+      setColorPaletteDraft,
+      setColorPaletteTab,
+      setThemeMode: vi.fn(),
+      setCustomTheme: vi.fn(),
+      suppressNextBackendColorSyncRef: { current: false }
+    };
+
+    const cleanup = createAppHookCallback78(scope)();
+    await flushPromises();
+
+    expect(scope.backendColorConfigLoadedRef.current).toBe(true);
+    expect(setColorDisplayMode).toHaveBeenCalledWith("voltage");
+    expect(setColorPalette).toHaveBeenCalledWith(expect.objectContaining({ energy: expect.objectContaining({ ac: "#123456" }) }));
+    expect(scope.setThemeMode).toHaveBeenCalledWith("custom");
+    expect(scope.setCustomTheme).toHaveBeenCalledWith(expect.objectContaining({ background: "#102a4c" }));
+    expect(setColorPaletteDraft).toHaveBeenCalledWith(expect.objectContaining({ energy: expect.objectContaining({ ac: "#123456" }) }));
+    expect(setColorPaletteTab).toHaveBeenCalledWith("voltage");
+    expect(saveBackendColorConfigPayload).not.toHaveBeenCalled();
+  });
+
+  test("debounced sync serializes theme mode and custom theme", async () => {
+    vi.useFakeTimers();
+    const setItem = vi.fn();
+    vi.stubGlobal("window", {
+      localStorage: { setItem },
+      setTimeout: globalThis.setTimeout,
+      clearTimeout: globalThis.clearTimeout
+    });
+    const saveBackendColorConfigPayload = vi.fn(() => Promise.resolve());
+    const scope: Record<string, any> = {
+      COLOR_DISPLAY_MODE_STORAGE_KEY: "display",
+      COLOR_PALETTE_STORAGE_KEY: "palette",
+      CUSTOM_CANVAS_THEME_STORAGE_KEY: "custom-theme",
+      backendColorConfigLoadedRef: { current: true },
+      colorDisplayMode: "energy",
+      colorPalette: { energy: { ac: "#123456" }, voltage: {} },
+      themeMode: "custom",
+      customTheme: { background: "#102a4c", colorPalette: { energy: { ac: "#abcdef" }, voltage: {} } },
+      lastPersistedColorConfigPayloadRef: { current: "old" },
+      normalizeColorPalette: (value: any) => value,
+      normalizeCustomCanvasTheme: (value: any) => value,
+      saveBackendColorConfigPayload,
+      serializeColorConfigForStorage: vi.fn(() => "new-payload"),
+      suppressNextBackendColorSyncRef: { current: false }
+    };
+
+    const cleanup = createAppHookCallback83(scope)();
+    await vi.advanceTimersByTimeAsync(300);
+
+    expect(scope.serializeColorConfigForStorage).toHaveBeenCalledWith(
+      "energy",
+      scope.colorPalette,
+      "custom",
+      scope.customTheme
+    );
+    expect(setItem).toHaveBeenCalledWith("display", "energy");
+    expect(setItem).toHaveBeenCalledWith("palette", expect.any(String));
+    expect(setItem).toHaveBeenCalledWith("custom-theme", expect.any(String));
+    expect(saveBackendColorConfigPayload).toHaveBeenCalledWith("new-payload");
     cleanup?.();
   });
 });

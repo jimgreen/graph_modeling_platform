@@ -213,10 +213,13 @@ function AppRightPanelContent({ scope, embedded = false }: { scope: Record<strin
     batchEditors,
     canvasBackgroundColor,
     canvasBackgroundImage,
-    // 当前画布主题：右侧面板背景色要跟着它显示纯黑/纯白
+    // 当前画布主题：右侧面板背景色要跟着三种模式显示
     themeMode,
-    setThemeMode,
-    // 画布配色：随画布主题（浅色/深色）切换，【基础】→【背景色】显示当前主题的画布底色
+    setCanvasThemeMode,
+    customTheme,
+    setCustomTheme,
+    normalizeCustomCanvasTheme,
+    // 画布配色：随画布主题切换，【基础】→【背景色】显示当前主题的画布底色
     canvasThemeColors,
     canvasSizeDraft,
     clearSelectedImageForNode,
@@ -642,27 +645,52 @@ function AppRightPanelContent({ scope, embedded = false }: { scope: Record<strin
                   <tr data-ui-content="module.rightPanel.baseCanvasSettings">
                     {batchEditors.renderChineseParamHeader("canvasBackgroundColor")}
                     <td>
-                      {/* 画布底色不再开放任意取色：验收口径是「浅色纯白、深色纯黑」，
-                          用户手动挑一个近白色会把纯黑挡掉。这里只给黑白两档，
-                          选中即把主题切到对应模式，画布底色随之取纯白/纯黑。 */}
                       <Segmented
+                        className="canvas-theme-segmented"
                         size="small"
                         block
-                        value={themeMode === "dark" ? "dark" : "light"}
-
+                        value={themeMode}
                         options={[
                           { label: "白色", value: "light" },
                           { label: "黑色", value: "dark" },
+                          { label: "自定义", value: "custom" },
                         ]}
                         onChange={(value) => {
-                          const next = value === "dark" ? "dark" : "light";
+                          const next = value === "dark" || value === "custom" ? value : "light";
                           if (next === themeMode) return;
                           pushUndoSnapshot();
-                          setThemeMode(next);
+                          setCanvasThemeMode(next);
                           // 底色由主题决定，清掉存量项目里落盘的显式底色，避免它继续压着主题色
                           setCanvasBackgroundColor("");
                         }}
                       />
+                      {themeMode === "custom" && (
+                        <div className="custom-canvas-background-input" style={{ display: "flex", gap: 8, alignItems: "center", width: "100%", minWidth: 0, marginTop: 8 }}>
+                          <input
+                            type="color"
+                            aria-label="自定义画布背景色"
+                            value={/^#[0-9a-fA-F]{6}$/.test(customTheme.background) ? customTheme.background : "#192586"}
+                            onChange={(event) => {
+                              const nextTheme = normalizeCustomCanvasTheme({ ...customTheme, background: event.target.value });
+                              setCustomTheme(nextTheme);
+                              setCanvasThemeMode("custom");
+                              setCanvasBackgroundColor("");
+                            }}
+                            style={{ width: 32, height: 32, padding: 0, border: "1px solid #d9d9d9", borderRadius: 6, cursor: "pointer" }}
+                          />
+                          <BufferedTextInput
+                            value={customTheme.background}
+                            onCommit={(value: string) => {
+                              const nextTheme = normalizeCustomCanvasTheme({ ...customTheme, background: value });
+                              setCustomTheme(nextTheme);
+                              setCanvasThemeMode("custom");
+                              setCanvasBackgroundColor("");
+                            }}
+                            aria-label="自定义画布背景色值"
+                            style={{ flex: "1 1 0", minWidth: 0, width: "auto" }}
+                          />
+                        </div>
+                      )}
                     </td>
                   </tr>
                   <tr data-ui-content="module.rightPanel.baseBackgroundSettings">

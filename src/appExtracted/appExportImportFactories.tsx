@@ -495,6 +495,8 @@ async function flushPendingColorConfigIfNeeded(scope: ExportImportScope) {
     backendColorConfigLoadedRef,
     colorDisplayMode,
     colorPalette,
+    customTheme,
+    themeMode,
     lastPersistedColorConfigPayloadRef,
     normalizeColorPalette,
     saveBackendColorConfigPayload,
@@ -510,7 +512,7 @@ async function flushPendingColorConfigIfNeeded(scope: ExportImportScope) {
   const normalizedPalette = typeof normalizeColorPalette === "function"
     ? normalizeColorPalette(colorPalette)
     : colorPalette;
-  const normalizedPayload = serializeColorConfigForStorage(colorDisplayMode, normalizedPalette);
+  const normalizedPayload = serializeColorConfigForStorage(colorDisplayMode, normalizedPalette, themeMode, customTheme);
   if (lastPersistedColorConfigPayloadRef?.current === normalizedPayload) {
     return;
   }
@@ -534,7 +536,7 @@ async function fetchBackendModelSvgText(__appScope: ExportImportScope, textEncod
     + `&colorMode=${encodeURIComponent(colorMode)}`
     + (deviceLabelsVisible === false ? "&labelsVisible=0" : "")
     + (deviceMeasurementsVisible === false ? "&measurementsVisible=0" : "")
-    + (themeMode === "dark" ? "&themeMode=dark" : "")
+    + (themeMode === "dark" || themeMode === "custom" ? `&themeMode=${encodeURIComponent(themeMode)}` : "")
     + `&encoding=${encodeURIComponent(textEncoding)}`
   );
   const response = await fetch(url, { method: "GET" });

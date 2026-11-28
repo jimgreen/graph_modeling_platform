@@ -106,6 +106,8 @@ export async function renderSavedModelSvg({
     readMeasurementConfig({ paths }),
     readColorConfig({ paths })
   ]);
+  const customTheme = colorConfig.customTheme ?? {};
+  const exportColorPalette = themeMode === "custom" ? customTheme.colorPalette : colorConfig.colorPalette;
   const deviceTemplates = buildEffectiveLibraryTemplates(
     library.customDeviceTemplates ?? [],
     library.deviceDefinitionOverrides ?? {}
@@ -139,13 +141,14 @@ export async function renderSavedModelSvg({
       ...canvasBoundsOf(project),
       backgroundPage,
       // 缺省/空串不传：由渲染器回落自身默认 DEFAULT_CANVAS_BACKGROUND，避免后端再写一份默认字面量
-      backgroundColor: project.canvasBackgroundColor || undefined,
+      backgroundColor: themeMode === "custom" ? customTheme.background : (project.canvasBackgroundColor || undefined),
       backgroundImage: project.canvasBackgroundImage ?? "",
       // energy 为端点旧契约缺省；voltage 供前端导出复用
       colorDisplayMode: colorMode,
       // 配色取自部署配色配置 color-config.json（前端本地导出同源）；文件缺失/为空时
       // buildSvgDocument 内的 normalizeColorPalette 合并默认调色板，输出与接线前一致
-      colorPalette: colorConfig.colorPalette,
+      colorPalette: exportColorPalette,
+      customBackground: themeMode === "custom" ? customTheme.background : undefined,
       // 覆盖字段真名 deviceDefinitionOverrides（readDeviceLibraryConfig 归一化后返回）
       deviceTemplates,
       layers: project.layers,
@@ -154,7 +157,7 @@ export async function renderSavedModelSvg({
       measurementConfig,
       deviceLabelsVisible,
       deviceMeasurementsVisible,
-      ...(themeMode === "dark" ? { themeMode: "dark" } : {}),
+      ...(themeMode !== "light" ? { themeMode } : {}),
       // 同一份 id→dataURL 映射两用：imageAssets 供 assetId 解析（节点/状态图元），imageExportPathById 供 href 替换。
       // 只读被引用的图片，不整库内联；代价是响应体随图片体积膨胀。
       imageExportPathById,

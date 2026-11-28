@@ -298,8 +298,8 @@ export async function handleV1ModelSvg({ url, response, paths }) {
     return;
   }
   const themeMode = (url.searchParams.get("themeMode") ?? "").trim() || "light";
-  if (themeMode !== "light" && themeMode !== "dark") {
-    sendV1Error(response, "bad-request", "themeMode 仅支持 light 或 dark。");
+  if (themeMode !== "light" && themeMode !== "dark" && themeMode !== "custom") {
+    sendV1Error(response, "bad-request", "themeMode 仅支持 light、dark 或 custom。");
     return;
   }
   const encoding = (url.searchParams.get("encoding") ?? "").trim().toLowerCase() || "utf-8";
@@ -314,7 +314,7 @@ export async function handleV1ModelSvg({ url, response, paths }) {
       colorMode,
       ...(labelsVisibleParsed.value === false ? { deviceLabelsVisible: false } : {}),
       ...(measurementsVisibleParsed.value === false ? { deviceMeasurementsVisible: false } : {}),
-      ...(themeMode === "dark" ? { themeMode: "dark" } : {}),
+      ...(themeMode !== "light" ? { themeMode } : {}),
       paths
     });
     if (error) {

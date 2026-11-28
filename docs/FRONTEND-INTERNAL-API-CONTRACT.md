@@ -1125,6 +1125,14 @@ PUT ${BASE_URL}/webgrp/color-config
       "110": "#ef4444",
       "220": "#b91c1c"
     }
+  },
+  "canvasThemeMode": "custom",
+  "customTheme": {
+    "background": "#0b1f3a",
+    "colorPalette": {
+      "energy": { "ac": "#93c5fd", "dc": "#5eead4", "h2": "#d8b4fe", "heat": "#fca5a5" },
+      "voltage": {}
+    }
   }
 }
 ```
@@ -1143,7 +1151,12 @@ PUT ${BASE_URL}/webgrp/color-config
     },
     "voltage": {}
   }
-}
+  },
+  "canvasThemeMode": "custom",
+  "customTheme": {
+    "background": "#0b1f3a",
+    "colorPalette": { "energy": {}, "voltage": {} }
+  }
 ```
 
 #### PUT Response `200`
@@ -1153,7 +1166,9 @@ PUT ${BASE_URL}/webgrp/color-config
   "ok": true,
   "exists": true,
   "colorDisplayMode": "energy",
-  "colorPalette": {}
+  "colorPalette": {},
+  "canvasThemeMode": "custom",
+  "customTheme": { "background": "#0b1f3a", "colorPalette": {} }
 }
 ```
 

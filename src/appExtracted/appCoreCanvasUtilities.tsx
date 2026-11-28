@@ -1,6 +1,7 @@
 export * from "../export/static-button-targets";
 import { lazy } from "react";
 import { apiPath } from "../config";
+import type { CanvasThemeMode } from "../canvasTheme";
 import { BUILTIN_VOLTAGE_LEVELS, ELEMENT_TREE_COMPONENT_LIBRARY_LABELS } from "../model";
 import { E_SECTION_COLUMNS } from "../export/e-section-schema";
 import {
@@ -56,6 +57,8 @@ import {
   type CanvasBounds,
   type ColorPalette,
   type ColorDisplayMode,
+  type CustomCanvasThemeConfig,
+  type CustomCanvasThemeInput,
   type Topology,
   type ContainerTerminalAssociationType,
   type ContainerTerminalAssociationValue,
@@ -1299,6 +1302,8 @@ export type BackendProjectSaveResponse = {
 export type BackendColorConfigResponse = {
   colorDisplayMode?: ColorDisplayMode;
   colorPalette?: Partial<ColorPalette>;
+  canvasThemeMode?: CanvasThemeMode;
+  customTheme?: CustomCanvasThemeInput;
   exists?: boolean;
   savedAt?: string;
 };
@@ -2183,8 +2188,10 @@ export const COLOR_DISPLAY_MODE_STORAGE_KEY = "power-system-color-display-mode";
 
 export const COLOR_PALETTE_STORAGE_KEY = "power-system-color-palette";
 
-// 画布主题（浅色/深色）的用户选择。本机 UI 偏好，不随方案落盘。
+// 画布主题（浅色/深色/自定义）的用户选择。本地缓存是后台不可用时的回退。
 export const CANVAS_THEME_STORAGE_KEY = "power-system-canvas-theme";
+
+export const CUSTOM_CANVAS_THEME_STORAGE_KEY = "power-system-custom-canvas-theme";
 
 export const MEASUREMENT_CONFIG_STORAGE_KEY = "power-system-platform-measurements";
 

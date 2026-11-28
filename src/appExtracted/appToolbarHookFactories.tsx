@@ -230,7 +230,7 @@ export function createPlaceFloatingToolbar(__appScope: ToolbarHookScope) {
 
 export function createRenderMeasurementGroup(__appScope: ToolbarHookScope) {
   return (group: MeasurementGroup) => {
-  const { beginMeasurementDrag, finishMeasurementDrag, dragging, draggingNodeIdSet, formatSvgNumber, g, measurementGroupBackgroundColor, measurementGroupBorderColor, measurementGroupBorderDashArray, measurementGroupBorderWidth, measurementGroupCanvasPosition, measurementGroupRenderMetrics, openMeasurementEditorForNode, rect, selectedMeasurementGroup, text, themeMode, themedMeasurementTextColor, title, visibleNodeById } = __appScope;
+  const { beginMeasurementDrag, customTheme, finishMeasurementDrag, dragging, draggingNodeIdSet, formatSvgNumber, g, measurementGroupBackgroundColor, measurementGroupBorderColor, measurementGroupBorderDashArray, measurementGroupBorderWidth, measurementGroupCanvasPosition, measurementGroupRenderMetrics, openMeasurementEditorForNode, rect, selectedMeasurementGroup, text, themeMode, themedMeasurementTextColor, title, visibleNodeById } = __appScope;
 
     const node = visibleNodeById.get(group.nodeId);
     if (!node || !group.visible) {
@@ -293,7 +293,7 @@ export function createRenderMeasurementGroup(__appScope: ToolbarHookScope) {
               dominantBaseline="middle"
               // display.color 是按浅色画布保存的数据色；深色下默认深灰字会消失，
               // 经 themedMeasurementTextColor 抬到浅色字，用户自定义的彩色原样保留。
-              fill={themedMeasurementTextColor(row.display.color, themeMode)}
+              fill={themedMeasurementTextColor(row.display.color, themeMode, customTheme?.background)}
               fontFamily={metrics.fontFamily}
               fontSize={row.fontSize}
               fontWeight={row.display.fontWeight}
@@ -582,7 +582,7 @@ export function createBeginReadonlyBackgroundStaticButtonPointerFeedback(__appSc
 
 export function createRenderReadonlyBackgroundPage(__appScope: ToolbarHookScope) {
   return () => {
-  const { DEFAULT_CANVAS_BACKGROUND, MemoDeviceGlyph, backgroundPageRender, beginReadonlyBackgroundStaticButtonPointerFeedback, circle, clearStaticButtonFeedback, clipPath, colorDisplayMode, colorPalette, themeMode, deviceLabelsVisible, g, getConnectionStrokeColor, getNodeScaleX, getNodeScaleY, getTerminalDisplayColor, handleStaticButtonClick, image, isBusNode, isRoutableLineDeviceKind, isStaticButtonEnabledForNode, isStaticNode, line, nodeForegroundImage, nodeGeometryTransform, nodeImage, nodeImageContentTransform, nodeLabelShouldRender, nodeLabelText, nodeLabelTextAnchor, nodeLabelTextStyle, nodeLabelTransform, nodeLabelVertical, nodeLabelVerticalSegments, nodeLabelVerticalTokenStyle, nodeLabelVerticalTokenY, path, rect, resolveNodeStateVisual, setStaticButtonFeedback, staticButtonPointerRef, staticButtonVisual, svgStrokeDashArray, terminalRenderLocalPoint, terminalStubSegment, terminalStubStrokeWidth, text, title } = __appScope;
+  const { DEFAULT_CANVAS_BACKGROUND, MemoDeviceGlyph, backgroundPageRender, beginReadonlyBackgroundStaticButtonPointerFeedback, canvasThemeColors, circle, clearStaticButtonFeedback, clipPath, colorDisplayMode, colorPalette, themeMode, deviceLabelsVisible, g, getConnectionStrokeColor, getNodeScaleX, getNodeScaleY, getTerminalDisplayColor, handleStaticButtonClick, image, isBusNode, isRoutableLineDeviceKind, isStaticButtonEnabledForNode, isStaticNode, line, nodeForegroundImage, nodeGeometryTransform, nodeImage, nodeImageContentTransform, nodeLabelShouldRender, nodeLabelText, nodeLabelTextAnchor, nodeLabelTextStyle, nodeLabelTransform, nodeLabelVertical, nodeLabelVerticalSegments, nodeLabelVerticalTokenStyle, nodeLabelVerticalTokenY, path, rect, resolveNodeStateVisual, setStaticButtonFeedback, staticButtonPointerRef, staticButtonVisual, svgStrokeDashArray, terminalRenderLocalPoint, terminalStubSegment, terminalStubStrokeWidth, text, title } = __appScope;
     if (!backgroundPageRender) {
       return null;
     }
@@ -778,7 +778,7 @@ export function createRenderReadonlyBackgroundPage(__appScope: ToolbarHookScope)
                           y={nodeLabelVerticalTokenY(index, nodeLabelVerticalSegments(nodeLabelText(node)).length, node)}
                           dominantBaseline="middle"
                           textAnchor="middle"
-                          style={nodeLabelVerticalTokenStyle(node, themeMode)}
+                          style={nodeLabelVerticalTokenStyle(node, themeMode, canvasThemeColors.canvasBackground)}
                         >
                           {segment.text}
                         </text>
@@ -789,7 +789,7 @@ export function createRenderReadonlyBackgroundPage(__appScope: ToolbarHookScope)
                         y="0"
                         dominantBaseline="middle"
                         textAnchor={nodeLabelTextAnchor(node)}
-                        style={nodeLabelTextStyle(node, themeMode)}
+                        style={nodeLabelTextStyle(node, themeMode, canvasThemeColors.canvasBackground)}
                       >
                         {nodeLabelText(node)}
                       </text>
@@ -2852,21 +2852,28 @@ export function createAppHookCallback77(__appScope: ToolbarHookScope) {
 
 export function createAppHookCallback78(__appScope: ToolbarHookScope) {
   return () => {
-  const { backendColorConfigLoadedRef, colorDisplayMode, colorPalette, fetchBackendColorConfig, lastPersistedColorConfigPayloadRef, saveBackendColorConfigPayload, serializeColorConfigForStorage, setColorDisplayMode, setColorPalette, setColorPaletteDraft, setColorPaletteTab, suppressNextBackendColorSyncRef } = __appScope;
+  const { backendColorConfigLoadedRef, colorDisplayMode, colorPalette, customTheme, fetchBackendColorConfig, lastPersistedColorConfigPayloadRef, saveBackendColorConfigPayload, serializeColorConfigForStorage, setColorDisplayMode, setColorPalette, setColorPaletteDraft, setColorPaletteTab, setCustomTheme, setStandardColorPalette, setThemeMode, suppressNextBackendColorSyncRef, themeMode } = __appScope;
     fetchBackendColorConfig()
       .then((backendColorConfig: Record<string, unknown>) => {
         backendColorConfigLoadedRef.current = true;
         if (backendColorConfig.exists) {
-          const backendPayload = serializeColorConfigForStorage(backendColorConfig.colorDisplayMode, backendColorConfig.colorPalette);
+          const backendPayload = serializeColorConfigForStorage(
+            backendColorConfig.colorDisplayMode,
+            backendColorConfig.colorPalette,
+            backendColorConfig.canvasThemeMode,
+            backendColorConfig.customTheme
+          );
           lastPersistedColorConfigPayloadRef.current = backendPayload;
           suppressNextBackendColorSyncRef.current = true;
           setColorDisplayMode(backendColorConfig.colorDisplayMode);
-          setColorPalette(backendColorConfig.colorPalette);
+          (setStandardColorPalette ?? setColorPalette)(backendColorConfig.colorPalette);
           setColorPaletteDraft(backendColorConfig.colorPalette);
           setColorPaletteTab(backendColorConfig.colorDisplayMode);
+          setThemeMode?.(backendColorConfig.canvasThemeMode);
+          setCustomTheme?.(backendColorConfig.customTheme);
           return;
         }
-        const localPayload = serializeColorConfigForStorage(colorDisplayMode, colorPalette);
+        const localPayload = serializeColorConfigForStorage(colorDisplayMode, colorPalette, themeMode, customTheme);
         lastPersistedColorConfigPayloadRef.current = localPayload;
         void saveBackendColorConfigPayload(localPayload).catch(() => {
           // 后台暂不可写时仍保留浏览器本地配色缓存。
@@ -3027,13 +3034,16 @@ export function createAppHookCallback82(__appScope: ToolbarHookScope) {
 
 export function createAppHookCallback83(__appScope: ToolbarHookScope) {
   return () => {
-  const { COLOR_DISPLAY_MODE_STORAGE_KEY, COLOR_PALETTE_STORAGE_KEY, backendColorConfigLoadedRef, colorDisplayMode, colorPalette, lastPersistedColorConfigPayloadRef, normalizeColorPalette, saveBackendColorConfigPayload, serializeColorConfigForStorage, suppressNextBackendColorSyncRef } = __appScope;
+  const { CANVAS_THEME_STORAGE_KEY, COLOR_DISPLAY_MODE_STORAGE_KEY, COLOR_PALETTE_STORAGE_KEY, CUSTOM_CANVAS_THEME_STORAGE_KEY, backendColorConfigLoadedRef, colorDisplayMode, colorPalette, customTheme, lastPersistedColorConfigPayloadRef, normalizeColorPalette, normalizeCustomCanvasTheme, saveBackendColorConfigPayload, serializeColorConfigForStorage, standardColorPalette, suppressNextBackendColorSyncRef, themeMode } = __appScope;
     const timeoutId = window.setTimeout(() => {
-      const normalizedPalette = normalizeColorPalette(colorPalette);
-      const normalizedColorConfigPayload = serializeColorConfigForStorage(colorDisplayMode, normalizedPalette);
+      const normalizedPalette = normalizeColorPalette(standardColorPalette ?? colorPalette);
+      const normalizedCustomTheme = normalizeCustomCanvasTheme(customTheme);
+      const normalizedColorConfigPayload = serializeColorConfigForStorage(colorDisplayMode, normalizedPalette, themeMode, normalizedCustomTheme);
       try {
         window.localStorage.setItem(COLOR_DISPLAY_MODE_STORAGE_KEY, colorDisplayMode);
         window.localStorage.setItem(COLOR_PALETTE_STORAGE_KEY, JSON.stringify(normalizedPalette));
+        window.localStorage.setItem(CANVAS_THEME_STORAGE_KEY, themeMode);
+        window.localStorage.setItem(CUSTOM_CANVAS_THEME_STORAGE_KEY, JSON.stringify(normalizedCustomTheme));
       } catch {
         // 浏览器缓存不可写时不阻断当前编辑，后台同步仍会继续尝试。
       }

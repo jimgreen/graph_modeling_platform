@@ -20,6 +20,7 @@ export const CanvasStaticBackgroundLayer = memo(function CanvasStaticBackgroundL
     canvasThemeColors,
     canvasRenderBounds,
     themeMode,
+    customTheme,
     canvasBackgroundColor,
     canvasBackgroundImageUrl,
     canvasBackgroundImageFit,
@@ -51,7 +52,7 @@ export const CanvasStaticBackgroundLayer = memo(function CanvasStaticBackgroundL
         data-theme-background={canvasThemeColors.canvasBackground}
         width={canvasRenderBounds.width}
         height={canvasRenderBounds.height}
-        fill={themeCanvasFill(themeMode, canvasBackgroundColor) || canvasThemeColors.canvasBackground}
+        fill={themeCanvasFill(themeMode, canvasBackgroundColor, customTheme?.background) || canvasThemeColors.canvasBackground}
       />
       {canvasBackgroundImageUrl && (
         <SvgMarkupChunk

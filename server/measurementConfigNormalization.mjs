@@ -13,13 +13,77 @@ export function normalizeColorRecord(source) {
   }, {});
 }
 
+const defaultCustomEnergyColors = {
+  ac: "#93c5fd",
+  dc: "#5eead4",
+  h2: "#d8b4fe",
+  heat: "#fca5a5"
+};
+
+const defaultCustomVoltageColors = {
+  "0": "#cbd5e1",
+  "0.22": "#86efac",
+  "0.4": "#86efac",
+  "6": "#7dd3fc",
+  "10": "#fdba74",
+  "10.5": "#fdba74",
+  "20": "#fdba74",
+  "35": "#d8b4fe",
+  "66": "#a5b4fc",
+  "110": "#fca5a5",
+  "220": "#fda4af",
+  "330": "#fecdd3",
+  "500": "#f87171",
+  "750": "#67e8f9",
+  "800": "#a5f3fc",
+  "1000": "#a5f3fc"
+};
+
+const defaultCustomVoltagePalette = Object.entries(defaultCustomVoltageColors).reduce((result, [voltage, color]) => {
+  result[voltage] = color;
+  result[`ac:${voltage}`] = color;
+  result[`dc:${voltage}`] = color;
+  return result;
+}, {});
+
+const defaultCustomColorPalette = {
+  energy: { ...defaultCustomEnergyColors },
+  voltage: defaultCustomVoltagePalette
+};
+
+const defaultCustomTheme = {
+  background: "#192586",
+  colorPalette: defaultCustomColorPalette
+};
+
+function normalizeCssColor(value, fallback) {
+  if (typeof value !== "string") return fallback;
+  const candidate = value.trim();
+  if (/^#[0-9a-f]{3,8}$/i.test(candidate) || /^rgba?\([^)]*\)$/i.test(candidate)) {
+    return candidate;
+  }
+  return fallback;
+}
+
 export function normalizeColorConfig(payload) {
   const colorPalette = payload?.colorPalette && typeof payload.colorPalette === "object" ? payload.colorPalette : {};
+  const customTheme = payload?.customTheme && typeof payload.customTheme === "object" ? payload.customTheme : {};
+  const customPalette = customTheme.colorPalette && typeof customTheme.colorPalette === "object" ? customTheme.colorPalette : {};
   return {
     colorDisplayMode: payload?.colorDisplayMode === "voltage" ? "voltage" : "energy",
     colorPalette: {
       energy: normalizeColorRecord(colorPalette.energy),
       voltage: normalizeColorRecord(colorPalette.voltage)
+    },
+    canvasThemeMode: payload?.canvasThemeMode === "dark" || payload?.canvasThemeMode === "custom"
+      ? payload.canvasThemeMode
+      : "light",
+    customTheme: {
+      background: normalizeCssColor(customTheme.background, defaultCustomTheme.background),
+      colorPalette: {
+        energy: { ...defaultCustomEnergyColors, ...normalizeColorRecord(customPalette.energy) },
+        voltage: { ...defaultCustomVoltagePalette, ...normalizeColorRecord(customPalette.voltage) }
+      }
     }
   };
 }

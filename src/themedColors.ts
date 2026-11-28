@@ -15,6 +15,7 @@ import {
 } from "./model.ts";
 import {
   canvasThemeColorsFor,
+  customCanvasThemeColorsFor,
   themeCanvasBackground,
   type CanvasThemeColors,
   type CanvasThemeMode
@@ -22,19 +23,19 @@ import {
 
 export type { ColorThemeMode };
 
-/** 把任意输入归一成配色主题（只有 dark 是深色）。 */
+/** 把任意输入归一成配色主题。 */
 export function themeModeOf(value: unknown): ColorThemeMode {
-  return value === "dark" ? "dark" : "light";
+  return value === "dark" || value === "custom" ? value : "light";
 }
 
 /** 当前主题下的画布配色表（底色、网格、文本、辅助元素）。 */
-export function themedCanvasColors(themeMode: unknown): CanvasThemeColors {
-  return canvasThemeColorsFor(themeModeOf(themeMode) as CanvasThemeMode);
+export function themedCanvasColors(themeMode: unknown, customBackground?: string): CanvasThemeColors {
+  return canvasThemeColorsFor(themeModeOf(themeMode) as CanvasThemeMode, customBackground);
 }
 
-/** 当前主题下的画布底色（浅色纯白 / 深色纯黑）。 */
-export function themedCanvasBackground(themeMode: unknown): string {
-  return themeCanvasBackground(themeModeOf(themeMode) as CanvasThemeMode);
+/** 当前主题下的画布底色（浅色纯白 / 深色纯黑 / 自定义背景）。 */
+export function themedCanvasBackground(themeMode: unknown, customBackground?: string): string {
+  return themeCanvasBackground(themeModeOf(themeMode) as CanvasThemeMode, customBackground);
 }
 
 /** 端子显示色（能流 / 电压等级两模式）。 */
@@ -105,9 +106,20 @@ function isDarkInkColor(color: string): boolean {
   return saturation < 0.55;
 }
 
-export function themedMeasurementTextColor(color: string, themeMode: unknown = "light"): string {
-  if (themeModeOf(themeMode) !== "dark") {
+export function themedMeasurementTextColor(color: string, themeMode: unknown = "light", customBackground?: string): string {
+  const normalizedTheme = themeModeOf(themeMode);
+  if (normalizedTheme === "light") {
     return color;
   }
-  return isDarkInkColor(color) ? MEASUREMENT_DEFAULT_TEXT_DARK : color;
+  const customColors = normalizedTheme === "custom" && customBackground
+    ? customCanvasThemeColorsFor(customBackground)
+    : null;
+  if (customColors?.primary === "#111827") {
+    return color;
+  }
+  return isDarkInkColor(color)
+    ? customColors
+      ? customColors.primary
+      : MEASUREMENT_DEFAULT_TEXT_DARK
+    : color;
 }

@@ -517,6 +517,29 @@ describe(`${svgPath} 正路径`, () => {
     expect(await (await fetch(`${url}&colorMode=energy`)).text()).toBe(baselineEnergy);
     expect(await (await fetch(`${url}&colorMode=voltage`)).text()).toBe(baselineVoltage);
   });
+
+  test("themeMode=custom 接受自定义背景和独立配色", async () => {
+    const settingsDir = join(dataDir, "settings");
+    const configPath = join(settingsDir, "color-config.json");
+    const url = `${baseUrl}${svgPath}?format=svg&schemePath=${schemePath}&name=${encodeURIComponent("开关模型")}&themeMode=custom&colorMode=energy`;
+    try {
+      mkdirSync(settingsDir, { recursive: true });
+      writeFileSync(configPath, JSON.stringify({
+        canvasThemeMode: "custom",
+        customTheme: {
+          background: "#102a4c",
+          colorPalette: { energy: { ac: "#abcdef" }, voltage: {} }
+        }
+      }), "utf-8");
+      const response = await fetch(url);
+      expect(response.status).toBe(200);
+      const text = await response.text();
+      expect(text).toContain('fill="#102a4c"');
+      expect(text).toContain("#abcdef");
+    } finally {
+      rmSync(configPath, { force: true });
+    }
+  });
 });
 
 // 背景页重建：宿主模型只落盘 backgroundProjectIdx + backgroundLayerIds，图层由服务端读被引用模型重建

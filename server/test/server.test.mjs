@@ -1921,10 +1921,17 @@ describe("存储读取失败的告警", () => {
 
       const config = await readColorConfig({ paths: spacePathsFor(root, "default") });
 
-      expect(config).toEqual({
+      expect(config).toMatchObject({
         exists: false,
         colorDisplayMode: "energy",
-        colorPalette: { energy: {}, voltage: {} }
+        colorPalette: { energy: {}, voltage: {} },
+        canvasThemeMode: "light",
+        customTheme: {
+          background: "#192586",
+          colorPalette: {
+            energy: { ac: "#93c5fd", dc: "#5eead4", h2: "#d8b4fe", heat: "#fca5a5" }
+          }
+        }
       });
       // 语法错误没有 code，走的是 error?.name 那一支 —— 告警文案必须能看出是 SyntaxError，
       // 否则「IO 失败」与「文件不存在」在日志上无法区分（这正是 warnStoreReadFallback 的存在理由）

@@ -1,7 +1,7 @@
 import { ChangeEvent, DragEvent, Fragment, Suspense, isValidElement, lazy, memo, KeyboardEvent as ReactKeyboardEvent, MouseEvent, PointerEvent, type CSSProperties, type ReactNode, type SetStateAction, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
 import { createPortal, flushSync } from "react-dom";
 import { useTransition } from "react";
-import { flipCanvasThemeMode, canvasThemeColorsFor, migrateLegacyCanvasBackground, themeSemanticColor, type CanvasThemeMode } from "./canvasTheme";
+import { canvasThemeColorsFor, migrateLegacyCanvasBackground, themeSemanticColor, type CanvasThemeMode } from "./canvasTheme";
 import { themedMeasurementTextColor } from "./themedColors";
 import {
   AlignCenter,
@@ -545,6 +545,7 @@ import {
 import { customParamId, deviceDefinitionRowId, stateDraftRowId, DEFAULT_STATE_ICON_DRAWING_FRAME, DEFAULT_STATE_PAGE_ID, isDefaultStatePageId, createStateDraftRow, createStateDraftRowFromDefaultVisual, defaultStateDraftRow, createDefinitionStateDraftRows, normalizeStateDraftRows, validateStateDraftRows, stateVisualFromDraftRow, activeStateDraftRow, normalizeStatePageId, stateDraftImageValue, stateIconDrawingDraftSourceImage, stateIconDrawingInlineNeedsDraftReload, stateIconDrawingInlineCanPersistDraft, stateVisualShapeLabel, generateStateVisualShapeImage, stateIconDrawingElementId, visibleStateIconColor, createStateIconDrawingElement, createImportedStateIconElement, svgSourceFromDataUrl, parseStateIconSvgSource, stateIconSvgElementSource, parseSvgStyleAttribute, stateIconSvgReactAttributes, stateIconSvgNodeChildren, stateIconSvgNodeToReact, stateIconSvgSourceToReactNodes, createEditableStateIconElementsFromSvgSource, createStateIconDrawingInitialElements, stateIconDrawingInitialFrame, svgSourceToDataUrl, stateIconDrawingSvgElementMarkup, stateIconDrawingElementMarkup, stateIconDrawingToImage, stateIconDrawingToPersistedImage, stateIconDrawingFrameRect, stateIconDrawingElementPreviewImage, stateIconDrawingElementPreviewNode, type StateVisualShapeKind, type StateIconDrawingElement, type DeviceDefinitionStateDraftRow } from "./stateIconDrawing";
 import { fallbackComponentLibraryForCategoryLibrary, resolveTemplateComponentLibrary, deviceDefinitionKeyForTemplate, isReservedDeviceDefinitionParamName, isDerivedComponentBaseParamName, createDefinitionDraftRows, normalizeCustomDeviceTerminalAnchorCoordinate, projectCustomDeviceTerminalAnchorToBoundary, customDeviceTerminalAnchorKey, hasOverlappingCustomDeviceTerminalAnchors, createDefaultCustomDeviceTerminalAnchors, createEmptyCustomDeviceDraft, createCustomDeviceDraftFromTemplate, createDefinitionVisualDraft, defaultContainerAssociationForTerminalType, isAssociationAllowedForTerminal, normalizeContainerTerminalAssociations, customDefaultDefinitions, generateCustomDeviceImage, customDeviceImageWithTerminalConnectors, customDeviceGeneratedDefaultImageCandidates, syncInheritedCustomDeviceStateVisuals, parseCustomDefinitions, screenToSvgPoint, primaryOrthogonalAxis, constrainPointToOrthogonalAxis } from "./customDeviceUtils";
 import { useBatchEditors } from "./hooks/useBatchEditors";
+import { readCustomCanvasTheme } from "./appExtracted/appPersistenceLibraryExport";
 import { useGlobalLines } from "./hooks/useGlobalLines";
 import { APP_STATIC_SCOPE } from "./appExtracted/appStaticScope";
 import {
@@ -1643,19 +1644,11 @@ const [minimapSamplingReady, setMinimapSamplingReady] = useState(false);
 Object.assign(__appScope, { minimapSamplingReady, setMinimapSamplingReady });
 const [staticTerminalOverlapReadyKey, setStaticTerminalOverlapReadyKey] = useState("");
 Object.assign(__appScope, { staticTerminalOverlapReadyKey, setStaticTerminalOverlapReadyKey });
-// 画布主题（浅色 / 深色）。只影响画布及其配色，不影响界面配色。
+// 画布主题（浅色 / 深色 / 自定义）。只影响画布及其配色，不影响界面配色。
 const [themeMode, setThemeMode] = useState<CanvasThemeMode>(() => readThemeMode());
-Object.assign(__appScope, { themeMode, setThemeMode });
-const toggleThemeMode = useCallback(() => {
-  setThemeMode((current) => {
-    const next = flipCanvasThemeMode(current);
-    writeThemeMode(next);
-    return next;
-  });
-}, []);
-Object.assign(__appScope, { toggleThemeMode });
+const [customTheme, setCustomTheme] = useState(() => readCustomCanvasTheme());
 // 当前主题下的整套画布配色：画布、右侧面板、导出、下拉预览统一从这里取，避免各调用点各算一套。
-const canvasThemeColors = useMemo(() => canvasThemeColorsFor(themeMode), [themeMode]);
+const canvasThemeColors = useMemo(() => canvasThemeColorsFor(themeMode, customTheme.background), [themeMode, customTheme.background]);
 Object.assign(__appScope, { canvasThemeColors });
 // 量测文本的取色适配：把按浅色画布保存的 display.color 抬到当前主题。
 Object.assign(__appScope, { themedMeasurementTextColor });
@@ -1678,9 +1671,40 @@ useEffect(() => {
 }, [canvasThemeColors]);
 const [colorDisplayMode, setColorDisplayMode] = useState<ColorDisplayMode>(() => readColorDisplayMode());
 Object.assign(__appScope, { colorDisplayMode, setColorDisplayMode });
-const [colorPalette, setColorPalette] = useState<ColorPalette>(() => readColorPalette());
-Object.assign(__appScope, { colorPalette, setColorPalette });
-const [colorPaletteDraft, setColorPaletteDraft] = useState<ColorPalette>(() => readColorPalette());
+const [standardColorPalette, setStandardColorPalette] = useState<ColorPalette>(() => readColorPalette());
+const [colorPalette, setColorPaletteState] = useState<ColorPalette>(() => themeMode === "custom" ? customTheme.colorPalette : readColorPalette());
+const [colorPaletteDraft, setColorPaletteDraft] = useState<ColorPalette>(() => themeMode === "custom" ? customTheme.colorPalette : readColorPalette());
+const setColorPalette = useCallback((value: SetStateAction<ColorPalette>) => {
+  if (themeMode === "custom") {
+    setCustomTheme((current) => {
+      const nextPalette = typeof value === "function" ? value(current.colorPalette) : value;
+      const normalized = normalizeColorPalette(nextPalette);
+      setColorPaletteState(normalized);
+      return { ...current, colorPalette: normalized };
+    });
+    return;
+  }
+  setStandardColorPalette((current) => {
+    const nextPalette = typeof value === "function" ? value(current) : value;
+    const normalized = normalizeColorPalette(nextPalette);
+    setColorPaletteState(normalized);
+    return normalized;
+  });
+}, [themeMode]);
+const setCanvasThemeMode = useCallback((nextMode: CanvasThemeMode) => {
+  const normalized = nextMode === "dark" || nextMode === "custom" ? nextMode : "light";
+  setThemeMode(normalized);
+  writeThemeMode(normalized);
+  setCanvasBackgroundColor("");
+}, []);
+const toggleThemeMode = useCallback(() => {
+  setCanvasThemeMode(themeMode === "light" ? "dark" : themeMode === "dark" ? "custom" : "light");
+}, [setCanvasThemeMode, themeMode]);
+useEffect(() => {
+  setColorPaletteState(themeMode === "custom" ? customTheme.colorPalette : standardColorPalette);
+  setColorPaletteDraft(themeMode === "custom" ? customTheme.colorPalette : standardColorPalette);
+}, [themeMode, customTheme.colorPalette, standardColorPalette]);
+Object.assign(__appScope, { themeMode, setThemeMode, customTheme, setCustomTheme, setCanvasThemeMode, toggleThemeMode, standardColorPalette, setStandardColorPalette, colorPalette, setColorPalette });
 Object.assign(__appScope, { colorPaletteDraft, setColorPaletteDraft });
 const [colorPaletteDialogOpen, setColorPaletteDialogOpen] = useState(false);
 Object.assign(__appScope, { colorPaletteDialogOpen, setColorPaletteDialogOpen });

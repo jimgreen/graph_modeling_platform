@@ -780,11 +780,7 @@ export async function readColorConfig(options = {}) {
   }
   return {
     exists: false,
-    colorDisplayMode: "energy",
-    colorPalette: {
-      energy: {},
-      voltage: {}
-    }
+    ...normalizeColorConfig({})
   };
 }
 

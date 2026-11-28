@@ -97,6 +97,8 @@ export const SPACE_SCOPED_LOCAL_STORAGE_KEYS: readonly string[] = [
   // 配色
   "power-system-color-display-mode",
   "power-system-color-palette",
+  "power-system-canvas-theme",
+  "power-system-custom-canvas-theme",
   // 量测配置
   "power-system-platform-measurements",
   // E 元件定义设置（标签/导出/字段序/模板字段/业务表 id）

@@ -1,18 +1,19 @@
 /**
- * 画布主题（浅色 / 深色）。
+ * 画布主题（浅色 / 深色 / 自定义）。
  *
  * 约定（新需求口径）：
  * - **界面配色不随主题变化**：顶栏、侧栏、弹窗、tab 等外壳一律保持原有浅色配色。
- * - **只有画布变**：浅色模式画布纯白 #ffffff，深色模式画布纯黑 #000000。
- * - 画布上的一切颜色（能流、电压等级、文本、绘图辅助元素）都按“两套值”提供，
- *   深色那套必须能在纯黑画布上读清楚。
+ * - **只有画布变**：浅色模式画布纯白 #ffffff，深色模式画布纯黑 #000000，
+ *   自定义模式使用用户保存的背景色。
+ * - 画布上的一切颜色（能流、电压等级、文本、绘图辅助元素）都按当前背景提供，
+ *   深色和自定义深色背景必须能读清楚。
  *
  * 本模块是纯函数模块，不依赖 React，也不依赖 DOM —— 后端 SVG/CIM 导出适配层
  * 可以用 node 直接 import。
  */
 
-/** 画布主题两种取值。 */
-export type CanvasThemeMode = "light" | "dark";
+/** 画布主题三种取值。 */
+export type CanvasThemeMode = "light" | "dark" | "custom";
 
 /** 浅色画布的底色：纯白。 */
 export const LIGHT_CANVAS_BACKGROUND = "#ffffff";
@@ -20,20 +21,25 @@ export const LIGHT_CANVAS_BACKGROUND = "#ffffff";
 /** 深色画布的底色：纯黑。 */
 export const DARK_CANVAS_BACKGROUND = "#000000";
 
+/** 自定义模式的默认深蓝底色。 */
+export const CUSTOM_CANVAS_BACKGROUND = "#192586";
+
 /**
  * 历史默认画布底色（浅灰）。存量项目里 `canvasBackgroundColor` 落盘的值就是它。
  * 它**不再**被视为“未设置”的哨兵，只用于迁移：读到它就当作没设置，走主题底色。
  */
 export const LEGACY_LIGHT_CANVAS_BACKGROUND = "#f1f5f9";
 
-/** 把任意输入归一成主题名；非 "dark" 一律当浅色。 */
+/** 把任意输入归一成主题名；非法值回退浅色。 */
 export function normalizeCanvasThemeMode(value: unknown): CanvasThemeMode {
-    return value === "dark" ? "dark" : "light";
+    return value === "dark" || value === "custom" ? value : "light";
 }
 
 /** 给定主题返回画布底色。 */
-export function themeCanvasBackground(mode: CanvasThemeMode): string {
-    return mode === "dark" ? DARK_CANVAS_BACKGROUND : LIGHT_CANVAS_BACKGROUND;
+export function themeCanvasBackground(mode: CanvasThemeMode, customBackground = CUSTOM_CANVAS_BACKGROUND): string {
+    if (mode === "dark") return DARK_CANVAS_BACKGROUND;
+    if (mode === "custom") return customBackground || CUSTOM_CANVAS_BACKGROUND;
+    return LIGHT_CANVAS_BACKGROUND;
 }
 
 /** 解析 `#rgb` / `#rrggbb` 两种写法；解析不了返回 null。 */
@@ -80,16 +86,17 @@ export function isLightCanvasBackground(color: string | null | undefined): boole
  * 落盘的近白底色（如 `#f9fafa`）挡掉。所以“近白”的显式底色在两种主题下
  * 都让位给主题底色；用户特意配的有区分度的底色（彩色底、深色底）照常保留。
  */
-export function themeCanvasFill(mode: CanvasThemeMode, explicitBackground?: string | null): string {
+export function themeCanvasFill(mode: CanvasThemeMode, explicitBackground?: string | null, customBackground = CUSTOM_CANVAS_BACKGROUND): string {
+    if (mode === "custom") return themeCanvasBackground(mode, customBackground);
     const explicit = typeof explicitBackground === "string" ? explicitBackground.trim() : "";
-    if (!explicit) return themeCanvasBackground(mode);
-    if (isLightCanvasBackground(explicit)) return themeCanvasBackground(mode);
+    if (!explicit) return themeCanvasBackground(mode, customBackground);
+    if (isLightCanvasBackground(explicit)) return themeCanvasBackground(mode, customBackground);
     return explicit;
 }
 
-/** 主题的另一半。 */
+/** 主题的下一步（保留旧的浅/深按钮语义；三态循环由 App 层处理）。 */
 export function flipCanvasThemeMode(mode: CanvasThemeMode): CanvasThemeMode {
-    return mode === "dark" ? "light" : "dark";
+    return mode === "dark" || mode === "custom" ? "light" : "dark";
 }
 
 /** 浅色 / 深色两套值。 */
@@ -262,7 +269,54 @@ const DARK_SEMANTIC: CanvasSemanticTokens = {
     surfaceStroke: "#cbd5e1",
 };
 
-/** 两套完整画布配色。 */
+/** 根据用户背景色生成自定义模式的辅助色。 */
+export function customCanvasThemeColorsFor(background = CUSTOM_CANVAS_BACKGROUND): CanvasThemeColors {
+    const parsed = parseCssColor(background);
+    const effectiveBackground = parsed ? background.trim() : CUSTOM_CANVAS_BACKGROUND;
+    const rgb = parsed ? compositeOver(effectiveBackground, "#ffffff") : [11, 31, 58];
+    const isDarkBackground = relativeLuminance([rgb[0], rgb[1], rgb[2]]) < 0.35;
+    if (isDarkBackground) {
+        return {
+            mode: "custom",
+            canvasBackground: effectiveBackground,
+            gridMinor: "#2936a0",
+            gridMajor: "#3f5bd1",
+            canvasBorder: "#6884e3",
+            disabledStub: "#93c5fd",
+            alignmentGuide: "#f0abfc",
+            marqueeStroke: "#93c5fd",
+            marqueeFill: "rgba(147, 197, 253, 0.18)",
+            connectionPreview: "#bfdbfe",
+            terminalDotStroke: "#101852",
+            busEndpointDot: "transparent",
+            busEndpointDotStroke: "transparent",
+            frameBackground: "#e5e7eb",
+            rulerBackground: "#111955",
+            rulerBorder: "#4459c4",
+            rulerText: "#bfdbfe",
+            rulerTickMajor: "#7fb0d8",
+            rulerTickMinor: "#7187df",
+            primary: "#f8fafc",
+            secondary: "#dbeafe",
+            muted: "#93c5fd",
+            halo: effectiveBackground,
+            selectionStroke: "#93c5fd",
+            selectionFill: "rgba(147, 197, 253, 0.2)",
+            accent: "#7dd3fc",
+            surfaceFill: "transparent",
+            surfaceStroke: "#dbeafe"
+        };
+    }
+    return {
+        mode: "custom",
+        canvasBackground: effectiveBackground,
+        ...LIGHT_DRAWING,
+        ...LIGHT_TEXT,
+        ...LIGHT_SEMANTIC
+    };
+}
+
+/** 三套完整画布配色；custom 是默认深蓝快照，用户背景由 canvasThemeColorsFor 动态生成。 */
 export const CANVAS_THEME_COLORS: Record<CanvasThemeMode, CanvasThemeColors> = {
     light: {
         mode: "light",
@@ -278,16 +332,17 @@ export const CANVAS_THEME_COLORS: Record<CanvasThemeMode, CanvasThemeColors> = {
         ...DARK_TEXT,
         ...DARK_SEMANTIC,
     },
+    custom: customCanvasThemeColorsFor(),
 };
 
 /** 取某个模式的画布配色。 */
-export function canvasThemeColorsFor(mode: CanvasThemeMode): CanvasThemeColors {
-    return CANVAS_THEME_COLORS[mode === "dark" ? "dark" : "light"];
+export function canvasThemeColorsFor(mode: CanvasThemeMode, customBackground = CUSTOM_CANVAS_BACKGROUND): CanvasThemeColors {
+    return mode === "custom" ? customCanvasThemeColorsFor(customBackground) : CANVAS_THEME_COLORS[mode];
 }
 
 /** 兼容旧调用口径：只取绘图辅助元素那一段。 */
-export function canvasDrawingTokens(mode: CanvasThemeMode): CanvasDrawingTokens {
-    return canvasThemeColorsFor(mode);
+export function canvasDrawingTokens(mode: CanvasThemeMode, customBackground = CUSTOM_CANVAS_BACKGROUND): CanvasDrawingTokens {
+    return canvasThemeColorsFor(mode, customBackground);
 }
 
 /**
@@ -363,7 +418,7 @@ export const SEMANTIC_MIN_CONTRAST = 3;
 /** 语义色查表用的「浅色值 → 深色值」映射。 */
 export type SemanticThemePairTable = ReadonlyArray<{ readonly light: string; readonly dark: string }>;
 
-export function themeSemanticColor(color: unknown, mode: CanvasThemeMode, themePairTable?: SemanticThemePairTable): string {
+export function themeSemanticColor(color: unknown, mode: CanvasThemeMode, themePairTable?: SemanticThemePairTable, customBackground = CUSTOM_CANVAS_BACKGROUND): string {
     if (typeof color !== "string") return "";
     const raw = color.trim();
     if (!raw) return "";
@@ -371,9 +426,9 @@ export function themeSemanticColor(color: unknown, mode: CanvasThemeMode, themeP
     if (key === "transparent" || key === "none" || key === "inherit") return raw;
     if (themePairTable) {
         const pair = themePairTable.find((entry) => entry.light.toLowerCase() === key || entry.dark.toLowerCase() === key);
-        if (pair) return mode === "dark" ? pair.dark : pair.light;
+        if (pair && mode !== "custom") return mode === "dark" ? pair.dark : pair.light;
     }
-    if (mode !== "dark") return raw;
+    if (mode === "light" || mode === "custom") return raw;
     const rgba = parseCssColor(raw);
     if (!rgba) return raw;
     const [r, g, b, a] = rgba;
@@ -430,16 +485,21 @@ function remapColorForDarkCanvas(input: string): string {
  *
  * 描边色：深色下按表换算 / 亮度兜底翻到黑底可读的一侧；浅色原样返回。
  */
-export function themeGlyphColor(color: unknown, mode: CanvasThemeMode, role: "fill" | "stroke" = "fill"): string {
+export function themeGlyphColor(color: unknown, mode: CanvasThemeMode, role: "fill" | "stroke" = "fill", customBackground = CUSTOM_CANVAS_BACKGROUND): string {
     if (typeof color !== "string") return "";
     const raw = color.trim();
     if (!raw) return "";
     const key = raw.toLowerCase();
     if (key === "transparent" || key === "none" || key === "inherit") return raw;
     if (role === "fill") return "transparent";
-    if (mode !== "dark") return raw;
+    if (mode === "light") return raw;
     const mapped = GLYPH_STROKE_DARK_MAP[key];
     if (mapped) return mapped;
+    if (mode === "custom") {
+        const background = parseCssColor(customBackground) ? customBackground : CUSTOM_CANVAS_BACKGROUND;
+        const backgroundRgb = compositeOver(background, "#ffffff");
+        if (relativeLuminance([backgroundRgb[0], backgroundRgb[1], backgroundRgb[2]]) >= 0.35) return raw;
+    }
     return remapColorForDarkCanvas(raw);
 }
 

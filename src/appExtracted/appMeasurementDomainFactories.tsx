@@ -467,7 +467,7 @@ let measurementMetricsCacheTheme: unknown = null;
 
 export function createMeasurementGroupRenderMetrics(__appScope: GraphMeasurementScope) {
   return (node: ModelNode, group: MeasurementGroup): any => {
-  const { formatMeasurementDisplayValue, measurementConfig, resolveMeasurementItemDisplay, themeMode, themedMeasurementTextColor } = __appScope;
+  const { customTheme, formatMeasurementDisplayValue, measurementConfig, resolveMeasurementItemDisplay, themeMode, themedMeasurementTextColor } = __appScope;
     const runtimeMeasurementConfig = __appScope.runtimeMeasurementConfig ?? measurementConfig;
     if (measurementMetricsCacheConfig !== runtimeMeasurementConfig || measurementMetricsCacheTheme !== themeMode) {
       measurementMetricsCacheConfig = runtimeMeasurementConfig;
@@ -502,7 +502,7 @@ export function createMeasurementGroupRenderMetrics(__appScope: GraphMeasurement
       // 在 metrics 这一层改，React 渲染与 SVG 串渲染（baseAttributes）两条路径同时生效。
       const themedDisplay = display.color === undefined
         ? display
-        : { ...display, color: themedMeasurementTextColor(display.color, themeMode) };
+        : { ...display, color: themedMeasurementTextColor(display.color, themeMode, customTheme?.background) };
       return [{ item, display: themedDisplay, labelText, valueText, unitText, fontSize: display.fontSize }];
     });
     if (rows.length === 0) {
@@ -1439,7 +1439,8 @@ function deriveUnusedColor(baseColor: string, usedColors: Iterable<string>): str
 
 export function createNearestVoltageColor(__appScope: GraphMeasurementScope) {
   return (missingKey: string, voltageColors: Record<string, string>) => {
-  const { DEFAULT_COLOR_PALETTE } = __appScope;
+  const { DEFAULT_COLOR_PALETTE, DEFAULT_CUSTOM_COLOR_PALETTE, themeMode } = __appScope;
+    const defaultPalette = themeMode === "custom" ? DEFAULT_CUSTOM_COLOR_PALETTE : DEFAULT_COLOR_PALETTE;
     const [targetType, ...targetVoltageParts] = missingKey.split(":");
     const targetVoltage = Number(targetVoltageParts.join(":"));
     const candidates = Object.entries(voltageColors)
@@ -1457,7 +1458,7 @@ export function createNearestVoltageColor(__appScope: GraphMeasurementScope) {
         .color;
       return deriveUnusedColor(baseColor, usedColors);
     }
-    const fallbackColor = DEFAULT_COLOR_PALETTE.voltage[missingKey] ?? DEFAULT_COLOR_PALETTE.voltage[`${targetType}:0`] ?? "#64748b";
+    const fallbackColor = defaultPalette.voltage[missingKey] ?? defaultPalette.voltage[`${targetType}:0`] ?? "#64748b";
     return deriveUnusedColor(fallbackColor, usedColors);
   };
 }
@@ -1518,20 +1519,22 @@ export function createSaveColorPalette(__appScope: GraphMeasurementScope) {
 
 export function createResetEnergyColors(__appScope: GraphMeasurementScope) {
   return () => {
-  const { DEFAULT_COLOR_PALETTE, setColorPaletteDraft } = __appScope;
+  const { DEFAULT_COLOR_PALETTE, DEFAULT_CUSTOM_COLOR_PALETTE, setColorPaletteDraft, themeMode } = __appScope;
+    const palette = themeMode === "custom" ? DEFAULT_CUSTOM_COLOR_PALETTE : DEFAULT_COLOR_PALETTE;
     setColorPaletteDraft((current: any) => ({
       ...current,
-      energy: { ...DEFAULT_COLOR_PALETTE.energy }
+      energy: { ...palette.energy }
     }));
   };
 }
 
 export function createResetVoltageColors(__appScope: GraphMeasurementScope) {
   return () => {
-  const { DEFAULT_COLOR_PALETTE, setColorPaletteDraft } = __appScope;
+  const { DEFAULT_COLOR_PALETTE, DEFAULT_CUSTOM_COLOR_PALETTE, setColorPaletteDraft, themeMode } = __appScope;
+    const palette = themeMode === "custom" ? DEFAULT_CUSTOM_COLOR_PALETTE : DEFAULT_COLOR_PALETTE;
     setColorPaletteDraft((current: any) => ({
       ...current,
-      voltage: { ...DEFAULT_COLOR_PALETTE.voltage }
+      voltage: { ...palette.voltage }
     }));
   };
 }

@@ -792,8 +792,8 @@ describe("svgExportUtils / buildSvgNodeLabelTextMarkup 的空文本早退不可�
     // ② 调用点计数器：在**同一个文件里**再插一处调用必须被数出来。
     // 这里用行谓词排除声明行，而不是跳过整个文件 —— 否则同文件注入会整体漏掉。
     const callMutated = source.replace(
-      "  const baseAttributes = svgNodeLabelBaseAttributes(node, themeMode);",
-      "  const extra = buildSvgNodeLabelTextMarkup(node, themeMode);\n  const baseAttributes = svgNodeLabelBaseAttributes(node, themeMode);"
+      "  const baseAttributes = svgNodeLabelBaseAttributes(node, themeMode, customBackground);",
+      "  const extra = buildSvgNodeLabelTextMarkup(node, themeMode, customBackground);\n  const baseAttributes = svgNodeLabelBaseAttributes(node, themeMode, customBackground);"
     );
     expect(callMutated).not.toBe(source);
     expect(countCallSites(callMutated)).toBe(countCallSites(source) + 1);

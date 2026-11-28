@@ -550,6 +550,12 @@ describe("nodeLabelTextStyle：画布主题（浅色纯白 / 深色纯黑）", (
     expect(nodeLabelTextStyle(node(), "dark").fill).toBe("#e2e8f0");
   });
 
+  test("自定义深蓝背景使用浅色默认字，自定义浅色背景使用深色默认字", () => {
+    expect(nodeLabelTextStyle(node(), "custom", "#192586").fill).toBe("#f8fafc");
+    expect(nodeLabelTextStyle(node(), "custom", "#f5f5f5").fill).toBe("#111827");
+    expect(nodeLabelTextStyle(withParam("_labelColor", "#334155"), "custom", "#192586").fill).toBe("#f8fafc");
+  });
+
   test("★ 存量节点把默认色 #334155 写进了 params，也要跟随深色主题", () => {
     // 新建节点时默认色会被真实写进 params._labelColor，
     // 若直接 `_labelColor || 主题色` 会让深色画布上停留深灰字（纯黑底上读不出来）。

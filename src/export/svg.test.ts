@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "vitest";
 import * as legacy from "../appExtracted/appPersistenceLibraryExport";
 import { LIGHT_CANVAS_BACKGROUND } from "../canvasTheme";
-import { createDefaultNode, DEFAULT_COLOR_PALETTE, DEVICE_LIBRARY, getTerminalPoint, type ModelNode, type ProjectFile } from "../model";
+import { createDefaultNode, DEFAULT_COLOR_PALETTE, DEFAULT_CUSTOM_COLOR_PALETTE, DEVICE_LIBRARY, getTerminalPoint, type ModelNode, type ProjectFile } from "../model";
 import { decodeSvgImageSource } from "../svgUtils";
 import {
   createRoutableLineDeviceFromEndpoints,
@@ -896,6 +896,20 @@ describe("buildSvgDocument 电流流水线开关", () => {
     expect(textSection).toContain('stroke="rgba(0,0,0,0.85)"');
     const measSection = darkSvg.slice(darkSvg.indexOf('<g id="Measurement_Layer"'));
     expect(measSection).toContain('fill="#e2e8f0"');
+  });
+
+  test("自定义主题导出使用自定义背景和独立 palette", () => {
+    const bus = createDefaultNode("ac-bus", { x: 160, y: 160 });
+    const customSvg = buildSvgDocument([bus], [], {
+      width: 800,
+      height: 600,
+      themeMode: "custom",
+      customBackground: "#102a4c",
+      colorPalette: DEFAULT_CUSTOM_COLOR_PALETTE
+    });
+
+    expect(customSvg).toContain('<rect width="100%" height="100%" fill="#102a4c"/>');
+    expect(customSvg).toContain(DEFAULT_CUSTOM_COLOR_PALETTE.energy.ac);
   });
 
   test("多图层脚本初始化与切换图层时保持全局隐藏的标识与量测处于隐藏状态", () => {

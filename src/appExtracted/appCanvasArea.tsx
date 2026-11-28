@@ -1143,7 +1143,7 @@ export const CanvasGraphContentLayer = memo(function CanvasGraphContentLayerInne
                       y={nodeLabelVerticalTokenY(index, nodeLabelVerticalTokens.length, node)}
                       dominantBaseline="middle"
                       textAnchor="middle"
-                      style={nodeLabelVerticalTokenStyle(node, themeMode)}
+                      style={nodeLabelVerticalTokenStyle(node, themeMode, canvasThemeColors.canvasBackground)}
                     >
                       {segment.text}
                     </text>
@@ -1154,7 +1154,7 @@ export const CanvasGraphContentLayer = memo(function CanvasGraphContentLayerInne
                     y="0"
                     dominantBaseline="middle"
                     textAnchor={nodeLabelTextAnchor(node)}
-                    style={nodeLabelTextStyle(node, themeMode)}
+                    style={nodeLabelTextStyle(node, themeMode, canvasThemeColors.canvasBackground)}
                   >
                     {nodeLabelContent}
                   </text>

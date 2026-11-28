@@ -1,6 +1,7 @@
 // 节点标签工具函数 — 标签渲染、样式、几何计算
 
 import type { CSSProperties } from "react";
+import { canvasThemeColorsFor, type CanvasThemeMode } from "./canvasTheme.ts";
 import {
   DEFAULT_DEVICE_LABEL_FONT_SIZE,
   getSafeNodeScaleX,
@@ -160,12 +161,17 @@ export function nodeLabelExplicitColor(node: ModelNode): string | null {
 
 /**
  * 设备名标签样式。
- * 默认色是按「浅色纯白画布」定的深灰，深色（纯黑画布）上必须换成浅色，否则读不出来；
- * 用户显式改过的颜色不随主题变。
+ * 默认色是按「浅色纯白画布」定的深灰，深色和自定义深色背景上必须换成浅色，否则读不出来；
+ * 用户显式改过的颜色不随主题变。自定义模式会按当前自定义底色的画布 token 选择明暗。
  */
-export function nodeLabelTextStyle(node: ModelNode, themeMode: "light" | "dark" = "light"): CSSProperties {
+export function nodeLabelTextStyle(node: ModelNode, themeMode: CanvasThemeMode = "light", customBackground?: string): CSSProperties {
+  const themeLabelColor = themeMode === "custom"
+    ? canvasThemeColorsFor(themeMode, customBackground).primary
+    : themeMode === "dark"
+      ? DEFAULT_LABEL_COLOR_DARK
+      : DEFAULT_LABEL_COLOR_LIGHT;
   return {
-    fill: nodeLabelExplicitColor(node) || (themeMode === "dark" ? DEFAULT_LABEL_COLOR_DARK : DEFAULT_LABEL_COLOR_LIGHT),
+    fill: nodeLabelExplicitColor(node) || themeLabelColor,
     fontFamily: node.params._labelFontFamily || "Arial",
     fontSize: nodeLabelFontSize(node),
     fontWeight: node.params._labelFontWeight || "500",
@@ -177,9 +183,9 @@ export function nodeLabelTextStyle(node: ModelNode, themeMode: "light" | "dark" 
   };
 }
 
-export function nodeLabelVerticalTokenStyle(node: ModelNode, themeMode: "light" | "dark" = "light"): CSSProperties {
+export function nodeLabelVerticalTokenStyle(node: ModelNode, themeMode: CanvasThemeMode = "light", customBackground?: string): CSSProperties {
   return {
-    ...nodeLabelTextStyle(node, themeMode),
+    ...nodeLabelTextStyle(node, themeMode, customBackground),
     writingMode: "horizontal-tb",
     textOrientation: "mixed"
   };

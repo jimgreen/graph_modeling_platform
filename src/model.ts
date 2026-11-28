@@ -13,6 +13,7 @@ import { randomId } from "../shared/randomId.mjs";
 import { normalizeDeviceParameterEnglishName } from "../shared/deviceParameterChineseNames.mjs";
 import { escapeRegExp } from "../shared/regexEscape.mjs";
 import { meaningfulDeviceParameterChineseName } from "./deviceParameterChineseNames.ts";
+import { CUSTOM_CANVAS_BACKGROUND, parseCssColor } from "./canvasTheme.ts";
 import {
   inferESection,
   E_SECTION_COLUMNS,
@@ -4682,7 +4683,7 @@ export type ColorDisplayMode = "energy" | "voltage";
  *
  * 这里只放“配色表的两套值”；界面外壳不参与，永远是原来的浅色。
  */
-export type ColorThemeMode = "light" | "dark";
+export type ColorThemeMode = "light" | "dark" | "custom";
 
 export type ThemeColorPair = {
   light: string;
@@ -4759,6 +4760,95 @@ export const DEFAULT_COLOR_PALETTE: ColorPalette = {
   voltage: buildDefaultVoltagePalette()
 };
 
+/** 自定义深蓝画布的默认能流配色：沿用深色主题的高亮策略，并把蓝/青档再抬亮一档。 */
+const CUSTOM_ENERGY_COLORS: Record<TerminalType, string> = {
+  ac: "#93c5fd",
+  dc: "#5eead4",
+  h2: "#d8b4fe",
+  heat: "#fca5a5"
+};
+
+/** 自定义深蓝画布的默认电压等级配色。 */
+const CUSTOM_VOLTAGE_COLORS: Record<string, string> = {
+  "0": "#cbd5e1",
+  "0.22": "#86efac",
+  "0.4": "#86efac",
+  "6": "#7dd3fc",
+  "10": "#fdba74",
+  "10.5": "#fdba74",
+  "20": "#fdba74",
+  "35": "#d8b4fe",
+  "66": "#a5b4fc",
+  "110": "#fca5a5",
+  "220": "#fda4af",
+  "330": "#fecdd3",
+  "500": "#f87171",
+  "750": "#67e8f9",
+  "800": "#a5f3fc",
+  "1000": "#a5f3fc"
+};
+
+function buildCustomVoltagePalette(): Record<string, string> {
+  const typedEntries = Object.entries(CUSTOM_VOLTAGE_COLORS).flatMap(([voltage, color]) => [
+    [`ac:${voltage}`, color],
+    [`dc:${voltage}`, color]
+  ]);
+  return {
+    ...CUSTOM_VOLTAGE_COLORS,
+    ...Object.fromEntries(typedEntries)
+  };
+}
+
+/** 自定义模式的独立默认配色；不参与浅色/深色 palette 的主题换算。 */
+export const DEFAULT_CUSTOM_COLOR_PALETTE: ColorPalette = {
+  energy: { ...CUSTOM_ENERGY_COLORS },
+  voltage: buildCustomVoltagePalette()
+};
+
+export type CustomCanvasThemeConfig = {
+  background: string;
+  colorPalette: ColorPalette;
+};
+
+export type CustomColorPaletteInput = {
+  energy?: Partial<Record<TerminalType, string>>;
+  voltage?: Record<string, string>;
+};
+
+export type CustomCanvasThemeInput = {
+  background?: string;
+  colorPalette?: CustomColorPaletteInput | null;
+};
+
+export const DEFAULT_CUSTOM_CANVAS_THEME: CustomCanvasThemeConfig = {
+  background: CUSTOM_CANVAS_BACKGROUND,
+  colorPalette: DEFAULT_CUSTOM_COLOR_PALETTE
+};
+
+function normalizeCustomColorPalette(value?: CustomColorPaletteInput | null): ColorPalette {
+  const energy = value?.energy && typeof value.energy === "object" ? value.energy : {};
+  const voltage = value?.voltage && typeof value.voltage === "object" ? value.voltage : {};
+  return {
+    energy: {
+      ...DEFAULT_CUSTOM_COLOR_PALETTE.energy,
+      ...Object.fromEntries(Object.entries(energy).filter(([, color]) => typeof color === "string" && color.trim()))
+    } as Record<TerminalType, string>,
+    voltage: {
+      ...DEFAULT_CUSTOM_COLOR_PALETTE.voltage,
+      ...Object.fromEntries(Object.entries(voltage).filter(([, color]) => typeof color === "string" && color.trim()))
+    }
+  };
+}
+
+export function normalizeCustomCanvasTheme(value?: CustomCanvasThemeInput | null): CustomCanvasThemeConfig {
+  const candidateBackground = typeof value?.background === "string" ? value.background.trim() : "";
+  const parsedBackground = candidateBackground ? parseCssColor(candidateBackground) : null;
+  return {
+    background: parsedBackground && parsedBackground[3] > 0 ? candidateBackground : CUSTOM_CANVAS_BACKGROUND,
+    colorPalette: normalizeCustomColorPalette(value?.colorPalette)
+  };
+}
+
 /**
  * 按主题把内置的两套默认值解析成单值表（不读用户存档，纯粹是“内置默认”的主题化）。
  *
@@ -4767,6 +4857,9 @@ export const DEFAULT_COLOR_PALETTE: ColorPalette = {
  * 这里把“两套值”收在解析函数里，调用点只需要多传一个 theme 参数。
  */
 export function colorPaletteForTheme(palette: ColorPalette, theme: ColorThemeMode = "light"): ColorPalette {
+  if (theme === "custom") {
+    return normalizeColorPalette(palette);
+  }
   const pick = (pair: ThemeColorPair | undefined, fallback: string): string => {
     if (!pair) return fallback;
     return theme === "dark" ? pair.dark || pair.light || fallback : pair.light || fallback;
@@ -4791,7 +4884,8 @@ export function colorPaletteForTheme(palette: ColorPalette, theme: ColorThemeMod
 /** 两套默认配色。 */
 export const THEMED_COLOR_PALETTES: Record<ColorThemeMode, ColorPalette> = {
   light: colorPaletteForTheme(DEFAULT_COLOR_PALETTE, "light"),
-  dark: colorPaletteForTheme(DEFAULT_COLOR_PALETTE, "dark")
+  dark: colorPaletteForTheme(DEFAULT_COLOR_PALETTE, "dark"),
+  custom: DEFAULT_CUSTOM_COLOR_PALETTE
 };
 
 export type VoltageLevelConfig = {
@@ -4943,6 +5037,7 @@ const THEMED_PALETTE_CACHE = new WeakMap<
     voltageRef: ColorPalette["voltage"];
     light?: ColorPalette;
     dark?: ColorPalette;
+    custom?: ColorPalette;
   }
 >();
 
@@ -4955,6 +5050,16 @@ export function resolveThemedPalette(palette: ColorPalette = DEFAULT_COLOR_PALET
     cachedEntry[theme]
   ) {
     return cachedEntry[theme]!;
+  }
+  if (theme === "custom") {
+    const resolved = normalizeColorPalette(palette);
+    const nextEntry =
+      cachedEntry && cachedEntry.energyRef === palette.energy && cachedEntry.voltageRef === palette.voltage
+        ? cachedEntry
+        : { energyRef: palette.energy, voltageRef: palette.voltage };
+    nextEntry.custom = resolved;
+    THEMED_PALETTE_CACHE.set(palette, nextEntry);
+    return resolved;
   }
   const pick = (custom: string | undefined, pair: ThemeColorPair): string => {
     const trimmed = typeof custom === "string" ? custom.trim() : "";
@@ -5007,9 +5112,16 @@ export const DEFAULT_CONNECTION_STROKE_COLOR = "#334155";
 /** 连线兜底描边的两套值（有端子类型时走能流/电压配色）。 */
 export const CONNECTION_STROKE_THEME_COLORS: ThemeColorPair = { light: "#334155", dark: "#cbd5e1" };
 
+/** 自定义深蓝背景下的连线兜底色。 */
+export const CUSTOM_CONNECTION_STROKE_COLOR = "#dbeafe";
+
 /** 当前主题下的连线兜底色。 */
 export function connectionStrokeColor(theme: ColorThemeMode = "light"): string {
-  return theme === "dark" ? CONNECTION_STROKE_THEME_COLORS.dark : CONNECTION_STROKE_THEME_COLORS.light;
+  return theme === "dark"
+    ? CONNECTION_STROKE_THEME_COLORS.dark
+    : theme === "custom"
+      ? CUSTOM_CONNECTION_STROKE_COLOR
+      : CONNECTION_STROKE_THEME_COLORS.light;
 }
 
 function voltageColorFallback(value: string, theme: ColorThemeMode = "light"): string {
@@ -5018,7 +5130,7 @@ function voltageColorFallback(value: string, theme: ColorThemeMode = "light"): s
     hash = (hash * 31 + value.charCodeAt(index)) % 360;
   }
   // 浅色画布用深底彩字（明度 42%）；深色画布必须提到 68%，否则黑底上看不见。
-  return `hsl(${hash} 72% ${theme === "dark" ? 68 : 42}%)`;
+  return `hsl(${hash} 72% ${theme === "light" ? 42 : 68}%)`;
 }
 
 function voltageColorKey(value?: string): string {

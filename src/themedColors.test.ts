@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+    DEFAULT_CUSTOM_COLOR_PALETTE,
     DEFAULT_COLOR_PALETTE,
     ENERGY_THEME_COLORS,
     VOLTAGE_LEVEL_THEME_COLORS,
@@ -8,6 +9,7 @@ import {
     normalizeColorPalette,
     resolveThemedPalette
 } from "./model";
+import { normalizeCustomCanvasTheme } from "./model";
 import { THEMED_COLOR_PALETTES } from "./model";
 import { contrastRatio } from "./canvasTheme";
 import { themeModeOf, themedCanvasBackground, themedCanvasColors, themedMeasurementTextColor } from "./themedColors";
@@ -125,8 +127,9 @@ describe("连线兜底色", () => {
 });
 
 describe("主题适配层", () => {
-    it("只认 dark 为深色", () => {
+    it("支持 custom，其他值仍回退浅色", () => {
         expect(themeModeOf("dark")).toBe("dark");
+        expect(themeModeOf("custom")).toBe("custom");
         expect(themeModeOf(undefined)).toBe("light");
         expect(themeModeOf("auto")).toBe("light");
     });
@@ -134,6 +137,7 @@ describe("主题适配层", () => {
     it("画布底色随主题：纯白 / 纯黑", () => {
         expect(themedCanvasBackground("light")).toBe("#ffffff");
         expect(themedCanvasBackground("dark")).toBe("#000000");
+        expect(themedCanvasBackground("custom", "#192586")).toBe("#192586");
     });
 
     it("画布辅助元素随主题给出不同值", () => {
@@ -142,6 +146,33 @@ describe("主题适配层", () => {
         expect(light.gridMinor).not.toBe(dark.gridMinor);
         expect(light.primary).not.toBe(dark.primary);
         expect(dark.canvasBackground).toBe("#000000");
+    });
+
+    it("自定义主题直接使用自定义 palette，不套用浅/深配对表", () => {
+        const resolved = resolveThemedPalette(DEFAULT_CUSTOM_COLOR_PALETTE, "custom");
+        expect(resolved).toEqual(DEFAULT_CUSTOM_COLOR_PALETTE);
+        expect(resolved.energy.ac).toBe(DEFAULT_CUSTOM_COLOR_PALETTE.energy.ac);
+        expect(resolved.voltage["ac:110"]).toBe(DEFAULT_CUSTOM_COLOR_PALETTE.voltage["ac:110"]);
+    });
+
+    it("自定义主题的部分 palette 从蓝底默认值补齐，不回退到浅色默认值", () => {
+        const normalized = normalizeCustomCanvasTheme({
+            colorPalette: { energy: { ac: "#abcdef" } }
+        });
+        expect(normalized.colorPalette.energy.ac).toBe("#abcdef");
+        expect(normalized.colorPalette.energy.dc).toBe(DEFAULT_CUSTOM_COLOR_PALETTE.energy.dc);
+        expect(normalized.colorPalette.voltage["ac:110"]).toBe(DEFAULT_CUSTOM_COLOR_PALETTE.voltage["ac:110"]);
+        expect(normalized.colorPalette.voltage["ac:110"]).not.toBe(DEFAULT_COLOR_PALETTE.voltage["ac:110"]);
+    });
+
+    it("#192586 蓝底下默认能流和电压等级颜色都达到正文可读门槛", () => {
+        const background = "#192586";
+        for (const [type, color] of Object.entries(DEFAULT_CUSTOM_COLOR_PALETTE.energy)) {
+            expect(contrastRatio(color, background), `energy.${type}`).toBeGreaterThanOrEqual(4.5);
+        }
+        for (const [voltage, color] of Object.entries(DEFAULT_CUSTOM_COLOR_PALETTE.voltage)) {
+            expect(contrastRatio(color, background), `voltage.${voltage}`).toBeGreaterThanOrEqual(4.5);
+        }
     });
 });
 
